@@ -1,0 +1,69 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-brand: #62a61d;
+  --color-bg: #f9fdf4;
+  --color-text: #17210f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: radial-gradient(circle at top right, #eaf6d8 0%, var(--color-bg) 50%, #ffffff 100%);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+@keyframes bookFlipNext {
+  0% {
+    transform: perspective(1800px) rotateY(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: perspective(1800px) rotateY(-90deg);
+    opacity: 0.15;
+  }
+}
+
+@keyframes bookFlipPrev {
+  0% {
+    transform: perspective(1800px) rotateY(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: perspective(1800px) rotateY(90deg);
+    opacity: 0.15;
+  }
+}
+
+.book-flip-next {
+  animation: bookFlipNext var(--flip-duration, 800ms) ease-in-out forwards;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+.book-flip-prev {
+  animation: bookFlipPrev var(--flip-duration, 800ms) ease-in-out forwards;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}

@@ -1,0 +1,15 @@
+Намагався запустити через налаштований cron завдання, яке робив раніше і отримав таку відповідь, під час тестового запуску:
+PATH=/usr/bin:/bin; TZ="Europe/Kiev" /usr/local/bin/cron "/home/zf548452/eatshock.com/pchilka-new/run-inventory-notifications.cjs"
+nice: ‘/home/zf548452/eatshock.com/pchilka-new/run-inventory-notifications.cjs’: Permission denied
+
+
+Налаштування які в мене:
+Завдання: /home/zf548452/eatshock.com/pchilka-new/run-inventory-notifications.cjs
+Одночасний запуск: Не запускати новий процес, якщо попередній ще працює (за замовчуванням)
+Години запуску:
+Свій варіант
+Хвилини - 0
+Година - 7
+День - *
+Місяць - *
+День тижня - *

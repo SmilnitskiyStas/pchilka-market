@@ -1,0 +1,9 @@
+{
+  "host": "server.example.com",
+  "user": "deploy",
+  "port": 22,
+  "sshKey": "C:\\Users\\your-user\\.ssh\\id_ed25519",
+  "appDir": "/var/www/pchilka-web-app",
+  "restartCommand": "pm2 reload pchilka-web-app --update-env",
+  "runBuildOnServer": true
+}

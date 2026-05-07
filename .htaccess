@@ -1,0 +1,43 @@
+﻿# Pchilka Web App Apache baseline
+
+DirectoryIndex index.php index.html
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Canonical host + HTTPS
+  RewriteCond %{HTTPS} !=on [OR]
+  RewriteCond %{HTTP_HOST} !^pchilka-market\.ua$ [NC]
+  RewriteRule ^ https://pchilka-market.ua%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Never expose internal and build files
+<FilesMatch "^(\.env|\.git|package\.json|package-lock\.json|tsconfig\.json|next\.config\.mjs)$">
+  Require all denied
+</FilesMatch>
+
+# Cache static assets
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 30 days"
+  ExpiresByType application/javascript "access plus 30 days"
+  ExpiresByType image/png "access plus 30 days"
+  ExpiresByType image/jpeg "access plus 30 days"
+  ExpiresByType image/webp "access plus 30 days"
+  ExpiresByType image/svg+xml "access plus 30 days"
+  ExpiresByType application/pdf "access plus 30 days"
+</IfModule>
+
+# Short cache for robots/sitemap so updates are discovered quickly
+<FilesMatch "^(robots\.txt|sitemap\.xml)$">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "public, max-age=300"
+  </IfModule>
+</FilesMatch>
