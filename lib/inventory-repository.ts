@@ -288,11 +288,57 @@ async function ensureBatchChecksTable() {
   `);
 }
 
+async function ensureExpiryTasksTable() {
+  const pool = getDbPool();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS expiry_tasks (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      batch_id BIGINT UNSIGNED NOT NULL,
+      product_id BIGINT UNSIGNED NOT NULL,
+      store_id BIGINT UNSIGNED NOT NULL,
+      responsible_user_id BIGINT UNSIGNED NULL,
+      task_type VARCHAR(50) NOT NULL DEFAULT 'expiry_check',
+      status VARCHAR(40) NOT NULL DEFAULT 'open',
+      risk_level VARCHAR(20) NOT NULL DEFAULT 'medium',
+      due_date DATE NOT NULL,
+      days_left_snapshot INT NOT NULL DEFAULT 0,
+      title VARCHAR(255) NOT NULL,
+      note TEXT NULL,
+      first_detected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_detected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_notified_at DATETIME NULL,
+      completed_at DATETIME NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_expiry_tasks_batch (batch_id),
+      KEY idx_expiry_tasks_product (product_id),
+      KEY idx_expiry_tasks_store (store_id),
+      KEY idx_expiry_tasks_responsible_user (responsible_user_id),
+      KEY idx_expiry_tasks_status_due_date (status, due_date),
+      KEY idx_expiry_tasks_task_type_status (task_type, status),
+      CONSTRAINT fk_expiry_tasks_batch
+        FOREIGN KEY (batch_id) REFERENCES product_batches(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_expiry_tasks_product
+        FOREIGN KEY (product_id) REFERENCES products(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_expiry_tasks_store
+        FOREIGN KEY (store_id) REFERENCES stores(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_expiry_tasks_responsible_user
+        FOREIGN KEY (responsible_user_id) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
 async function ensureNotificationLogsTable() {
   const pool = getDbPool();
   await pool.query(`
     CREATE TABLE IF NOT EXISTS notification_logs (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      task_id BIGINT UNSIGNED NULL,
       batch_id BIGINT UNSIGNED NULL,
       product_id BIGINT UNSIGNED NULL,
       store_id BIGINT UNSIGNED NULL,
@@ -301,11 +347,15 @@ async function ensureNotificationLogsTable() {
       message_text TEXT NOT NULL,
       sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
+      KEY idx_notification_logs_task (task_id),
       KEY idx_notification_logs_batch (batch_id),
       KEY idx_notification_logs_product (product_id),
       KEY idx_notification_logs_store (store_id),
       KEY idx_notification_logs_user (user_id),
       KEY idx_notification_logs_type_sent_at (notification_type, sent_at),
+      CONSTRAINT fk_notification_logs_task
+        FOREIGN KEY (task_id) REFERENCES expiry_tasks(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
       CONSTRAINT fk_notification_logs_batch
         FOREIGN KEY (batch_id) REFERENCES product_batches(id)
         ON DELETE SET NULL ON UPDATE CASCADE,
@@ -320,6 +370,26 @@ async function ensureNotificationLogsTable() {
         ON DELETE SET NULL ON UPDATE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  const columns = await listTableColumns('notification_logs');
+  if (!columns.has('task_id')) {
+    await pool.query('ALTER TABLE notification_logs ADD COLUMN task_id BIGINT UNSIGNED NULL AFTER id');
+  }
+
+  const indexes = await listTableIndexes('notification_logs');
+  if (!indexes.has('idx_notification_logs_task')) {
+    await pool.query('ALTER TABLE notification_logs ADD KEY idx_notification_logs_task (task_id)');
+  }
+
+  const constraints = await listTableConstraints('notification_logs');
+  if (!constraints.has('fk_notification_logs_task')) {
+    await pool.query(`
+      ALTER TABLE notification_logs
+      ADD CONSTRAINT fk_notification_logs_task
+      FOREIGN KEY (task_id) REFERENCES expiry_tasks(id)
+      ON DELETE SET NULL ON UPDATE CASCADE
+    `);
+  }
 }
 
 async function ensureProductChangeLogsTable() {
@@ -527,6 +597,7 @@ export async function applyInventorySchemaMigrations() {
   await ensureProductBatchesWorkflowColumns();
   await ensureBatchSalesTable();
   await ensureBatchChecksTable();
+  await ensureExpiryTasksTable();
   await ensureNotificationLogsTable();
   await ensureProductChangeLogsTable();
   await ensureProductImportReviewQueueTable();

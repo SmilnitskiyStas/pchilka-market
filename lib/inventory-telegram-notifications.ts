@@ -1,12 +1,9 @@
+import { syncInventoryExpiryTasksInDb, listInventoryExpiryNotificationCandidatesFromDb, markInventoryExpiryTaskNotifiedInDb } from '@/lib/inventory-expiry-tasks-repository';
 import { createInventoryNotificationLogInDb } from '@/lib/inventory-notification-logs-repository';
-import { type InventoryUserRole } from '@/lib/inventory-user-roles';
-import {
-  listInventoryNotificationCandidatesFromDb,
-  markInventoryBatchNotifiedInDb
-} from '@/lib/inventory-batches-repository';
 import { createInventoryRegistrationToken } from '@/lib/inventory-registration-token';
-import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
 import { sendInventoryTelegramMessage } from '@/lib/inventory-telegram-bot';
+import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
+import { type InventoryUserRole } from '@/lib/inventory-user-roles';
 import { listInventoryUsersFromDb, type InventoryUserRecord } from '@/lib/inventory-users-repository';
 
 function buildInventoryBatchCheckUrl(baseUrl: string, token: string, batchId: string) {
@@ -14,13 +11,6 @@ function buildInventoryBatchCheckUrl(baseUrl: string, token: string, batchId: st
   url.searchParams.set('token', token);
   url.searchParams.set('batchId', batchId);
   return url.toString();
-}
-
-function daysLeftUntil(value: string) {
-  const target = new Date(`${value}T00:00:00`);
-  const today = new Date();
-  const current = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  return Math.floor((target.getTime() - current.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 function uniqueRecipients(users: InventoryUserRecord[], responsibleUserDbId: number | null) {
@@ -63,15 +53,14 @@ function buildUrgencyText(daysLeft: number) {
   if (daysLeft < 0) {
     return `Термін придатності вже сплив ${Math.abs(daysLeft)} дн. тому.`;
   }
-
   if (daysLeft === 0) {
     return 'Термін придатності спливає сьогодні.';
   }
-
   return `До завершення терміну придатності залишилось ${daysLeft} дн.`;
 }
 
 export type InventoryNotificationDebugItem = {
+  taskId: number;
   batchId: string;
   productName: string;
   storeLabel: string;
@@ -107,17 +96,18 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
     throw new Error('Telegram inventory integration is not fully configured.');
   }
 
-  const candidates = await listInventoryNotificationCandidatesFromDb(200);
+  await syncInventoryExpiryTasksInDb();
+  const candidates = await listInventoryExpiryNotificationCandidatesFromDb(200);
   let batchesProcessed = 0;
   let notificationsSent = 0;
   const debug: InventoryNotificationDebugItem[] = [];
 
-  for (const batch of candidates) {
-    const storeUsers = await listInventoryUsersFromDb({ storeId: batch.storeId, limit: 300 });
-    const recipients = batch.isRepeatReminder
-      ? repeatReminderRecipients(storeUsers, batch.responsibleUserDbId)
-      : uniqueRecipients(storeUsers, batch.responsibleUserDbId);
-    const daysLeft = daysLeftUntil(batch.expiryDate);
+  for (const task of candidates) {
+    const storeUsers = await listInventoryUsersFromDb({ storeId: task.storeId, limit: 300 });
+    const recipients =
+      task.reminderKind === 'repeat'
+        ? repeatReminderRecipients(storeUsers, task.responsibleUserId)
+        : uniqueRecipients(storeUsers, task.responsibleUserId);
     const recipientDebug: InventoryNotificationRecipientDebug[] = recipients.map((recipient) => ({
       userId: recipient.id,
       name: `${recipient.surname} ${recipient.name}`.trim(),
@@ -127,13 +117,14 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
 
     if (recipients.length === 0) {
       debug.push({
-        batchId: batch.id,
-        productName: batch.productName,
-        storeLabel: batch.storeLabel,
-        expiryDate: batch.expiryDate,
-        reminderKind: batch.isRepeatReminder ? 'repeat' : 'initial',
-        daysLeft,
-        responsibleUserName: batch.responsibleUserName,
+        taskId: task.id,
+        batchId: String(task.batchId),
+        productName: task.productName,
+        storeLabel: task.storeLabel,
+        expiryDate: task.dueDate,
+        reminderKind: task.reminderKind,
+        daysLeft: task.daysLeftSnapshot,
+        responsibleUserName: task.responsibleUserName,
         recipients: recipientDebug,
         skipped: true,
         reason: 'У магазині немає активних користувачів з user_chat_id для отримання повідомлення.',
@@ -142,9 +133,9 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
       continue;
     }
 
-    const urgencyText = buildUrgencyText(daysLeft);
-    let sentForBatch = 0;
-    let failedForBatch = 0;
+    const urgencyText = buildUrgencyText(task.daysLeftSnapshot);
+    let sentForTask = 0;
+    let failedForTask = 0;
 
     for (let index = 0; index < recipients.length; index += 1) {
       const recipient = recipients[index];
@@ -158,16 +149,16 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
         settings.webhookSecret,
         1000 * 60 * 60 * 24 * 7
       );
-      const batchUrl = buildInventoryBatchCheckUrl(settings.publicBaseUrl, token, batch.id);
-      const reminderPrefix = batch.isRepeatReminder ? 'Повторне нагадування.\n' : '';
+      const batchUrl = buildInventoryBatchCheckUrl(settings.publicBaseUrl, token, String(task.batchId));
+      const reminderPrefix = task.reminderKind === 'repeat' ? 'Повторне нагадування.\n' : '';
       const text = reminderPrefix +
-        `Потрібно перевірити товар у магазині ${batch.storeLabel}.\n` +
-        `Товар: ${batch.productName}\n` +
-        `Артикул: ${batch.article || '—'}\n` +
-        `Штрихкод: ${batch.barcode || '—'}\n` +
-        `Код партії: ${batch.batchCode || '—'}\n` +
-        `Партія: #${batch.id}\n` +
-        `Термін придатності: ${batch.expiryDate}\n` +
+        `Потрібно перевірити товар у магазині ${task.storeLabel}.\n` +
+        `Товар: ${task.productName}\n` +
+        `Артикул: ${task.article || '—'}\n` +
+        `Штрихкод: ${task.barcode || '—'}\n` +
+        `Код партії: ${task.batchCode || '—'}\n` +
+        `Партія: #${task.batchId}\n` +
+        `Термін придатності: ${task.dueDate}\n` +
         `${urgencyText}`;
 
       try {
@@ -180,29 +171,28 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
         });
 
         await createInventoryNotificationLogInDb({
-          batchId: Number(batch.id),
-          productId: Number(batch.productId),
-          storeId: Number(batch.storeId),
+          taskId: task.id,
+          batchId: task.batchId,
+          productId: task.productId,
+          storeId: task.storeId,
           userId: recipient.id,
-          notificationType: batch.isRepeatReminder ? 'expiry_check_due_repeat' : 'expiry_check_due',
+          notificationType: task.reminderKind === 'repeat' ? 'expiry_task_due_repeat' : 'expiry_task_due',
           messageText: text
         });
 
-        recipientDebug[index] = {
-          ...recipientDebug[index],
-          ok: true
-        };
+        recipientDebug[index] = { ...recipientDebug[index], ok: true };
         notificationsSent += 1;
-        sentForBatch += 1;
+        sentForTask += 1;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown Telegram send error';
 
         await createInventoryNotificationLogInDb({
-          batchId: Number(batch.id),
-          productId: Number(batch.productId),
-          storeId: Number(batch.storeId),
+          taskId: task.id,
+          batchId: task.batchId,
+          productId: task.productId,
+          storeId: task.storeId,
           userId: recipient.id,
-          notificationType: batch.isRepeatReminder ? 'expiry_check_due_repeat_failed' : 'expiry_check_due_failed',
+          notificationType: task.reminderKind === 'repeat' ? 'expiry_task_due_repeat_failed' : 'expiry_task_due_failed',
           messageText: `${text}\n\nSEND_ERROR: ${errorMessage}\nCHAT_ID: ${recipient.userChatId}`
         });
 
@@ -211,34 +201,35 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
           ok: false,
           error: errorMessage
         };
-        failedForBatch += 1;
+        failedForTask += 1;
       }
     }
 
-    if (sentForBatch > 0) {
-      await markInventoryBatchNotifiedInDb(batch.id);
+    if (sentForTask > 0) {
+      await markInventoryExpiryTaskNotifiedInDb(task.id);
       batchesProcessed += 1;
     }
 
     debug.push({
-      batchId: batch.id,
-      productName: batch.productName,
-      storeLabel: batch.storeLabel,
-      expiryDate: batch.expiryDate,
-      reminderKind: batch.isRepeatReminder ? 'repeat' : 'initial',
-      daysLeft,
-      responsibleUserName: batch.responsibleUserName,
+      taskId: task.id,
+      batchId: String(task.batchId),
+      productName: task.productName,
+      storeLabel: task.storeLabel,
+      expiryDate: task.dueDate,
+      reminderKind: task.reminderKind,
+      daysLeft: task.daysLeftSnapshot,
+      responsibleUserName: task.responsibleUserName,
       recipients: recipientDebug,
-      skipped: sentForBatch === 0,
+      skipped: sentForTask === 0,
       reason:
-        sentForBatch === 0
-          ? failedForBatch > 0
+        sentForTask === 0
+          ? failedForTask > 0
             ? 'Не вдалося надіслати жодне повідомлення. Помилки записано в notification_logs.'
             : 'Повідомлення не надіслано.'
-          : failedForBatch > 0
+          : failedForTask > 0
             ? 'Повідомлення надіслано частково. Частину помилок записано в notification_logs.'
             : 'Повідомлення успішно надіслано.',
-      sentCount: sentForBatch
+      sentCount: sentForTask
     });
   }
 

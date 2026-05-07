@@ -6,6 +6,7 @@ type InventoryDbExecutor = Pool | PoolConnection;
 
 export async function createInventoryNotificationLogInDb(
   input: {
+    taskId?: number | null;
     batchId?: number | null;
     productId?: number | null;
     storeId?: number | null;
@@ -19,6 +20,7 @@ export async function createInventoryNotificationLogInDb(
   await db.query(
     `
       INSERT INTO notification_logs (
+        task_id,
         batch_id,
         product_id,
         store_id,
@@ -28,6 +30,7 @@ export async function createInventoryNotificationLogInDb(
       ) VALUES (?, ?, ?, ?, ?, ?)
     `,
     [
+      input.taskId ?? null,
       input.batchId ?? null,
       input.productId ?? null,
       input.storeId ?? null,
