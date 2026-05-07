@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { createInventoryActivityLogInDb } from '@/lib/inventory-activity-logs-repository';
+import { createInventoryBatchCheckInDb } from '@/lib/inventory-batch-checks-repository';
 import { findInventoryBatchByIdInDb, updateInventoryBatchCheckActionInDb } from '@/lib/inventory-batches-repository';
 import { parseInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
@@ -12,10 +13,47 @@ type ActionPayload = {
   token?: string;
   batchId?: string;
   action?: 'checked' | 'writeoff' | 'discussion_required';
+  countedQuantity?: number | null;
+  itemCondition?: string;
+  issueReason?: string;
   note?: string;
+  photoUrl?: string;
 };
 
 const ALLOWED_ACTIONS = new Set<ActionPayload['action']>(['checked', 'writeoff', 'discussion_required']);
+
+function buildSnapshotNote(input: {
+  countedQuantity?: number | null;
+  itemCondition?: string;
+  issueReason?: string;
+  note?: string;
+}) {
+  const segments = [
+    input.countedQuantity != null ? `Факт. кількість: ${input.countedQuantity}` : '',
+    input.itemCondition ? `Стан: ${input.itemCondition}` : '',
+    input.issueReason ? `Причина: ${input.issueReason}` : '',
+    input.note ? `Коментар: ${input.note}` : ''
+  ].filter(Boolean);
+
+  return segments.join(' | ');
+}
+
+function validatePayload(input: {
+  action: 'checked' | 'writeoff' | 'discussion_required';
+  countedQuantity: number | null;
+  itemCondition: string;
+  issueReason: string;
+}) {
+  if (input.countedQuantity == null || !Number.isFinite(input.countedQuantity) || input.countedQuantity < 0) {
+    throw new Error('Вкажіть фактичну кількість товару.');
+  }
+  if (!input.itemCondition) {
+    throw new Error('Вкажіть стан товару.');
+  }
+  if ((input.action === 'writeoff' || input.action === 'discussion_required') && !input.issueReason) {
+    throw new Error('Для цієї дії потрібно вказати причину проблеми.');
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -24,11 +62,25 @@ export async function POST(request: Request) {
     const batchId = String(body.batchId ?? '').trim();
     const action = body.action;
     const note = String(body.note ?? '').trim();
+    const itemCondition = String(body.itemCondition ?? '').trim();
+    const issueReason = String(body.issueReason ?? '').trim();
+    const photoUrl = String(body.photoUrl ?? '').trim();
+    const countedQuantityRaw = body.countedQuantity;
+    const countedQuantity =
+      countedQuantityRaw == null
+        ? null
+        : Math.max(Math.round(Number(countedQuantityRaw)), 0);
 
     if (!ALLOWED_ACTIONS.has(action)) {
       return NextResponse.json({ ok: false, error: 'Некоректна дія для партії.' }, { status: 400 });
     }
     const safeAction = action as 'checked' | 'writeoff' | 'discussion_required';
+    validatePayload({
+      action: safeAction,
+      countedQuantity,
+      itemCondition,
+      issueReason
+    });
 
     const settings = await getInventoryTelegramSettingsFromDb();
     const payload = parseInventoryRegistrationToken(token, settings.webhookSecret);
@@ -49,12 +101,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Немає доступу до партії іншого магазину.' }, { status: 403 });
     }
 
+    const snapshotNote = buildSnapshotNote({
+      countedQuantity,
+      itemCondition,
+      issueReason,
+      note
+    });
+
     const batch = await updateInventoryBatchCheckActionInDb({
       batchId,
       userId: user.id,
       storeId: user.storeId,
       action: safeAction,
-      note
+      note: snapshotNote
+    });
+
+    await createInventoryBatchCheckInDb({
+      batchId: Number(batch.id),
+      productId: Number(batch.productId),
+      storeId: Number(batch.storeId),
+      userId: user.id,
+      action: safeAction,
+      countedQuantity,
+      itemCondition,
+      issueReason,
+      note,
+      photoUrl
     });
 
     await createInventoryActivityLogInDb({
@@ -63,7 +135,9 @@ export async function POST(request: Request) {
       productId: Number(batch.productId),
       storeId: Number(batch.storeId),
       actionType: `batch_check_${safeAction}`,
-      comment: note || null
+      comment: snapshotNote || null,
+      oldQuantity: batch.quantityCurrent,
+      newQuantity: countedQuantity
     });
 
     return NextResponse.json({ ok: true, batch });

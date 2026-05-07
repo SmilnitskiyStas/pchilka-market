@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { listInventoryBatchChecksForBatchInDb } from '@/lib/inventory-batch-checks-repository';
 import { findInventoryBatchByIdInDb } from '@/lib/inventory-batches-repository';
 import { parseInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
@@ -32,7 +33,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'Немає доступу до партії іншого магазину.' }, { status: 403 });
     }
 
-    return NextResponse.json({ ok: true, user, batch });
+    const checks = await listInventoryBatchChecksForBatchInDb(batchId, 10);
+
+    return NextResponse.json({ ok: true, user, batch, checks });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown DB error';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
