@@ -399,6 +399,38 @@ function getTaskCompletionRatio(completed: number, total: number) {
   return Math.round((completed / total) * 100);
 }
 
+function groupInventoryBatchesBySupply(batches: InventoryBatchRecord[]): InventoryBatchGroup[] {
+  const groups = new Map<string, InventoryBatchGroup>();
+
+  for (const batch of batches) {
+    const key = batch.batchCode.trim() ? `batch-code:${batch.batchCode.trim()}` : `single-batch:${batch.id}`;
+    const existing = groups.get(key);
+
+    if (!existing) {
+      groups.set(key, {
+        key,
+        label: batch.batchCode.trim() || `Без коду поставки • партія #${batch.id}`,
+        storeLabel: batch.storeLabel,
+        count: 1,
+        totalQuantity: batch.quantity,
+        batches: [batch]
+      });
+      continue;
+    }
+
+    existing.count += 1;
+    existing.totalQuantity += batch.quantity;
+    existing.batches.push(batch);
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      batches: [...group.batches].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate) || Number(a.id) - Number(b.id))
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'uk'));
+}
+
 function getBatchUrgencyMeta(batch: InventoryBatchRecord) {
   const daysLeft = daysLeftUntil(batch.expiryDate);
 
@@ -685,41 +717,35 @@ export default function AdminInventoryManager({
     () => (!selectedStoreId ? filteredBatches : filteredBatches.filter((batch) => batch.storeId === selectedStoreId)),
     [filteredBatches, selectedStoreId]
   );
-  const selectedStoreBatchGroups = useMemo(() => {
-    const groups = new Map<string, InventoryBatchGroup>();
-
-    for (const batch of selectedStoreBatches) {
-      const key = batch.batchCode.trim() ? `batch-code:${batch.batchCode.trim()}` : `single-batch:${batch.id}`;
-      const existing = groups.get(key);
-
-      if (!existing) {
-        groups.set(key, {
-          key,
-          label: batch.batchCode.trim() || `Без коду поставки • партія #${batch.id}`,
-          storeLabel: batch.storeLabel,
-          count: 1,
-          totalQuantity: batch.quantity,
-          batches: [batch]
-        });
-        continue;
-      }
-
-      existing.count += 1;
-      existing.totalQuantity += batch.quantity;
-      existing.batches.push(batch);
-    }
-
-    return Array.from(groups.values())
-      .map((group) => ({
-        ...group,
-        batches: [...group.batches].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate) || Number(a.id) - Number(b.id))
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label, 'uk'));
-  }, [selectedStoreBatches]);
-  const selectedBatchGroup = useMemo(
-    () => selectedStoreBatchGroups.find((group) => group.key === selectedBatchGroupKey) ?? null,
-    [selectedBatchGroupKey, selectedStoreBatchGroups]
+  const selectedStoreBatchGroups = useMemo(
+    () => groupInventoryBatchesBySupply(selectedStoreBatches),
+    [selectedStoreBatches]
   );
+  const selectedInventoryUser = useMemo(() => {
+    if (selectedStoreUsers.length === 0) return null;
+    return selectedStoreUsers.find((user) => user.id === selectedInventoryUserId) ?? selectedStoreUsers[0] ?? null;
+  }, [selectedInventoryUserId, selectedStoreUsers]);
+  const selectedInventoryUserCreatedProducts = useMemo(
+    () => manualProductCreations.filter((item) => item.userId === selectedInventoryUser?.id),
+    [manualProductCreations, selectedInventoryUser]
+  );
+  const selectedInventoryUserCreatedBatches = useMemo(
+    () => selectedStoreBatches.filter((batch) => Number(batch.createdByUserId || 0) === selectedInventoryUser?.id),
+    [selectedStoreBatches, selectedInventoryUser]
+  );
+  const selectedInventoryUserResponsibleBatches = useMemo(
+    () => selectedStoreBatches.filter((batch) => Number(batch.responsibleUserId || 0) === selectedInventoryUser?.id),
+    [selectedStoreBatches, selectedInventoryUser]
+  );
+  const selectedInventoryUserBatchGroups = useMemo(
+    () => groupInventoryBatchesBySupply(selectedInventoryUserResponsibleBatches),
+    [selectedInventoryUserResponsibleBatches]
+  );
+  const selectedBatchGroup = useMemo(() => {
+    const preferredGroups =
+      activeSection === 'operations' && selectedInventoryUser ? selectedInventoryUserBatchGroups : selectedStoreBatchGroups;
+    return preferredGroups.find((group) => group.key === selectedBatchGroupKey) ?? null;
+  }, [activeSection, selectedBatchGroupKey, selectedInventoryUser, selectedInventoryUserBatchGroups, selectedStoreBatchGroups]);
   const selectedBatchGroupUserRows = useMemo(() => {
     if (!selectedBatchGroup) return [];
 
@@ -768,22 +794,6 @@ export default function AdminInventoryManager({
       return `user:${batch.createdByUserId}` === activeBatchModalUserKey;
     });
   }, [activeBatchModalUserKey, selectedBatchGroup]);
-  const selectedInventoryUser = useMemo(() => {
-    if (selectedStoreUsers.length === 0) return null;
-    return selectedStoreUsers.find((user) => user.id === selectedInventoryUserId) ?? selectedStoreUsers[0] ?? null;
-  }, [selectedInventoryUserId, selectedStoreUsers]);
-  const selectedInventoryUserCreatedProducts = useMemo(
-    () => manualProductCreations.filter((item) => item.userId === selectedInventoryUser?.id),
-    [manualProductCreations, selectedInventoryUser]
-  );
-  const selectedInventoryUserCreatedBatches = useMemo(
-    () => selectedStoreBatches.filter((batch) => Number(batch.createdByUserId || 0) === selectedInventoryUser?.id),
-    [selectedStoreBatches, selectedInventoryUser]
-  );
-  const selectedInventoryUserResponsibleBatches = useMemo(
-    () => selectedStoreBatches.filter((batch) => Number(batch.responsibleUserId || 0) === selectedInventoryUser?.id),
-    [selectedStoreBatches, selectedInventoryUser]
-  );
   const selectedInventoryUserStats = useMemo(() => {
     if (!selectedInventoryUser) return null;
 
@@ -2518,13 +2528,13 @@ export default function AdminInventoryManager({
             <div id="batch-responsibility" className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-base font-semibold text-slate-900">Партії та відповідальні</h3>
-              <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{selectedStoreBatchGroups.length}</span>
+              <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{selectedInventoryUserBatchGroups.length}</span>
             </div>
-            {selectedStoreBatches.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-600">Для вибраного магазину ще немає партій у поточному списку.</p>
+            {selectedInventoryUserResponsibleBatches.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-600">Для вибраного працівника немає партій, де він призначений відповідальним.</p>
             ) : (
               <div className="mt-3 divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white">
-                {selectedStoreBatchGroups.map((group) => (
+                {selectedInventoryUserBatchGroups.map((group) => (
                   <button
                     key={group.key}
                     type="button"
