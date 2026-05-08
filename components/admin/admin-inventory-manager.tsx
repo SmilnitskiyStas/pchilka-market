@@ -530,7 +530,7 @@ export default function AdminInventoryManager({
           fetch('/api/admin/inventory/readiness', { cache: 'no-store' }),
           fetch('/api/admin/inventory/settings', { cache: 'no-store' }),
           fetch('/api/admin/inventory/products', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/batches?limit=100', { cache: 'no-store' }),
+          fetch('/api/admin/inventory/batches?limit=5000', { cache: 'no-store' }),
           fetch('/api/admin/stores', { cache: 'no-store' }),
           fetch('/api/admin/inventory/users?limit=300', { cache: 'no-store' }),
           fetch('/api/admin/inventory/webhook', { cache: 'no-store' }),

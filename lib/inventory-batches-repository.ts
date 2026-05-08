@@ -201,7 +201,7 @@ export async function listInventoryBatchesFromDb(limit = 200, storeId?: string |
   if (whereSql) {
     values.push(normalizedStoreId);
   }
-  values.push(Math.min(Math.max(limit, 1), 500));
+  values.push(Math.min(Math.max(limit, 1), 5000));
 
   const [rows] = await pool.query<BatchRow[]>(
     `
