@@ -62,6 +62,8 @@ export type InventoryExpiryNotificationCandidate = InventoryExpiryTaskRecord & {
   reminderKind: 'initial' | 'repeat';
 };
 
+export type InventoryExpiryTaskStatusGroup = 'active' | 'archived' | 'all';
+
 function toIso(value: Date | string | null | undefined): string {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
@@ -333,6 +335,92 @@ export async function listInventoryExpiryNotificationCandidatesFromDb(limit = 20
     ...mapRow(row),
     reminderKind: row.last_notified_at ? 'repeat' : 'initial'
   }));
+}
+
+export async function listInventoryExpiryTasksFromDb(options?: {
+  responsibleUserId?: string | number | null;
+  storeId?: string | number | null;
+  statusGroup?: InventoryExpiryTaskStatusGroup;
+  limit?: number;
+}): Promise<InventoryExpiryTaskRecord[]> {
+  const pool = getDbPool();
+  const statusGroup = options?.statusGroup ?? 'all';
+  const limit = Math.min(Math.max(Number(options?.limit ?? 250), 1), 1000);
+  const responsibleUserId = Number(options?.responsibleUserId ?? 0);
+  const storeId = Number(options?.storeId ?? 0);
+
+  const whereClauses = [`et.task_type = 'expiry_check'`];
+  const params: Array<string | number> = [];
+
+  if (statusGroup === 'active') {
+    whereClauses.push(`et.status IN ('open', 'escalated', 'writeoff_pending')`);
+  } else if (statusGroup === 'archived') {
+    whereClauses.push(`et.status IN ('completed', 'cancelled')`);
+  }
+
+  if (Number.isFinite(responsibleUserId) && responsibleUserId > 0) {
+    whereClauses.push(`et.responsible_user_id = ?`);
+    params.push(responsibleUserId);
+  }
+
+  if (Number.isFinite(storeId) && storeId > 0) {
+    whereClauses.push(`et.store_id = ?`);
+    params.push(storeId);
+  }
+
+  params.push(limit);
+
+  const [rows] = await pool.query<ExpiryTaskRow[]>(
+    `
+      SELECT
+        et.id,
+        et.batch_id,
+        et.product_id,
+        et.store_id,
+        et.responsible_user_id,
+        et.task_type,
+        et.status,
+        et.risk_level,
+        DATE_FORMAT(et.due_date, '%Y-%m-%d') AS due_date,
+        et.days_left_snapshot,
+        et.title,
+        et.note,
+        et.first_detected_at,
+        et.last_detected_at,
+        et.last_notified_at,
+        et.completed_at,
+        et.created_at,
+        et.updated_at,
+        p.product_name,
+        p.article,
+        (
+          SELECT GROUP_CONCAT(pb.barcode ORDER BY pb.id ASC SEPARATOR ', ')
+          FROM product_barcodes pb
+          WHERE pb.product_id = p.id
+        ) AS barcode,
+        b.batch_code,
+        CONCAT_WS(' | ', s.store_code, s.city, s.address_line) AS store_label,
+        CONCAT_WS(' ', u.surname, u.name) AS responsible_user_name
+      FROM expiry_tasks et
+      INNER JOIN product_batches b ON b.id = et.batch_id
+      INNER JOIN products p ON p.id = et.product_id
+      INNER JOIN stores s ON s.id = et.store_id
+      LEFT JOIN users u ON u.id = et.responsible_user_id
+      WHERE ${whereClauses.join(' AND ')}
+      ORDER BY
+        CASE
+          WHEN et.status IN ('open', 'escalated', 'writeoff_pending') THEN 0
+          ELSE 1
+        END,
+        et.due_date ASC,
+        et.updated_at DESC,
+        et.id DESC
+      LIMIT ?
+    `,
+    params
+  );
+
+  return rows.map(mapRow);
 }
 
 export async function markInventoryExpiryTaskNotifiedInDb(taskId: string | number) {

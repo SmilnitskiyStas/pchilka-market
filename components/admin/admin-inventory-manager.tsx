@@ -206,6 +206,42 @@ type NotificationsRunPayload = {
   };
   error?: string;
 };
+type InventoryExpiryTaskView = {
+  id: number;
+  batchId: number;
+  productId: number;
+  storeId: number;
+  responsibleUserId: number | null;
+  taskType: string;
+  status: string;
+  riskLevel: string;
+  dueDate: string;
+  daysLeftSnapshot: number;
+  title: string;
+  note: string;
+  firstDetectedAt: string;
+  lastDetectedAt: string;
+  lastNotifiedAt: string;
+  completedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  productName: string;
+  article: string;
+  barcode: string;
+  batchCode: string;
+  storeLabel: string;
+  responsibleUserName: string;
+};
+type InventoryTasksPayload = {
+  ok?: boolean;
+  activeTasks?: InventoryExpiryTaskView[];
+  archivedTasks?: InventoryExpiryTaskView[];
+  summary?: {
+    active: number;
+    archived: number;
+  };
+  error?: string;
+};
 type InventorySectionId = 'overview' | 'schema' | 'product-list' | 'batches' | 'import' | 'intake' | 'operations' | 'telegram';
 type InventorySubsectionId =
   | 'overview'
@@ -214,6 +250,7 @@ type InventorySubsectionId =
   | 'product-import'
   | 'batches-list'
   | 'registered-employees'
+  | 'employee-tasks'
   | 'batch-responsibility'
   | 'settings-schema'
   | 'settings-telegram';
@@ -235,6 +272,7 @@ const inventorySubsectionToSection: Record<InventorySubsectionId, InventorySecti
   'product-import': 'import',
   'batches-list': 'batches',
   'registered-employees': 'operations',
+  'employee-tasks': 'operations',
   'batch-responsibility': 'operations',
   'settings-schema': 'schema',
   'settings-telegram': 'telegram'
@@ -394,6 +432,76 @@ function formatBatchCheckStatus(status: string) {
   }
 }
 
+function formatExpiryTaskStatus(status: string) {
+  switch (status) {
+    case 'open':
+      return 'Активна';
+    case 'escalated':
+      return 'Потребує рішення';
+    case 'writeoff_pending':
+      return 'На списанні';
+    case 'completed':
+      return 'Завершена';
+    case 'cancelled':
+      return 'Скасована';
+    default:
+      return status || '—';
+  }
+}
+
+function getExpiryTaskStatusClassName(status: string) {
+  switch (status) {
+    case 'open':
+      return 'border-sky-200 bg-sky-50 text-sky-700';
+    case 'escalated':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'writeoff_pending':
+      return 'border-rose-200 bg-rose-50 text-rose-700';
+    case 'completed':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'cancelled':
+      return 'border-slate-200 bg-slate-100 text-slate-700';
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-700';
+  }
+}
+
+function formatExpiryTaskRiskLevel(level: string) {
+  switch (level) {
+    case 'critical':
+      return 'Критичний';
+    case 'high':
+      return 'Високий';
+    case 'medium':
+      return 'Середній';
+    case 'low':
+      return 'Низький';
+    default:
+      return level || '—';
+  }
+}
+
+function getExpiryTaskRiskClassName(level: string) {
+  switch (level) {
+    case 'critical':
+      return 'border-rose-200 bg-rose-50 text-rose-700';
+    case 'high':
+      return 'border-orange-200 bg-orange-50 text-orange-700';
+    case 'medium':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'low':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-700';
+  }
+}
+
+function formatDaysLeftLabel(daysLeft: number) {
+  if (daysLeft < 0) return `Прострочено на ${Math.abs(daysLeft)} дн.`;
+  if (daysLeft === 0) return 'Закінчується сьогодні';
+  return `Ще ${daysLeft} дн.`;
+}
+
 function getTaskCompletionRatio(completed: number, total: number) {
   if (total <= 0) return 0;
   return Math.round((completed / total) * 100);
@@ -487,6 +595,8 @@ export default function AdminInventoryManager({
   const [batches, setBatches] = useState<InventoryBatchRecord[]>([]);
   const [stores, setStores] = useState<StoreRecord[]>([]);
   const [inventoryUsers, setInventoryUsers] = useState<InventoryUserView[]>([]);
+  const [inventoryActiveTasks, setInventoryActiveTasks] = useState<InventoryExpiryTaskView[]>([]);
+  const [inventoryArchivedTasks, setInventoryArchivedTasks] = useState<InventoryExpiryTaskView[]>([]);
   const [manualProductCreations, setManualProductCreations] = useState<ManualProductCreationView[]>([]);
   const [productChangeLogs, setProductChangeLogs] = useState<InventoryProductChangeLogView[]>([]);
   const [importReviewItems, setImportReviewItems] = useState<InventoryImportReviewView[]>([]);
@@ -501,6 +611,7 @@ export default function AdminInventoryManager({
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isRegisteringWebhook, setIsRegisteringWebhook] = useState(false);
   const [isRunningNotifications, setIsRunningNotifications] = useState(false);
+  const [isLoadingInventoryTasks, setIsLoadingInventoryTasks] = useState(false);
   const [notificationsDebug, setNotificationsDebug] = useState<InventoryNotificationDebugItem[]>([]);
   const [isCreatingIntake, setIsCreatingIntake] = useState(false);
   const [assigningBatchId, setAssigningBatchId] = useState('');
@@ -549,6 +660,40 @@ export default function AdminInventoryManager({
       setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити список товарів.');
     } finally {
       setIsLoadingProducts(false);
+    }
+  }
+
+  async function loadInventoryTasks(options?: { responsibleUserId?: number | null; storeId?: string }) {
+    const responsibleUserId = Number(options?.responsibleUserId ?? 0);
+    if (!Number.isFinite(responsibleUserId) || responsibleUserId <= 0) {
+      setInventoryActiveTasks([]);
+      setInventoryArchivedTasks([]);
+      return;
+    }
+
+    setIsLoadingInventoryTasks(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('responsibleUserId', String(responsibleUserId));
+      params.set('limit', '250');
+      if (options?.storeId?.trim()) {
+        params.set('storeId', options.storeId.trim());
+      }
+
+      const response = await fetch(`/api/admin/inventory/tasks?${params.toString()}`, { cache: 'no-store' });
+      const payload = (await response.json()) as InventoryTasksPayload;
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Не вдалося завантажити задачі працівника.');
+      }
+
+      setInventoryActiveTasks(Array.isArray(payload.activeTasks) ? payload.activeTasks : []);
+      setInventoryArchivedTasks(Array.isArray(payload.archivedTasks) ? payload.archivedTasks : []);
+    } catch (loadError) {
+      setInventoryActiveTasks([]);
+      setInventoryArchivedTasks([]);
+      setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити задачі працівника.');
+    } finally {
+      setIsLoadingInventoryTasks(false);
     }
   }
 
@@ -938,6 +1083,25 @@ export default function AdminInventoryManager({
         return a.productName.localeCompare(b.productName, 'uk');
       });
   }, [selectedInventoryUserResponsibleBatches]);
+  const selectedInventoryUserTaskSummary = useMemo(() => {
+    const overdueActiveTasks = inventoryActiveTasks.filter((task) => Number(task.daysLeftSnapshot) < 0).length;
+    const criticalActiveTasks = inventoryActiveTasks.filter((task) => task.riskLevel === 'critical').length;
+    const escalatedActiveTasks = inventoryActiveTasks.filter((task) => task.status === 'escalated').length;
+    const writeoffPendingTasks = inventoryActiveTasks.filter((task) => task.status === 'writeoff_pending').length;
+    const completedArchivedTasks = inventoryArchivedTasks.filter((task) => task.status === 'completed').length;
+    const cancelledArchivedTasks = inventoryArchivedTasks.filter((task) => task.status === 'cancelled').length;
+
+    return {
+      totalActive: inventoryActiveTasks.length,
+      overdueActiveTasks,
+      criticalActiveTasks,
+      escalatedActiveTasks,
+      writeoffPendingTasks,
+      totalArchived: inventoryArchivedTasks.length,
+      completedArchivedTasks,
+      cancelledArchivedTasks
+    };
+  }, [inventoryActiveTasks, inventoryArchivedTasks]);
 
   useEffect(() => {
     if (selectedStoreUsers.length === 0) {
@@ -948,6 +1112,20 @@ export default function AdminInventoryManager({
       setSelectedInventoryUserId(selectedStoreUsers[0].id);
     }
   }, [selectedInventoryUserId, selectedStoreUsers]);
+
+  useEffect(() => {
+    if (activeSubsection !== 'employee-tasks') return;
+    if (!selectedInventoryUser) {
+      setInventoryActiveTasks([]);
+      setInventoryArchivedTasks([]);
+      return;
+    }
+
+    void loadInventoryTasks({
+      responsibleUserId: selectedInventoryUser.id,
+      storeId: selectedStoreId
+    });
+  }, [activeSubsection, selectedInventoryUser, selectedStoreId]);
 
   async function handleApplyMigrations() {
     setIsApplying(true);
@@ -2122,8 +2300,14 @@ export default function AdminInventoryManager({
       <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Працівники та відповідальні по магазину</h2>
-            <p className="mt-1 text-sm text-slate-600">Можна перевірити, хто зареєстрований на магазин, і перенаправити партію на іншого працівника.</p>
+            <h2 className="text-lg font-semibold text-slate-900">
+              {activeSubsection === 'employee-tasks' ? 'Завдання працівника' : 'Працівники та відповідальні по магазину'}
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              {activeSubsection === 'employee-tasks'
+                ? 'Тут видно активні та архівні задачі по вибраному працівнику з expiry-контролю.'
+                : 'Можна перевірити, хто зареєстрований на магазин, і перенаправити партію на іншого працівника.'}
+            </p>
           </div>
           <select value={selectedStoreId} onChange={(e) => setSelectedStoreId(e.target.value)} className="min-w-[260px] rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand">
             <option value="">Усі магазини</option>
@@ -2166,6 +2350,170 @@ export default function AdminInventoryManager({
             )}
           </div>
 
+          {activeSubsection === 'employee-tasks' ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            {!selectedInventoryUser ? (
+              <p className="text-sm text-slate-600">Оберіть працівника ліворуч, щоб переглянути його задачі.</p>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-base font-semibold text-slate-900">
+                        {selectedInventoryUser.surname} {selectedInventoryUser.name}
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {selectedInventoryUser.positionTitle || 'Посаду ще не вказано'} • {formatInventoryUserRole(selectedInventoryUser.role)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">{selectedInventoryUser.storeLabel || 'Магазин не прив’язано'}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 font-semibold text-slate-700">
+                        Активні: {selectedInventoryUserTaskSummary.totalActive}
+                      </span>
+                      <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 font-semibold text-slate-700">
+                        Архів: {selectedInventoryUserTaskSummary.totalArchived}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Активні задачі</p>
+                      <p className="mt-2 text-3xl font-semibold text-slate-900">{selectedInventoryUserTaskSummary.totalActive}</p>
+                      <p className="mt-1 text-xs text-slate-500">У роботі прямо зараз.</p>
+                    </div>
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-700">Прострочені</p>
+                      <p className="mt-2 text-3xl font-semibold text-rose-900">{selectedInventoryUserTaskSummary.overdueActiveTasks}</p>
+                      <p className="mt-1 text-xs text-rose-700">Потрібна швидка реакція.</p>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Ескалації</p>
+                      <p className="mt-2 text-3xl font-semibold text-amber-900">{selectedInventoryUserTaskSummary.escalatedActiveTasks}</p>
+                      <p className="mt-1 text-xs text-amber-700">Для обговорення або рішення.</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Архівні</p>
+                      <p className="mt-2 text-3xl font-semibold text-slate-900">{selectedInventoryUserTaskSummary.totalArchived}</p>
+                      <p className="mt-1 text-xs text-slate-500">Завершені або скасовані.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {isLoadingInventoryTasks ? (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+                    Завантажуємо задачі працівника...
+                  </div>
+                ) : (
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-semibold text-slate-900">Активні задачі</h3>
+                          <p className="mt-1 text-xs text-slate-500">Відкриті, ескальовані та задачі на списання.</p>
+                        </div>
+                        <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                          {inventoryActiveTasks.length}
+                        </span>
+                      </div>
+
+                      {inventoryActiveTasks.length === 0 ? (
+                        <p className="mt-3 text-sm text-slate-600">Для цього працівника немає активних задач.</p>
+                      ) : (
+                        <div className="mt-3 space-y-3">
+                          {inventoryActiveTasks.map((task) => (
+                            <article key={task.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">{task.productName}</p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    Партія #{task.batchId} • код: {task.batchCode || '—'} • арт.: {task.article || '—'}
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getExpiryTaskStatusClassName(task.status)}`}>
+                                    {formatExpiryTaskStatus(task.status)}
+                                  </span>
+                                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getExpiryTaskRiskClassName(task.riskLevel)}`}>
+                                    {formatExpiryTaskRiskLevel(task.riskLevel)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Термін: {task.dueDate || '—'}</span>
+                                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">{formatDaysLeftLabel(task.daysLeftSnapshot)}</span>
+                                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Магазин: {task.storeLabel || '—'}</span>
+                              </div>
+
+                              <div className="mt-3 grid gap-2 text-xs text-slate-600">
+                                <p>Штрихкоди: <span className="font-semibold text-slate-900">{task.barcode || '—'}</span></p>
+                                <p>Вперше виявлено: <span className="font-semibold text-slate-900">{formatDate(task.firstDetectedAt)}</span></p>
+                                <p>Останнє сповіщення: <span className="font-semibold text-slate-900">{task.lastNotifiedAt ? formatDate(task.lastNotifiedAt) : 'ще не надсилалось'}</span></p>
+                              </div>
+
+                              {task.note ? <p className="mt-3 text-sm whitespace-pre-wrap text-slate-700">{task.note}</p> : null}
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-semibold text-slate-900">Архів задач</h3>
+                          <p className="mt-1 text-xs text-slate-500">Завершені та скасовані задачі по цьому працівнику.</p>
+                        </div>
+                        <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                          {inventoryArchivedTasks.length}
+                        </span>
+                      </div>
+
+                      {inventoryArchivedTasks.length === 0 ? (
+                        <p className="mt-3 text-sm text-slate-600">Архівних задач для цього працівника поки немає.</p>
+                      ) : (
+                        <div className="mt-3 space-y-3">
+                          {inventoryArchivedTasks.map((task) => (
+                            <article key={task.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">{task.productName}</p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    Партія #{task.batchId} • код: {task.batchCode || '—'} • арт.: {task.article || '—'}
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getExpiryTaskStatusClassName(task.status)}`}>
+                                    {formatExpiryTaskStatus(task.status)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+                                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Термін: {task.dueDate || '—'}</span>
+                                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Ризик: {formatExpiryTaskRiskLevel(task.riskLevel)}</span>
+                                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1">Магазин: {task.storeLabel || '—'}</span>
+                              </div>
+
+                              <div className="mt-3 grid gap-2 text-xs text-slate-600">
+                                <p>Завершено: <span className="font-semibold text-slate-900">{task.completedAt ? formatDate(task.completedAt) : '—'}</span></p>
+                                <p>Оновлено: <span className="font-semibold text-slate-900">{formatDate(task.updatedAt)}</span></p>
+                              </div>
+
+                              {task.note ? <p className="mt-3 text-sm whitespace-pre-wrap text-slate-700">{task.note}</p> : null}
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          ) : (
           <div id="registered-employees" className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="flex items-center justify-between gap-3">
@@ -2561,6 +2909,7 @@ export default function AdminInventoryManager({
             )}
           </div>
           </div>
+          )}
         </div>
       </section>
       ) : null}
