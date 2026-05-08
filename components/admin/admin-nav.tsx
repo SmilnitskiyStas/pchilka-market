@@ -117,7 +117,7 @@ export default function AdminNav() {
               { href: '/admin/inventory/batches/written-off', label: 'Списані' }
             ]
           },
-          { label: 'Завдання' },
+          { href: '/admin/inventory/tasks', label: 'Завдання' },
           { href: '/admin/inventory/employees', label: 'Працівники' },
           { label: 'Дії працівників' },
           { href: '/admin/inventory/notifications', label: 'Сповіщення' },
