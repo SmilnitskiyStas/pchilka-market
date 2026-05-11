@@ -972,19 +972,47 @@ export default function AdminInventoryManager({
 
     const totalCreatedQuantity = createdBatches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
     const totalResponsibleQuantity = responsibleBatches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
-    const overdueResponsible = responsibleBatches.filter((batch) => daysLeftUntil(batch.expiryDate) < 0);
-    const expiringResponsible = responsibleBatches.filter((batch) => {
-      const daysLeft = daysLeftUntil(batch.expiryDate);
-      return daysLeft >= 0 && daysLeft <= Number(batch.notifiedDays || 7);
-    });
-    const discussionResponsible = responsibleBatches.filter(
-      (batch) => batch.discussionRequired || batch.checkStatus === 'discussion'
+
+    const responsibleBuckets = responsibleBatches.reduce(
+      (acc, batch) => {
+        const daysLeft = daysLeftUntil(batch.expiryDate);
+        const isCompleted =
+          batch.checkStatus === 'checked' || batch.checkStatus === 'writeoff' || batch.actionTaken === 'writeoff';
+        const isDiscussion = batch.discussionRequired || batch.checkStatus === 'discussion';
+        const isOverdue = daysLeft < 0;
+        const isExpiring = daysLeft >= 0 && daysLeft <= Number(batch.notifiedDays || 7);
+
+        if (isCompleted) {
+          acc.completed.push(batch);
+        } else if (isDiscussion) {
+          acc.discussion.push(batch);
+        } else if (isOverdue) {
+          acc.overdue.push(batch);
+        } else if (isExpiring) {
+          acc.expiring.push(batch);
+        } else if (batch.checkStatus === 'new') {
+          acc.pending.push(batch);
+        }
+
+        return acc;
+      },
+      {
+        overdue: [] as InventoryBatchRecord[],
+        expiring: [] as InventoryBatchRecord[],
+        discussion: [] as InventoryBatchRecord[],
+        completed: [] as InventoryBatchRecord[],
+        pending: [] as InventoryBatchRecord[]
+      }
     );
-    const completedResponsible = responsibleBatches.filter(
-      (batch) => batch.checkStatus === 'checked' || batch.checkStatus === 'writeoff' || batch.actionTaken === 'writeoff'
-    );
-    const pendingResponsible = responsibleBatches.filter((batch) => batch.checkStatus === 'new');
-    const completionRatio = getTaskCompletionRatio(completedResponsible.length, responsibleBatches.length);
+
+    const overdueResponsible = responsibleBuckets.overdue;
+    const expiringResponsible = responsibleBuckets.expiring;
+    const discussionResponsible = responsibleBuckets.discussion;
+    const completedResponsible = responsibleBuckets.completed;
+    const pendingResponsible = responsibleBuckets.pending;
+    const attentionRequiredCount =
+      overdueResponsible.length + expiringResponsible.length + discussionResponsible.length + completedResponsible.length;
+    const completionRatio = getTaskCompletionRatio(completedResponsible.length, attentionRequiredCount);
     const latestManualProductAt = selectedInventoryUserCreatedProducts[0]?.createdAt || '';
     const latestCreatedBatchAt = [...createdBatches]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -1029,6 +1057,7 @@ export default function AdminInventoryManager({
       discussionResponsibleCount: discussionResponsible.length,
       completedResponsibleCount: completedResponsible.length,
       pendingResponsibleCount: pendingResponsible.length,
+      attentionRequiredCount,
       completionRatio,
       latestManualProductAt,
       latestCreatedBatchAt,
@@ -2578,7 +2607,9 @@ export default function AdminInventoryManager({
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Продуктивність</p>
                         <p className="mt-3 text-3xl font-semibold text-slate-900">{selectedInventoryUserStats.completionRatio}%</p>
-                        <p className="mt-1 text-xs text-slate-500">Завершено: {selectedInventoryUserStats.completedResponsibleCount} з {selectedInventoryUserStats.responsibleBatchesCount}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Завершено: {selectedInventoryUserStats.completedResponsibleCount} з {selectedInventoryUserStats.attentionRequiredCount} позицій, що потребували уваги
+                        </p>
                       </div>
                     </div>
                   ) : null}
