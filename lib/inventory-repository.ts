@@ -256,6 +256,7 @@ async function ensureBatchChecksTable() {
     CREATE TABLE IF NOT EXISTS batch_checks (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
       batch_id BIGINT UNSIGNED NOT NULL,
+      task_id BIGINT UNSIGNED NULL,
       product_id BIGINT UNSIGNED NOT NULL,
       store_id BIGINT UNSIGNED NOT NULL,
       user_id BIGINT UNSIGNED NOT NULL,
@@ -268,6 +269,7 @@ async function ensureBatchChecksTable() {
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       KEY idx_batch_checks_batch (batch_id),
+      KEY idx_batch_checks_task (task_id),
       KEY idx_batch_checks_product (product_id),
       KEY idx_batch_checks_store (store_id),
       KEY idx_batch_checks_user (user_id),
@@ -275,6 +277,9 @@ async function ensureBatchChecksTable() {
       CONSTRAINT fk_batch_checks_batch
         FOREIGN KEY (batch_id) REFERENCES product_batches(id)
         ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_batch_checks_task
+        FOREIGN KEY (task_id) REFERENCES expiry_tasks(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
       CONSTRAINT fk_batch_checks_product
         FOREIGN KEY (product_id) REFERENCES products(id)
         ON DELETE CASCADE ON UPDATE CASCADE,
@@ -286,6 +291,26 @@ async function ensureBatchChecksTable() {
         ON DELETE CASCADE ON UPDATE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  const columns = await listTableColumns('batch_checks');
+  if (!columns.has('task_id')) {
+    await pool.query('ALTER TABLE batch_checks ADD COLUMN task_id BIGINT UNSIGNED NULL AFTER batch_id');
+  }
+
+  const indexes = await listTableIndexes('batch_checks');
+  if (!indexes.has('idx_batch_checks_task')) {
+    await pool.query('ALTER TABLE batch_checks ADD KEY idx_batch_checks_task (task_id)');
+  }
+
+  const constraints = await listTableConstraints('batch_checks');
+  if (!constraints.has('fk_batch_checks_task')) {
+    await pool.query(`
+      ALTER TABLE batch_checks
+      ADD CONSTRAINT fk_batch_checks_task
+      FOREIGN KEY (task_id) REFERENCES expiry_tasks(id)
+      ON DELETE SET NULL ON UPDATE CASCADE
+    `);
+  }
 }
 
 async function ensureExpiryTasksTable() {
@@ -297,17 +322,24 @@ async function ensureExpiryTasksTable() {
       product_id BIGINT UNSIGNED NOT NULL,
       store_id BIGINT UNSIGNED NOT NULL,
       responsible_user_id BIGINT UNSIGNED NULL,
+      assigned_user_id BIGINT UNSIGNED NULL,
+      source_type VARCHAR(40) NOT NULL DEFAULT 'system',
       task_type VARCHAR(50) NOT NULL DEFAULT 'expiry_check',
       status VARCHAR(40) NOT NULL DEFAULT 'open',
+      outcome VARCHAR(60) NULL,
       risk_level VARCHAR(20) NOT NULL DEFAULT 'medium',
       due_date DATE NOT NULL,
       days_left_snapshot INT NOT NULL DEFAULT 0,
       title VARCHAR(255) NOT NULL,
       note TEXT NULL,
+      resolution_note TEXT NULL,
+      created_by_user_id BIGINT UNSIGNED NULL,
+      started_at DATETIME NULL,
       first_detected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       last_detected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       last_notified_at DATETIME NULL,
       completed_at DATETIME NULL,
+      completed_by_user_id BIGINT UNSIGNED NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -315,6 +347,7 @@ async function ensureExpiryTasksTable() {
       KEY idx_expiry_tasks_product (product_id),
       KEY idx_expiry_tasks_store (store_id),
       KEY idx_expiry_tasks_responsible_user (responsible_user_id),
+      KEY idx_expiry_tasks_assigned_user (assigned_user_id),
       KEY idx_expiry_tasks_status_due_date (status, due_date),
       KEY idx_expiry_tasks_task_type_status (task_type, status),
       CONSTRAINT fk_expiry_tasks_batch
@@ -328,9 +361,114 @@ async function ensureExpiryTasksTable() {
         ON DELETE CASCADE ON UPDATE CASCADE,
       CONSTRAINT fk_expiry_tasks_responsible_user
         FOREIGN KEY (responsible_user_id) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT fk_expiry_tasks_assigned_user
+        FOREIGN KEY (assigned_user_id) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT fk_expiry_tasks_created_by_user
+        FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT fk_expiry_tasks_completed_by_user
+        FOREIGN KEY (completed_by_user_id) REFERENCES users(id)
         ON DELETE SET NULL ON UPDATE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  const columns = await listTableColumns('expiry_tasks');
+  const statements: string[] = [];
+
+  if (!columns.has('assigned_user_id')) {
+    statements.push('ALTER TABLE expiry_tasks ADD COLUMN assigned_user_id BIGINT UNSIGNED NULL AFTER responsible_user_id');
+  }
+  if (!columns.has('source_type')) {
+    statements.push("ALTER TABLE expiry_tasks ADD COLUMN source_type VARCHAR(40) NOT NULL DEFAULT 'system' AFTER assigned_user_id");
+  }
+  if (!columns.has('outcome')) {
+    statements.push('ALTER TABLE expiry_tasks ADD COLUMN outcome VARCHAR(60) NULL AFTER status');
+  }
+  if (!columns.has('resolution_note')) {
+    statements.push('ALTER TABLE expiry_tasks ADD COLUMN resolution_note TEXT NULL AFTER note');
+  }
+  if (!columns.has('created_by_user_id')) {
+    statements.push('ALTER TABLE expiry_tasks ADD COLUMN created_by_user_id BIGINT UNSIGNED NULL AFTER resolution_note');
+  }
+  if (!columns.has('started_at')) {
+    statements.push('ALTER TABLE expiry_tasks ADD COLUMN started_at DATETIME NULL AFTER created_by_user_id');
+  }
+  if (!columns.has('completed_by_user_id')) {
+    statements.push('ALTER TABLE expiry_tasks ADD COLUMN completed_by_user_id BIGINT UNSIGNED NULL AFTER completed_at');
+  }
+
+  for (const statement of statements) {
+    await pool.query(statement);
+  }
+
+  const refreshedColumns = await listTableColumns('expiry_tasks');
+  if (refreshedColumns.has('assigned_user_id') && refreshedColumns.has('responsible_user_id')) {
+    await pool.query(`
+      UPDATE expiry_tasks
+      SET assigned_user_id = responsible_user_id
+      WHERE assigned_user_id IS NULL AND responsible_user_id IS NOT NULL
+    `);
+  }
+  if (refreshedColumns.has('source_type')) {
+    await pool.query(`
+      UPDATE expiry_tasks
+      SET source_type = 'system'
+      WHERE TRIM(COALESCE(source_type, '')) = ''
+    `);
+  }
+  if (refreshedColumns.has('outcome')) {
+    await pool.query(`
+      UPDATE expiry_tasks
+      SET outcome = CASE
+        WHEN status = 'escalated' THEN 'manager_review'
+        WHEN status = 'writeoff_pending' THEN 'writeoff_required'
+        WHEN status = 'completed' AND outcome IS NULL THEN 'checked_ok'
+        ELSE outcome
+      END
+      WHERE status IN ('escalated', 'writeoff_pending', 'completed')
+    `);
+  }
+  await pool.query(`
+    UPDATE expiry_tasks
+    SET status = CASE
+      WHEN status IN ('escalated', 'writeoff_pending') THEN 'open'
+      ELSE status
+    END
+    WHERE status IN ('escalated', 'writeoff_pending')
+  `);
+
+  const indexes = await listTableIndexes('expiry_tasks');
+  if (!indexes.has('idx_expiry_tasks_assigned_user')) {
+    await pool.query('ALTER TABLE expiry_tasks ADD KEY idx_expiry_tasks_assigned_user (assigned_user_id)');
+  }
+
+  const constraints = await listTableConstraints('expiry_tasks');
+  if (!constraints.has('fk_expiry_tasks_assigned_user')) {
+    await pool.query(`
+      ALTER TABLE expiry_tasks
+      ADD CONSTRAINT fk_expiry_tasks_assigned_user
+      FOREIGN KEY (assigned_user_id) REFERENCES users(id)
+      ON DELETE SET NULL ON UPDATE CASCADE
+    `);
+  }
+  if (!constraints.has('fk_expiry_tasks_created_by_user')) {
+    await pool.query(`
+      ALTER TABLE expiry_tasks
+      ADD CONSTRAINT fk_expiry_tasks_created_by_user
+      FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+      ON DELETE SET NULL ON UPDATE CASCADE
+    `);
+  }
+  if (!constraints.has('fk_expiry_tasks_completed_by_user')) {
+    await pool.query(`
+      ALTER TABLE expiry_tasks
+      ADD CONSTRAINT fk_expiry_tasks_completed_by_user
+      FOREIGN KEY (completed_by_user_id) REFERENCES users(id)
+      ON DELETE SET NULL ON UPDATE CASCADE
+    `);
+  }
 }
 
 async function ensureInventoryCountSessionsTable() {
@@ -463,6 +601,9 @@ async function ensureNotificationLogsTable() {
       user_id BIGINT UNSIGNED NULL,
       notification_type VARCHAR(80) NOT NULL,
       message_text TEXT NOT NULL,
+      status VARCHAR(40) NOT NULL DEFAULT 'sent',
+      opened_at DATETIME NULL,
+      opened_by_user_id BIGINT UNSIGNED NULL,
       sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       KEY idx_notification_logs_task (task_id),
@@ -470,6 +611,7 @@ async function ensureNotificationLogsTable() {
       KEY idx_notification_logs_product (product_id),
       KEY idx_notification_logs_store (store_id),
       KEY idx_notification_logs_user (user_id),
+      KEY idx_notification_logs_opened_by_user (opened_by_user_id),
       KEY idx_notification_logs_type_sent_at (notification_type, sent_at),
       CONSTRAINT fk_notification_logs_task
         FOREIGN KEY (task_id) REFERENCES expiry_tasks(id)
@@ -485,6 +627,9 @@ async function ensureNotificationLogsTable() {
         ON DELETE SET NULL ON UPDATE CASCADE,
       CONSTRAINT fk_notification_logs_user
         FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT fk_notification_logs_opened_by_user
+        FOREIGN KEY (opened_by_user_id) REFERENCES users(id)
         ON DELETE SET NULL ON UPDATE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
@@ -493,10 +638,22 @@ async function ensureNotificationLogsTable() {
   if (!columns.has('task_id')) {
     await pool.query('ALTER TABLE notification_logs ADD COLUMN task_id BIGINT UNSIGNED NULL AFTER id');
   }
+  if (!columns.has('status')) {
+    await pool.query("ALTER TABLE notification_logs ADD COLUMN status VARCHAR(40) NOT NULL DEFAULT 'sent' AFTER message_text");
+  }
+  if (!columns.has('opened_at')) {
+    await pool.query('ALTER TABLE notification_logs ADD COLUMN opened_at DATETIME NULL AFTER status');
+  }
+  if (!columns.has('opened_by_user_id')) {
+    await pool.query('ALTER TABLE notification_logs ADD COLUMN opened_by_user_id BIGINT UNSIGNED NULL AFTER opened_at');
+  }
 
   const indexes = await listTableIndexes('notification_logs');
   if (!indexes.has('idx_notification_logs_task')) {
     await pool.query('ALTER TABLE notification_logs ADD KEY idx_notification_logs_task (task_id)');
+  }
+  if (!indexes.has('idx_notification_logs_opened_by_user')) {
+    await pool.query('ALTER TABLE notification_logs ADD KEY idx_notification_logs_opened_by_user (opened_by_user_id)');
   }
 
   const constraints = await listTableConstraints('notification_logs');
@@ -505,6 +662,14 @@ async function ensureNotificationLogsTable() {
       ALTER TABLE notification_logs
       ADD CONSTRAINT fk_notification_logs_task
       FOREIGN KEY (task_id) REFERENCES expiry_tasks(id)
+      ON DELETE SET NULL ON UPDATE CASCADE
+    `);
+  }
+  if (!constraints.has('fk_notification_logs_opened_by_user')) {
+    await pool.query(`
+      ALTER TABLE notification_logs
+      ADD CONSTRAINT fk_notification_logs_opened_by_user
+      FOREIGN KEY (opened_by_user_id) REFERENCES users(id)
       ON DELETE SET NULL ON UPDATE CASCADE
     `);
   }

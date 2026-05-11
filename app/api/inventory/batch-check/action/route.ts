@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { createInventoryActivityLogInDb } from '@/lib/inventory-activity-logs-repository';
 import { createInventoryBatchCheckInDb } from '@/lib/inventory-batch-checks-repository';
 import { findInventoryBatchByIdInDb, updateInventoryBatchCheckActionInDb } from '@/lib/inventory-batches-repository';
+import { completeInventoryExpiryTaskInDb, findInventoryExpiryTaskByIdInDb } from '@/lib/inventory-expiry-tasks-repository';
 import { parseInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
 import { findInventoryUserByChatId } from '@/lib/inventory-users-repository';
@@ -12,6 +13,7 @@ export const runtime = 'nodejs';
 type ActionPayload = {
   token?: string;
   batchId?: string;
+  taskId?: string;
   action?: 'checked' | 'writeoff' | 'discussion_required';
   countedQuantity?: number | null;
   itemCondition?: string;
@@ -60,6 +62,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as ActionPayload;
     const token = String(body.token ?? '').trim();
     const batchId = String(body.batchId ?? '').trim();
+    const taskId = String(body.taskId ?? '').trim();
     const action = body.action;
     const note = String(body.note ?? '').trim();
     const itemCondition = String(body.itemCondition ?? '').trim();
@@ -101,6 +104,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Немає доступу до партії іншого магазину.' }, { status: 403 });
     }
 
+    if (taskId) {
+      const task = await findInventoryExpiryTaskByIdInDb(taskId);
+      if (!task || String(task.batchId) !== String(existingBatch.id) || Number(task.storeId) !== Number(user.storeId)) {
+        return NextResponse.json({ ok: false, error: 'Завдання не знайдено або воно не відповідає цій партії.' }, { status: 404 });
+      }
+    }
+
     const snapshotNote = buildSnapshotNote({
       countedQuantity,
       itemCondition,
@@ -118,6 +128,7 @@ export async function POST(request: Request) {
 
     await createInventoryBatchCheckInDb({
       batchId: Number(batch.id),
+      taskId: taskId ? Number(taskId) : null,
       productId: Number(batch.productId),
       storeId: Number(batch.storeId),
       userId: user.id,
@@ -139,6 +150,24 @@ export async function POST(request: Request) {
       oldQuantity: batch.quantityCurrent,
       newQuantity: countedQuantity
     });
+
+    if (taskId) {
+      const taskOutcome =
+        safeAction === 'writeoff'
+          ? 'writeoff_required'
+          : safeAction === 'discussion_required'
+            ? 'manager_review'
+            : issueReason === 'quantity_mismatch'
+              ? 'quantity_mismatch'
+              : 'checked_ok';
+
+      await completeInventoryExpiryTaskInDb({
+        taskId,
+        completedByUserId: user.id,
+        outcome: taskOutcome,
+        resolutionNote: snapshotNote || null
+      });
+    }
 
     return NextResponse.json({ ok: true, batch });
   } catch (error) {

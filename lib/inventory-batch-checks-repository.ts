@@ -7,6 +7,7 @@ type InventoryDbExecutor = Pool | PoolConnection;
 type BatchCheckRow = RowDataPacket & {
   id: number;
   batch_id: number;
+  task_id: number | null;
   product_id: number;
   store_id: number;
   user_id: number;
@@ -24,6 +25,7 @@ type BatchCheckRow = RowDataPacket & {
 export type InventoryBatchCheckRecord = {
   id: number;
   batchId: number;
+  taskId: number | null;
   productId: number;
   storeId: number;
   userId: number;
@@ -47,6 +49,7 @@ function mapRow(row: BatchCheckRow): InventoryBatchCheckRecord {
   return {
     id: row.id,
     batchId: row.batch_id,
+    taskId: row.task_id ?? null,
     productId: row.product_id,
     storeId: row.store_id,
     userId: row.user_id,
@@ -64,6 +67,7 @@ function mapRow(row: BatchCheckRow): InventoryBatchCheckRecord {
 export async function createInventoryBatchCheckInDb(
   input: {
     batchId: number;
+    taskId?: number | null;
     productId: number;
     storeId: number;
     userId: number;
@@ -84,6 +88,7 @@ export async function createInventoryBatchCheckInDb(
     `
       INSERT INTO batch_checks (
         batch_id,
+        task_id,
         product_id,
         store_id,
         user_id,
@@ -93,10 +98,11 @@ export async function createInventoryBatchCheckInDb(
         issue_reason,
         note,
         photo_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       input.batchId,
+      input.taskId ?? null,
       input.productId,
       input.storeId,
       input.userId,
@@ -127,6 +133,7 @@ export async function listInventoryBatchChecksForBatchInDb(
       SELECT
         bc.id,
         bc.batch_id,
+        bc.task_id,
         bc.product_id,
         bc.store_id,
         bc.user_id,

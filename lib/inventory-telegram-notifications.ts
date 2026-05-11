@@ -6,10 +6,10 @@ import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-set
 import { type InventoryUserRole } from '@/lib/inventory-user-roles';
 import { listInventoryUsersFromDb, type InventoryUserRecord } from '@/lib/inventory-users-repository';
 
-function buildInventoryBatchCheckUrl(baseUrl: string, token: string, batchId: string) {
-  const url = new URL('/inventory/batch-check', baseUrl);
+function buildInventoryTasksUrl(baseUrl: string, token: string, notificationId: string) {
+  const url = new URL('/inventory/tasks', baseUrl);
   url.searchParams.set('token', token);
-  url.searchParams.set('batchId', batchId);
+  url.searchParams.set('notificationId', notificationId);
   return url.toString();
 }
 
@@ -149,7 +149,7 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
         settings.webhookSecret,
         1000 * 60 * 60 * 24 * 7
       );
-      const batchUrl = buildInventoryBatchCheckUrl(settings.publicBaseUrl, token, String(task.batchId));
+      const tasksUrl = buildInventoryTasksUrl(settings.publicBaseUrl, token, String(task.id));
       const reminderPrefix = task.reminderKind === 'repeat' ? 'Повторне нагадування.\n' : '';
       const text = reminderPrefix +
         `Потрібно перевірити товар у магазині ${task.storeLabel}.\n` +
@@ -167,7 +167,7 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
           chatId: recipient.userChatId,
           text,
           buttonText: 'Перевірити товар',
-          buttonUrl: batchUrl
+          buttonUrl: tasksUrl
         });
 
         await createInventoryNotificationLogInDb({

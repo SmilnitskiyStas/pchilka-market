@@ -128,6 +128,7 @@ function getActionRequirements(action: BatchAction | null) {
 export default function InventoryBatchCheckPage() {
   const [token, setToken] = useState('');
   const [batchId, setBatchId] = useState('');
+  const [taskId, setTaskId] = useState('');
   const [role, setRole] = useState<InventoryUserRole>('staff');
   const [batch, setBatch] = useState<BatchView | null>(null);
   const [checks, setChecks] = useState<BatchCheckView[]>([]);
@@ -149,14 +150,16 @@ export default function InventoryBatchCheckPage() {
     const url = new URL(window.location.href);
     const nextToken = url.searchParams.get('token') ?? '';
     const nextBatchId = url.searchParams.get('batchId') ?? '';
+    const nextTaskId = url.searchParams.get('taskId') ?? '';
     setToken(nextToken);
     setBatchId(nextBatchId);
+    setTaskId(nextTaskId);
 
     async function load() {
       setIsLoading(true);
       try {
         const response = await fetch(
-          `/api/inventory/batch-check/context?token=${encodeURIComponent(nextToken)}&batchId=${encodeURIComponent(nextBatchId)}`,
+          `/api/inventory/batch-check/context?token=${encodeURIComponent(nextToken)}&batchId=${encodeURIComponent(nextBatchId)}&taskId=${encodeURIComponent(nextTaskId)}`,
           { cache: 'no-store' }
         );
         const payload = (await response.json()) as Payload;
@@ -259,6 +262,7 @@ export default function InventoryBatchCheckPage() {
         body: JSON.stringify({
           token,
           batchId,
+          taskId,
           action,
           countedQuantity: parsedCountedQuantity,
           itemCondition,
@@ -279,7 +283,7 @@ export default function InventoryBatchCheckPage() {
       setActionNote('');
 
       const refreshResponse = await fetch(
-        `/api/inventory/batch-check/context?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(batchId)}`,
+        `/api/inventory/batch-check/context?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(batchId)}&taskId=${encodeURIComponent(taskId)}`,
         { cache: 'no-store' }
       );
       const refreshPayload = (await refreshResponse.json()) as Payload;
@@ -577,6 +581,15 @@ export default function InventoryBatchCheckPage() {
             </div>
           </div>
         ) : null}
+
+        <div className="mt-4">
+          <a
+            href={`/inventory/tasks?token=${encodeURIComponent(token)}`}
+            className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Повернутися до списку задач
+          </a>
+        </div>
 
         {role === 'manager' || role === 'store_manager' || role === 'admin' ? (
           <div className="mt-4 flex justify-end">
