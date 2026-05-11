@@ -49,6 +49,11 @@ type Payload = {
 };
 
 type BatchAction = 'checked' | 'writeoff' | 'discussion_required';
+type BatchCheckFieldErrors = {
+  countedQuantity?: string;
+  itemCondition?: string;
+  issueReason?: string;
+};
 
 const ITEM_CONDITIONS = [
   { value: 'ok', label: 'Нормальний стан' },
@@ -112,6 +117,14 @@ function getIssueReasonLabel(value: string) {
   return ISSUE_REASONS.find((item) => item.value === value)?.label || value || '—';
 }
 
+function getActionRequirements(action: BatchAction | null) {
+  return {
+    requiresCountedQuantity: action != null,
+    requiresItemCondition: action != null,
+    requiresIssueReason: action === 'writeoff' || action === 'discussion_required'
+  };
+}
+
 export default function InventoryBatchCheckPage() {
   const [token, setToken] = useState('');
   const [batchId, setBatchId] = useState('');
@@ -122,6 +135,8 @@ export default function InventoryBatchCheckPage() {
   const [itemCondition, setItemCondition] = useState('ok');
   const [issueReason, setIssueReason] = useState('');
   const [actionNote, setActionNote] = useState('');
+  const [selectedAction, setSelectedAction] = useState<BatchAction | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<BatchCheckFieldErrors>({});
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoUrl, setPhotoUrl] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -196,8 +211,40 @@ export default function InventoryBatchCheckPage() {
     }
   }
 
+  function validateForm(action: BatchAction): BatchCheckFieldErrors {
+    const nextErrors: BatchCheckFieldErrors = {};
+    const { requiresCountedQuantity, requiresItemCondition, requiresIssueReason } = getActionRequirements(action);
+    const parsedCountedQuantity = countedQuantity.trim() === '' ? null : Number(countedQuantity);
+
+    if (
+      requiresCountedQuantity &&
+      (parsedCountedQuantity == null || !Number.isFinite(parsedCountedQuantity) || parsedCountedQuantity < 0)
+    ) {
+      nextErrors.countedQuantity = 'Вкажіть фактичну кількість товару.';
+    }
+
+    if (requiresItemCondition && !itemCondition.trim()) {
+      nextErrors.itemCondition = 'Вкажіть стан товару.';
+    }
+
+    if (requiresIssueReason && !issueReason.trim()) {
+      nextErrors.issueReason = 'Для цієї дії потрібно вказати причину проблеми.';
+    }
+
+    return nextErrors;
+  }
+
   async function handleBatchAction(action: BatchAction) {
     if (!token || !batchId || !batch) return;
+
+    setSelectedAction(action);
+    const nextErrors = validateForm(action);
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      setError('Заповніть обов’язкові поля, які підсвічені нижче.');
+      setSuccess('');
+      return;
+    }
 
     setIsSaving(true);
     setError('');
@@ -227,6 +274,7 @@ export default function InventoryBatchCheckPage() {
 
       setBatch(payload.batch);
       setSuccess(`Перевірку збережено: ${getActionLabel(action)}.`);
+      setFieldErrors({});
       setPhotoFile(null);
       setActionNote('');
 
@@ -246,6 +294,7 @@ export default function InventoryBatchCheckPage() {
   }
 
   const daysLeft = batch ? daysLeftUntil(batch.expiryDate) : 0;
+  const actionRequirements = getActionRequirements(selectedAction);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl items-start justify-center px-4 py-8 sm:px-6 lg:px-8">
@@ -351,30 +400,70 @@ export default function InventoryBatchCheckPage() {
                 Працівник вказує фактичну кількість, стан товару, причину проблеми, коментар і за потреби фото.
               </p>
 
+              {selectedAction ? (
+                <div className="mt-4 rounded-xl border border-brand/20 bg-brand/5 p-4 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-900">Вибрана дія: {getActionLabel(selectedAction)}</p>
+                  <p className="mt-2">
+                    Обов’язково заповнити:{' '}
+                    {[
+                      actionRequirements.requiresCountedQuantity ? 'фактичну кількість' : '',
+                      actionRequirements.requiresItemCondition ? 'стан товару' : '',
+                      actionRequirements.requiresIssueReason ? 'причину проблеми' : ''
+                    ]
+                      .filter(Boolean)
+                      .join(', ')}
+                    .
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  Спочатку оберіть дію нижче. Після цього форма підкаже, які поля є обов’язковими.
+                </div>
+              )}
+
               <div className="mt-4 space-y-4">
                 <div>
                   <label className="block text-sm font-semibold text-slate-900" htmlFor="counted-quantity">
                     Фактична кількість
+                    {actionRequirements.requiresCountedQuantity ? <span className="ml-1 text-red-600">*</span> : null}
                   </label>
                   <input
                     id="counted-quantity"
                     type="number"
                     min={0}
                     value={countedQuantity}
-                    onChange={(event) => setCountedQuantity(event.target.value)}
-                    className="mt-1.5 w-full rounded-2xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
+                    onChange={(event) => {
+                      setCountedQuantity(event.target.value);
+                      if (fieldErrors.countedQuantity) {
+                        setFieldErrors((prev) => ({ ...prev, countedQuantity: undefined }));
+                      }
+                    }}
+                    className={`mt-1.5 w-full rounded-2xl border p-3 text-sm outline-none transition focus:border-brand ${
+                      fieldErrors.countedQuantity ? 'border-red-300 bg-red-50' : 'border-slate-300'
+                    }`}
                   />
+                  {fieldErrors.countedQuantity ? (
+                    <p className="mt-1.5 text-xs font-semibold text-red-700">{fieldErrors.countedQuantity}</p>
+                  ) : null}
                 </div>
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-900" htmlFor="item-condition">
                     Стан товару
+                    {actionRequirements.requiresItemCondition ? <span className="ml-1 text-red-600">*</span> : null}
                   </label>
                   <select
                     id="item-condition"
                     value={itemCondition}
-                    onChange={(event) => setItemCondition(event.target.value)}
-                    className="mt-1.5 w-full rounded-2xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
+                    onChange={(event) => {
+                      setItemCondition(event.target.value);
+                      if (fieldErrors.itemCondition) {
+                        setFieldErrors((prev) => ({ ...prev, itemCondition: undefined }));
+                      }
+                    }}
+                    className={`mt-1.5 w-full rounded-2xl border p-3 text-sm outline-none transition focus:border-brand ${
+                      fieldErrors.itemCondition ? 'border-red-300 bg-red-50' : 'border-slate-300'
+                    }`}
                   >
                     {ITEM_CONDITIONS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -382,6 +471,9 @@ export default function InventoryBatchCheckPage() {
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.itemCondition ? (
+                    <p className="mt-1.5 text-xs font-semibold text-red-700">{fieldErrors.itemCondition}</p>
+                  ) : null}
                 </div>
 
                 <div>
@@ -391,8 +483,15 @@ export default function InventoryBatchCheckPage() {
                   <select
                     id="issue-reason"
                     value={issueReason}
-                    onChange={(event) => setIssueReason(event.target.value)}
-                    className="mt-1.5 w-full rounded-2xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
+                    onChange={(event) => {
+                      setIssueReason(event.target.value);
+                      if (fieldErrors.issueReason) {
+                        setFieldErrors((prev) => ({ ...prev, issueReason: undefined }));
+                      }
+                    }}
+                    className={`mt-1.5 w-full rounded-2xl border p-3 text-sm outline-none transition focus:border-brand ${
+                      fieldErrors.issueReason ? 'border-red-300 bg-red-50' : 'border-slate-300'
+                    }`}
                   >
                     <option value="">Без проблеми / не вказано</option>
                     {ISSUE_REASONS.map((option) => (
@@ -401,6 +500,9 @@ export default function InventoryBatchCheckPage() {
                       </option>
                     ))}
                   </select>
+                  {fieldErrors.issueReason ? (
+                    <p className="mt-1.5 text-xs font-semibold text-red-700">{fieldErrors.issueReason}</p>
+                  ) : null}
                 </div>
 
                 <div>
@@ -439,7 +541,10 @@ export default function InventoryBatchCheckPage() {
                 <div className="grid gap-3 pt-2">
                   <button
                     type="button"
-                    onClick={() => void handleBatchAction('checked')}
+                    onClick={() => {
+                      setSelectedAction('checked');
+                      void handleBatchAction('checked');
+                    }}
                     disabled={isSaving || isUploadingPhoto}
                     className="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-60"
                   >
@@ -447,7 +552,10 @@ export default function InventoryBatchCheckPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void handleBatchAction('writeoff')}
+                    onClick={() => {
+                      setSelectedAction('writeoff');
+                      void handleBatchAction('writeoff');
+                    }}
                     disabled={isSaving || isUploadingPhoto}
                     className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
                   >
@@ -455,7 +563,10 @@ export default function InventoryBatchCheckPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void handleBatchAction('discussion_required')}
+                    onClick={() => {
+                      setSelectedAction('discussion_required');
+                      void handleBatchAction('discussion_required');
+                    }}
                     disabled={isSaving || isUploadingPhoto}
                     className="rounded-2xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-60"
                   >
