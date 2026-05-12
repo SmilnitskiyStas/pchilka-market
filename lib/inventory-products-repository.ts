@@ -198,6 +198,40 @@ async function hasManualInventoryProductCreationInDb(productId: number, executor
   return Boolean(rows[0]);
 }
 
+async function findInventoryProductBarcodeConflictForImportInDb(
+  productId: number,
+  barcodeEntries: InventoryBarcodeEntry[],
+  executor: InventoryDbExecutor
+) {
+  const barcodes = barcodeEntries.filter((item) => item.barcode).map((item) => item.barcode);
+  if (barcodes.length === 0) return null;
+
+  const placeholders = barcodes.map(() => '?').join(', ');
+  const [rows] = await executor.query<
+    Array<
+      RowDataPacket & {
+        barcode: string;
+        product_id: number;
+        article: string | null;
+        product_name: string | null;
+      }
+    >
+  >(
+    `
+      SELECT pb.barcode, pb.product_id, p.article, p.product_name
+      FROM product_barcodes pb
+      INNER JOIN products p ON p.id = pb.product_id
+      WHERE pb.barcode IN (${placeholders})
+        AND pb.product_id <> ?
+      ORDER BY pb.id ASC
+      LIMIT 1
+    `,
+    [...barcodes, productId]
+  );
+
+  return rows[0] ?? null;
+}
+
 export async function mergeInventoryProductsInDb(
   input: {
     sourceProductId: number;
@@ -746,6 +780,33 @@ export async function importInventoryProductsToDb(
     const nextBarcodeEntries = Array.from(nextBarcodeEntriesMap.values());
     const nextBarcodes = nextBarcodeEntries.map((item: InventoryBarcodeEntry) => item.barcode);
     const nextBarcode = nextBarcodes[0] ?? null;
+    const barcodeSetConflict = await findInventoryProductBarcodeConflictForImportInDb(existing.id, nextBarcodeEntries, db);
+    if (barcodeSetConflict) {
+      await queueInventoryProductImportReviewInDb(
+        {
+          productId: existing.id,
+          article: normalized.article,
+          productName: normalized.productName,
+          existingBarcode: barcodeSetConflict.barcode,
+          incomingBarcode: normalized.barcode,
+          issueType: 'barcode_conflict',
+          note: `The product update was skipped because barcode ${barcodeSetConflict.barcode} already belongs to product #${barcodeSetConflict.product_id}. The conflict was found in the current barcode set stored in the database.`
+        },
+        db
+      );
+      skipped += 1;
+      needsReview += 1;
+      log.push({
+        rowNumber,
+        article: normalized.article,
+        productName: normalized.productName,
+        barcode: normalized.barcode,
+        unitsOfMeasurement: normalized.unitsOfMeasurement,
+        status: 'review',
+        message: `Потрібна перевірка: під час оновлення товару виявлено конфліктний баркод ${barcodeSetConflict.barcode}, який уже прив’язаний до іншого товару в базі.`
+      });
+      continue;
+    }
     const nextDefaultUnitsOfMeasurement =
       normalized.barcodeEntries.length === 0
         ? normalized.unitsOfMeasurement
