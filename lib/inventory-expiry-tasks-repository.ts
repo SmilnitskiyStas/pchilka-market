@@ -239,7 +239,7 @@ export async function syncInventoryExpiryTasksInDb() {
             days_left_snapshot,
             title,
             note
-          ) VALUES (?, ?, ?, ?, ?, 'system', 'expiry_check', ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, 'system', 'expiry_check', ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           batchId,
