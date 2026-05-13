@@ -848,9 +848,11 @@ export default function AdminInventoryManager({
     const rangeStart = analyticsDateFrom && analyticsDateTo && analyticsDateFrom > analyticsDateTo ? analyticsDateTo : analyticsDateFrom;
     const rangeEnd = analyticsDateFrom && analyticsDateTo && analyticsDateFrom > analyticsDateTo ? analyticsDateFrom : analyticsDateTo;
 
-    const relevantBatches = (analyticsStoreId
+    const scopedBatches = analyticsStoreId
       ? batches.filter((batch) => String(batch.storeId) === analyticsStoreId)
-      : batches).filter((batch) => {
+      : batches;
+
+    const relevantBatches = scopedBatches.filter((batch) => {
       if (!rangeStart && !rangeEnd) return true;
       const expiryDate = String(batch.expiryDate || '').trim();
       if (!expiryDate) return false;
@@ -881,8 +883,8 @@ export default function AdminInventoryManager({
       };
     });
 
-    const stockReceived = batchRows.reduce((sum, row) => sum + Number(row.batch.quantityReceived || 0), 0);
-    const stockCurrent = batchRows.reduce((sum, row) => sum + Number(row.batch.quantityCurrent || row.batch.quantity || 0), 0);
+    const stockReceived = scopedBatches.reduce((sum, batch) => sum + Number(batch.quantityReceived || 0), 0);
+    const stockCurrent = scopedBatches.reduce((sum, batch) => sum + Number(batch.quantityCurrent || batch.quantity || 0), 0);
     const uniqueRiskStores = new Set(batchRows.filter((row) => row.isOverdue || row.isExpiringSoon).map((row) => row.batch.storeLabel).filter(Boolean));
 
     const statusCards = {
@@ -907,11 +909,12 @@ export default function AdminInventoryManager({
     const storeRows = scopedStores
       .map((store) => {
         const label = storeLabel(store);
-        const storeBatches = batchRows.filter((row) => row.batch.storeId === String(store.id));
-        const overdue = storeBatches.filter((row) => row.isOverdue && !row.isWriteoff).length;
-        const expiring = storeBatches.filter((row) => row.isExpiringSoon && !row.isWriteoff).length;
-        const attention = storeBatches.filter((row) => row.needsAttention).length;
-        const currentQuantity = storeBatches.reduce((sum, row) => sum + Number(row.batch.quantityCurrent || row.batch.quantity || 0), 0);
+        const storeBatches = scopedBatches.filter((batch) => batch.storeId === String(store.id));
+        const periodStoreRows = batchRows.filter((row) => row.batch.storeId === String(store.id));
+        const overdue = periodStoreRows.filter((row) => row.isOverdue && !row.isWriteoff).length;
+        const expiring = periodStoreRows.filter((row) => row.isExpiringSoon && !row.isWriteoff).length;
+        const attention = periodStoreRows.filter((row) => row.needsAttention).length;
+        const currentQuantity = storeBatches.reduce((sum, batch) => sum + Number(batch.quantityCurrent || batch.quantity || 0), 0);
 
         return {
           id: store.id,
@@ -933,6 +936,7 @@ export default function AdminInventoryManager({
 
     const employeeRows = scopedUsers
       .map((user) => {
+        const responsibleBatches = scopedBatches.filter((batch) => Number(batch.responsibleUserId || 0) === user.id);
         const responsibleRows = batchRows.filter((row) => Number(row.batch.responsibleUserId || 0) === user.id);
         const attention = responsibleRows.filter((row) => row.isOverdue || row.isExpiringSoon || row.isDiscussion || row.isChecked).length;
         const completed = responsibleRows.filter((row) => row.isChecked || row.isWriteoff || row.isDiscussion).length;
@@ -945,7 +949,7 @@ export default function AdminInventoryManager({
           name: `${user.surname} ${user.name}`.trim(),
           storeLabel: user.storeLabel,
           role: formatInventoryUserRole(user.role),
-          responsibleCount: responsibleRows.length,
+          responsibleCount: responsibleBatches.length,
           attention,
           completed,
           overdue,
@@ -962,7 +966,9 @@ export default function AdminInventoryManager({
       stockCurrent,
       stockDelta: stockReceived - stockCurrent,
       uniqueRiskStoresCount: uniqueRiskStores.size,
-      totalBatches: relevantBatches.length,
+      totalBatches: scopedBatches.length,
+      periodBatches: relevantBatches.length,
+      totalUsers: scopedUsers.length,
       analyticsDateFrom: rangeStart,
       analyticsDateTo: rangeEnd,
       analyticsStoreId,
@@ -3149,8 +3155,8 @@ export default function AdminInventoryManager({
           <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
             <p className="font-semibold text-slate-900">Пояснення фільтра</p>
             <p className="mt-2">
-              Аналітика рахується по вибраному магазину і по партіях, у яких строк придатності потрапляє в обраний період.
-              Критичність визначається відносно кінцевої дати періоду.
+              Залишки, кількість партій і працівники рахуються по вибраному магазину загалом. Період впливає на блоки
+              ризику, строків придатності і позиції, що потребують уваги. Критичність визначається відносно кінцевої дати періоду.
             </p>
           </div>
         </div>
@@ -3172,9 +3178,9 @@ export default function AdminInventoryManager({
             <p className="mt-1 text-xs text-slate-500">Різниця між отриманим і поточним залишком</p>
           </article>
           <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Магазини з ризиком</p>
-            <p className="mt-2 text-2xl font-bold text-amber-700">{analyticsMetrics.uniqueRiskStoresCount}</p>
-            <p className="mt-1 text-xs text-slate-500">Є прострочені або критичні партії</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Працівники магазину</p>
+            <p className="mt-2 text-2xl font-bold text-amber-700">{analyticsMetrics.totalUsers}</p>
+            <p className="mt-1 text-xs text-slate-500">Активні користувачі у вибраному контурі</p>
           </article>
         </div>
 
@@ -3183,7 +3189,7 @@ export default function AdminInventoryManager({
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-base font-semibold text-slate-900">Статуси перевірки партій</h3>
               <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                {analyticsMetrics.totalBatches}
+                У періоді: {analyticsMetrics.periodBatches} • Усього: {analyticsMetrics.totalBatches}
               </span>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
