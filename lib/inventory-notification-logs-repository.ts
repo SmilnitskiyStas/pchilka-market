@@ -34,9 +34,8 @@ export async function createInventoryNotificationLogInDb(
         store_id,
         user_id,
         notification_type,
-        message_text,
-        status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'sent')
+        message_text
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `,
     [
       input.taskId ?? null,
