@@ -650,7 +650,8 @@ export default function AdminInventoryManager({
   const [activeSection, setActiveSection] = useState<InventorySectionId>(inventorySubsectionToSection[initialSubsection]);
   const [activeSubsection, setActiveSubsection] = useState<InventorySubsectionId>(initialSubsection);
   const [analyticsStoreId, setAnalyticsStoreId] = useState('');
-  const [analyticsDate, setAnalyticsDate] = useState(formatDateInputValue());
+  const [analyticsDateFrom, setAnalyticsDateFrom] = useState(formatDateInputValue());
+  const [analyticsDateTo, setAnalyticsDateTo] = useState(formatDateInputValue());
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
@@ -844,12 +845,22 @@ export default function AdminInventoryManager({
   }, [batches, importReviewItems.length, inventoryUsers.length, manualProductCreations.length, productsTotalCount, readiness, stores.length]);
 
   const analyticsMetrics = useMemo(() => {
-    const relevantBatches = analyticsStoreId
+    const rangeStart = analyticsDateFrom && analyticsDateTo && analyticsDateFrom > analyticsDateTo ? analyticsDateTo : analyticsDateFrom;
+    const rangeEnd = analyticsDateFrom && analyticsDateTo && analyticsDateFrom > analyticsDateTo ? analyticsDateFrom : analyticsDateTo;
+
+    const relevantBatches = (analyticsStoreId
       ? batches.filter((batch) => String(batch.storeId) === analyticsStoreId)
-      : batches;
+      : batches).filter((batch) => {
+      if (!rangeStart && !rangeEnd) return true;
+      const expiryDate = String(batch.expiryDate || '').trim();
+      if (!expiryDate) return false;
+      if (rangeStart && expiryDate < rangeStart) return false;
+      if (rangeEnd && expiryDate > rangeEnd) return false;
+      return true;
+    });
 
     const batchRows = relevantBatches.map((batch) => {
-      const daysLeft = daysLeftUntilFromDate(batch.expiryDate, analyticsDate);
+      const daysLeft = daysLeftUntilFromDate(batch.expiryDate, rangeEnd || formatDateInputValue());
       const expiringSoonDays = Number(batch.notifiedDays || 7);
       const isOverdue = daysLeft < 0;
       const isExpiringSoon = daysLeft >= 0 && daysLeft <= expiringSoonDays;
@@ -952,14 +963,15 @@ export default function AdminInventoryManager({
       stockDelta: stockReceived - stockCurrent,
       uniqueRiskStoresCount: uniqueRiskStores.size,
       totalBatches: relevantBatches.length,
-      analyticsDate,
+      analyticsDateFrom: rangeStart,
+      analyticsDateTo: rangeEnd,
       analyticsStoreId,
       statusCards,
       riskCards,
       storeRows,
       employeeRows
     };
-  }, [analyticsDate, analyticsStoreId, batches, inventoryUsers, stores]);
+  }, [analyticsDateFrom, analyticsDateTo, analyticsStoreId, batches, inventoryUsers, stores]);
 
   useEffect(() => {
     if (productPage > productTotalPages) {
@@ -3097,7 +3109,7 @@ export default function AdminInventoryManager({
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:grid-cols-[minmax(220px,320px)_minmax(220px,320px)_1fr]">
+        <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:grid-cols-[minmax(220px,320px)_minmax(180px,240px)_minmax(180px,240px)_1fr]">
           <label className="block">
             <span className="mb-2 block text-sm font-semibold text-slate-900">Магазин для аналітики</span>
             <select
@@ -3115,11 +3127,21 @@ export default function AdminInventoryManager({
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-sm font-semibold text-slate-900">Дата аналітики</span>
+            <span className="mb-2 block text-sm font-semibold text-slate-900">Період з</span>
             <input
               type="date"
-              value={analyticsDate}
-              onChange={(e) => setAnalyticsDate(e.target.value)}
+              value={analyticsDateFrom}
+              onChange={(e) => setAnalyticsDateFrom(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-slate-900">Період до</span>
+            <input
+              type="date"
+              value={analyticsDateTo}
+              onChange={(e) => setAnalyticsDateTo(e.target.value)}
               className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
             />
           </label>
@@ -3127,8 +3149,8 @@ export default function AdminInventoryManager({
           <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
             <p className="font-semibold text-slate-900">Пояснення фільтра</p>
             <p className="mt-2">
-              Аналітика рахується по вибраному магазину і відносно обраної дати. Це дає змогу оцінити критичність партій
-              станом на конкретний день за строком придатності.
+              Аналітика рахується по вибраному магазину і по партіях, у яких строк придатності потрапляє в обраний період.
+              Критичність визначається відносно кінцевої дати періоду.
             </p>
           </div>
         </div>
