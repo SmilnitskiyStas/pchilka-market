@@ -21,20 +21,38 @@ export async function GET(request: Request) {
       });
     }
 
-    const [activeTasks, archivedTasks] = await Promise.all([
+    const shouldUseStoreWideTasks = user.role !== 'staff';
+    const assignedFilter = shouldUseStoreWideTasks ? undefined : user.id;
+
+    let [activeTasks, archivedTasks] = await Promise.all([
       listInventoryExpiryTasksFromDb({
-        responsibleUserId: user.id,
+        responsibleUserId: assignedFilter,
         storeId: user.storeId,
         statusGroup: 'active',
         limit: 300
       }),
       listInventoryExpiryTasksFromDb({
-        responsibleUserId: user.id,
+        responsibleUserId: assignedFilter,
         storeId: user.storeId,
         statusGroup: 'archived',
         limit: 100
       })
     ]);
+
+    if (!shouldUseStoreWideTasks && activeTasks.length === 0 && archivedTasks.length === 0) {
+      [activeTasks, archivedTasks] = await Promise.all([
+        listInventoryExpiryTasksFromDb({
+          storeId: user.storeId,
+          statusGroup: 'active',
+          limit: 300
+        }),
+        listInventoryExpiryTasksFromDb({
+          storeId: user.storeId,
+          statusGroup: 'archived',
+          limit: 100
+        })
+      ]);
+    }
 
     if (notificationId) {
       const notification = await findInventoryNotificationLogByIdInDb(notificationId);

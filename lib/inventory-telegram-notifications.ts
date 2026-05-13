@@ -1,4 +1,4 @@
-import { syncInventoryExpiryTasksInDb, listInventoryExpiryNotificationCandidatesFromDb, markInventoryExpiryTaskNotifiedInDb } from '@/lib/inventory-expiry-tasks-repository';
+import { listInventoryExpiryNotificationCandidatesFromDb, markInventoryExpiryTaskNotifiedInDb, syncInventoryExpiryTasksInDb, type InventoryExpiryNotificationCandidate } from '@/lib/inventory-expiry-tasks-repository';
 import { createInventoryNotificationLogInDb } from '@/lib/inventory-notification-logs-repository';
 import { createInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { sendInventoryTelegramMessage } from '@/lib/inventory-telegram-bot';
@@ -6,10 +6,9 @@ import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-set
 import { type InventoryUserRole } from '@/lib/inventory-user-roles';
 import { listInventoryUsersFromDb, type InventoryUserRecord } from '@/lib/inventory-users-repository';
 
-function buildInventoryTasksUrl(baseUrl: string, token: string, notificationId: string) {
+function buildInventoryTasksUrl(baseUrl: string, token: string) {
   const url = new URL('/inventory/tasks', baseUrl);
   url.searchParams.set('token', token);
-  url.searchParams.set('notificationId', notificationId);
   return url.toString();
 }
 
@@ -49,36 +48,28 @@ function repeatReminderRecipients(users: InventoryUserRecord[], responsibleUserD
   });
 }
 
-function buildUrgencyText(daysLeft: number) {
-  if (daysLeft < 0) {
-    return `Термін придатності вже сплив ${Math.abs(daysLeft)} дн. тому.`;
-  }
-  if (daysLeft === 0) {
-    return 'Термін придатності спливає сьогодні.';
-  }
-  return `До завершення терміну придатності залишилось ${daysLeft} дн.`;
-}
+type RecipientDigest = {
+  recipient: InventoryUserRecord;
+  tasksById: Map<number, InventoryExpiryNotificationCandidate>;
+};
 
 export type InventoryNotificationDebugItem = {
-  taskId: number;
-  batchId: string;
-  productName: string;
-  storeLabel: string;
-  expiryDate: string;
-  reminderKind: 'initial' | 'repeat';
-  daysLeft: number;
-  responsibleUserName: string;
-  recipients: Array<{
-    userId: number;
-    name: string;
-    role: string;
-    chatId: string;
-    ok?: boolean;
-    error?: string;
-  }>;
+  userId: number | null;
+  name: string;
+  role: string;
+  chatId: string;
+  taskIds: number[];
+  stores: string[];
+  active: number;
+  critical: number;
+  high: number;
+  overdue: number;
+  repeat: number;
   skipped: boolean;
   reason: string;
   sentCount: number;
+  ok?: boolean;
+  error?: string;
 };
 
 export type InventoryNotificationsRunResult = {
@@ -88,7 +79,49 @@ export type InventoryNotificationsRunResult = {
   debug: InventoryNotificationDebugItem[];
 };
 
-type InventoryNotificationRecipientDebug = InventoryNotificationDebugItem['recipients'][number];
+function buildDigestText(tasks: InventoryExpiryNotificationCandidate[]) {
+  const active = tasks.length;
+  const critical = tasks.filter((task) => task.riskLevel === 'critical').length;
+  const high = tasks.filter((task) => task.riskLevel === 'high').length;
+  const overdue = tasks.filter((task) => task.daysLeftSnapshot < 0).length;
+  const repeat = tasks.filter((task) => task.reminderKind === 'repeat').length;
+  const stores = Array.from(new Set(tasks.map((task) => task.storeLabel).filter(Boolean)));
+  const topProducts = tasks
+    .slice()
+    .sort((a, b) => a.daysLeftSnapshot - b.daysLeftSnapshot || a.id - b.id)
+    .slice(0, 5);
+
+  const lines = [
+    'У вас є задачі по інвентарю.',
+    stores.length > 0 ? `Магазин${stores.length > 1 ? 'и' : ''}: ${stores.join('; ')}` : '',
+    `Активні: ${active}`,
+    `Критичні: ${critical}`,
+    `Високий ризик: ${high}`,
+    `Прострочені: ${overdue}`,
+    repeat > 0 ? `Повторні нагадування: ${repeat}` : '',
+    '',
+    'Найближчі до перевірки позиції:',
+    ...topProducts.map((task) => {
+      const daysLabel =
+        task.daysLeftSnapshot < 0
+          ? `прострочено на ${Math.abs(task.daysLeftSnapshot)} дн.`
+          : `залишилось ${task.daysLeftSnapshot} дн.`;
+      return `• ${task.productName} — партія #${task.batchId}, ${daysLabel}`;
+    }),
+    '',
+    'Відкрийте Web App, щоб переглянути список задач і виконати перевірку.'
+  ];
+
+  return {
+    text: lines.filter(Boolean).join('\n'),
+    active,
+    critical,
+    high,
+    overdue,
+    repeat,
+    stores
+  };
+}
 
 export async function runInventoryExpiryNotifications(): Promise<InventoryNotificationsRunResult> {
   const settings = await getInventoryTelegramSettingsFromDb();
@@ -98,144 +131,158 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
 
   await syncInventoryExpiryTasksInDb();
   const candidates = await listInventoryExpiryNotificationCandidatesFromDb(200);
-  let batchesProcessed = 0;
   let notificationsSent = 0;
+  const notifiedTaskIds = new Set<number>();
   const debug: InventoryNotificationDebugItem[] = [];
+  const recipientDigests = new Map<number, RecipientDigest>();
+  const storeUsersCache = new Map<number, InventoryUserRecord[]>();
 
   for (const task of candidates) {
-    const storeUsers = await listInventoryUsersFromDb({ storeId: task.storeId, limit: 300 });
+    let storeUsers = storeUsersCache.get(task.storeId);
+    if (!storeUsers) {
+      storeUsers = await listInventoryUsersFromDb({ storeId: task.storeId, limit: 300 });
+      storeUsersCache.set(task.storeId, storeUsers);
+    }
+
     const recipients =
       task.reminderKind === 'repeat'
         ? repeatReminderRecipients(storeUsers, task.responsibleUserId)
         : uniqueRecipients(storeUsers, task.responsibleUserId);
-    const recipientDebug: InventoryNotificationRecipientDebug[] = recipients.map((recipient) => ({
-      userId: recipient.id,
-      name: `${recipient.surname} ${recipient.name}`.trim(),
-      role: recipient.role,
-      chatId: recipient.userChatId
-    }));
 
     if (recipients.length === 0) {
       debug.push({
-        taskId: task.id,
-        batchId: String(task.batchId),
-        productName: task.productName,
-        storeLabel: task.storeLabel,
-        expiryDate: task.dueDate,
-        reminderKind: task.reminderKind,
-        daysLeft: task.daysLeftSnapshot,
-        responsibleUserName: task.responsibleUserName,
-        recipients: recipientDebug,
+        userId: null,
+        name: '',
+        role: '',
+        chatId: '',
+        taskIds: [task.id],
+        stores: [task.storeLabel].filter(Boolean),
+        active: 1,
+        critical: task.riskLevel === 'critical' ? 1 : 0,
+        high: task.riskLevel === 'high' ? 1 : 0,
+        overdue: task.daysLeftSnapshot < 0 ? 1 : 0,
+        repeat: task.reminderKind === 'repeat' ? 1 : 0,
         skipped: true,
-        reason: 'У магазині немає активних користувачів з user_chat_id для отримання повідомлення.',
+        reason: 'Для цього магазину немає активних користувачів з user_chat_id для отримання сповіщення.',
         sentCount: 0
       });
       continue;
     }
 
-    const urgencyText = buildUrgencyText(task.daysLeftSnapshot);
-    let sentForTask = 0;
-    let failedForTask = 0;
-
-    for (let index = 0; index < recipients.length; index += 1) {
-      const recipient = recipients[index];
-      const token = createInventoryRegistrationToken(
-        {
-          chatId: recipient.userChatId,
-          firstName: recipient.name,
-          lastName: recipient.surname,
-          username: ''
-        },
-        settings.webhookSecret,
-        1000 * 60 * 60 * 24 * 7
-      );
-      const tasksUrl = buildInventoryTasksUrl(settings.publicBaseUrl, token, String(task.id));
-      const reminderPrefix = task.reminderKind === 'repeat' ? 'Повторне нагадування.\n' : '';
-      const text = reminderPrefix +
-        `Потрібно перевірити товар у магазині ${task.storeLabel}.\n` +
-        `Товар: ${task.productName}\n` +
-        `Артикул: ${task.article || '—'}\n` +
-        `Штрихкод: ${task.barcode || '—'}\n` +
-        `Код партії: ${task.batchCode || '—'}\n` +
-        `Партія: #${task.batchId}\n` +
-        `Термін придатності: ${task.dueDate}\n` +
-        `${urgencyText}`;
-
-      try {
-        await sendInventoryTelegramMessage({
-          botToken: settings.botToken,
-          chatId: recipient.userChatId,
-          text,
-          buttonText: 'Перевірити товар',
-          buttonUrl: tasksUrl
-        });
-
-        await createInventoryNotificationLogInDb({
-          taskId: task.id,
-          batchId: task.batchId,
-          productId: task.productId,
-          storeId: task.storeId,
-          userId: recipient.id,
-          notificationType: task.reminderKind === 'repeat' ? 'expiry_task_due_repeat' : 'expiry_task_due',
-          messageText: text
-        });
-
-        recipientDebug[index] = { ...recipientDebug[index], ok: true };
-        notificationsSent += 1;
-        sentForTask += 1;
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown Telegram send error';
-
-        await createInventoryNotificationLogInDb({
-          taskId: task.id,
-          batchId: task.batchId,
-          productId: task.productId,
-          storeId: task.storeId,
-          userId: recipient.id,
-          notificationType: task.reminderKind === 'repeat' ? 'expiry_task_due_repeat_failed' : 'expiry_task_due_failed',
-          messageText: `${text}\n\nSEND_ERROR: ${errorMessage}\nCHAT_ID: ${recipient.userChatId}`
-        });
-
-        recipientDebug[index] = {
-          ...recipientDebug[index],
-          ok: false,
-          error: errorMessage
-        };
-        failedForTask += 1;
+    for (const recipient of recipients) {
+      const existing = recipientDigests.get(recipient.id);
+      if (existing) {
+        existing.tasksById.set(task.id, task);
+        continue;
       }
-    }
 
-    if (sentForTask > 0) {
-      await markInventoryExpiryTaskNotifiedInDb(task.id);
-      batchesProcessed += 1;
+      recipientDigests.set(recipient.id, {
+        recipient,
+        tasksById: new Map([[task.id, task]])
+      });
     }
+  }
 
-    debug.push({
-      taskId: task.id,
-      batchId: String(task.batchId),
-      productName: task.productName,
-      storeLabel: task.storeLabel,
-      expiryDate: task.dueDate,
-      reminderKind: task.reminderKind,
-      daysLeft: task.daysLeftSnapshot,
-      responsibleUserName: task.responsibleUserName,
-      recipients: recipientDebug,
-      skipped: sentForTask === 0,
-      reason:
-        sentForTask === 0
-          ? failedForTask > 0
-            ? 'Не вдалося надіслати жодне повідомлення. Помилки записано в notification_logs.'
-            : 'Повідомлення не надіслано.'
-          : failedForTask > 0
-            ? 'Повідомлення надіслано частково. Частину помилок записано в notification_logs.'
-            : 'Повідомлення успішно надіслано.',
-      sentCount: sentForTask
-    });
+  for (const digest of recipientDigests.values()) {
+    const tasks = Array.from(digest.tasksById.values()).sort(
+      (a, b) => a.daysLeftSnapshot - b.daysLeftSnapshot || a.id - b.id
+    );
+    const { text, active, critical, high, overdue, repeat, stores } = buildDigestText(tasks);
+    const recipientName = `${digest.recipient.surname} ${digest.recipient.name}`.trim();
+    const token = createInventoryRegistrationToken(
+      {
+        chatId: digest.recipient.userChatId,
+        firstName: digest.recipient.name,
+        lastName: digest.recipient.surname,
+        username: ''
+      },
+      settings.webhookSecret,
+      1000 * 60 * 60 * 24 * 7
+    );
+    const tasksUrl = buildInventoryTasksUrl(settings.publicBaseUrl, token);
+
+    try {
+      await sendInventoryTelegramMessage({
+        botToken: settings.botToken,
+        chatId: digest.recipient.userChatId,
+        text,
+        buttonText: 'Відкрити задачі',
+        buttonUrl: tasksUrl
+      });
+
+      await createInventoryNotificationLogInDb({
+        taskId: null,
+        batchId: null,
+        productId: null,
+        storeId: digest.recipient.storeId ? Number(digest.recipient.storeId) : tasks[0]?.storeId ?? null,
+        userId: digest.recipient.id,
+        notificationType: repeat > 0 ? 'inventory_tasks_digest_repeat' : 'inventory_tasks_digest',
+        messageText: text
+      });
+
+      for (const task of tasks) {
+        notifiedTaskIds.add(task.id);
+      }
+
+      notificationsSent += 1;
+      debug.push({
+        userId: digest.recipient.id,
+        name: recipientName,
+        role: digest.recipient.role,
+        chatId: digest.recipient.userChatId,
+        taskIds: tasks.map((task) => task.id),
+        stores,
+        active,
+        critical,
+        high,
+        overdue,
+        repeat,
+        skipped: false,
+        reason: 'Зведене повідомлення успішно надіслано.',
+        sentCount: 1,
+        ok: true
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown Telegram send error';
+
+      await createInventoryNotificationLogInDb({
+        taskId: null,
+        batchId: null,
+        productId: null,
+        storeId: digest.recipient.storeId ? Number(digest.recipient.storeId) : tasks[0]?.storeId ?? null,
+        userId: digest.recipient.id,
+        notificationType: repeat > 0 ? 'inventory_tasks_digest_repeat_failed' : 'inventory_tasks_digest_failed',
+        messageText: `${text}\n\nSEND_ERROR: ${errorMessage}\nCHAT_ID: ${digest.recipient.userChatId}`
+      });
+
+      debug.push({
+        userId: digest.recipient.id,
+        name: recipientName,
+        role: digest.recipient.role,
+        chatId: digest.recipient.userChatId,
+        taskIds: tasks.map((task) => task.id),
+        stores,
+        active,
+        critical,
+        high,
+        overdue,
+        repeat,
+        skipped: true,
+        reason: 'Не вдалося надіслати зведене повідомлення. Помилку записано в notification_logs.',
+        sentCount: 0,
+        ok: false,
+        error: errorMessage
+      });
+    }
+  }
+
+  for (const taskId of notifiedTaskIds) {
+    await markInventoryExpiryTaskNotifiedInDb(taskId);
   }
 
   return {
     candidates: candidates.length,
-    batchesProcessed,
+    batchesProcessed: notifiedTaskIds.size,
     notificationsSent,
     debug
   };

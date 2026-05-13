@@ -180,21 +180,22 @@ type WebhookPayload = {
   error?: string;
 };
 type InventoryNotificationDebugItem = {
-  batchId: string;
-  productName: string;
-  storeLabel: string;
-  expiryDate: string;
-  daysLeft: number;
-  responsibleUserName: string;
-  recipients: Array<{
-    userId: number;
-    name: string;
-    role: string;
-    chatId: string;
-  }>;
+  userId: number | null;
+  name: string;
+  role: string;
+  chatId: string;
+  taskIds: number[];
+  stores: string[];
+  active: number;
+  critical: number;
+  high: number;
+  overdue: number;
+  repeat: number;
   skipped: boolean;
   reason: string;
   sentCount: number;
+  ok?: boolean;
+  error?: string;
 };
 type NotificationsRunPayload = {
   ok?: boolean;
@@ -3130,16 +3131,18 @@ export default function AdminInventoryManager({
               <div className="mt-4 space-y-3">
                 {notificationsDebug.map((item) => (
                   <div
-                    key={item.batchId}
+                    key={`${item.userId ?? 'none'}-${item.taskIds.join('-') || 'empty'}`}
                     className={`rounded-xl border p-4 text-sm ${
                       item.skipped ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'
                     }`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <p className="font-semibold text-slate-900">{item.productName}</p>
+                        <p className="font-semibold text-slate-900">{item.name || 'Немає отримувача'}</p>
                         <p className="mt-1 text-xs text-slate-600">
-                          Магазин: {item.storeLabel} • партія #{item.batchId} • термін: {item.expiryDate}
+                          {item.role ? `${item.role} • ` : ''}
+                          {item.chatId ? `chat_id: ${item.chatId} • ` : ''}
+                          Магазини: {item.stores.length > 0 ? item.stores.join('; ') : '—'}
                         </p>
                       </div>
                       <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
@@ -3148,22 +3151,12 @@ export default function AdminInventoryManager({
                     </div>
                     <p className="mt-3 text-slate-800">{item.reason}</p>
                     <p className="mt-1 text-xs text-slate-600">
-                      До завершення строку: {item.daysLeft} дн. • Відповідальний: {item.responsibleUserName || 'не призначено'}
+                      Задач: {item.active} • Критичні: {item.critical} • Високий ризик: {item.high} • Прострочені: {item.overdue}
                     </p>
-                    <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Отримувачі</p>
-                      {item.recipients.length === 0 ? (
-                        <p className="mt-2 text-sm text-slate-600">Жодного отримувача не знайдено.</p>
-                      ) : (
-                        <div className="mt-2 space-y-2">
-                          {item.recipients.map((recipient) => (
-                            <p key={`${item.batchId}-${recipient.userId}`} className="text-sm text-slate-700">
-                              {recipient.name} • {recipient.role} • chat_id: {recipient.chatId}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Повторні нагадування: {item.repeat} • ID задач: {item.taskIds.length > 0 ? item.taskIds.join(', ') : '—'}
+                    </p>
+                    {item.error ? <p className="mt-2 text-xs text-red-700">Помилка: {item.error}</p> : null}
                   </div>
                 ))}
               </div>
