@@ -378,6 +378,22 @@ function daysLeftUntil(value: string) {
   return Math.floor((target.getTime() - current.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+function daysLeftUntilFromDate(value: string, referenceDate: string) {
+  const target = new Date(`${value}T00:00:00`);
+  const source = new Date(`${referenceDate}T00:00:00`);
+  if (Number.isNaN(target.getTime()) || Number.isNaN(source.getTime())) {
+    return daysLeftUntil(value);
+  }
+  return Math.floor((target.getTime() - source.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function formatDateInputValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function storeLabel(store: StoreRecord) {
   return [store.storeCode, store.city, store.addressLine].filter(Boolean).join(' | ');
 }
@@ -633,6 +649,8 @@ export default function AdminInventoryManager({
   const [isSettingsSaved, setIsSettingsSaved] = useState(false);
   const [activeSection, setActiveSection] = useState<InventorySectionId>(inventorySubsectionToSection[initialSubsection]);
   const [activeSubsection, setActiveSubsection] = useState<InventorySubsectionId>(initialSubsection);
+  const [analyticsStoreId, setAnalyticsStoreId] = useState('');
+  const [analyticsDate, setAnalyticsDate] = useState(formatDateInputValue());
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
@@ -826,8 +844,12 @@ export default function AdminInventoryManager({
   }, [batches, importReviewItems.length, inventoryUsers.length, manualProductCreations.length, productsTotalCount, readiness, stores.length]);
 
   const analyticsMetrics = useMemo(() => {
-    const batchRows = batches.map((batch) => {
-      const daysLeft = daysLeftUntil(batch.expiryDate);
+    const relevantBatches = analyticsStoreId
+      ? batches.filter((batch) => String(batch.storeId) === analyticsStoreId)
+      : batches;
+
+    const batchRows = relevantBatches.map((batch) => {
+      const daysLeft = daysLeftUntilFromDate(batch.expiryDate, analyticsDate);
       const expiringSoonDays = Number(batch.notifiedDays || 7);
       const isOverdue = daysLeft < 0;
       const isExpiringSoon = daysLeft >= 0 && daysLeft <= expiringSoonDays;
@@ -850,9 +872,7 @@ export default function AdminInventoryManager({
 
     const stockReceived = batchRows.reduce((sum, row) => sum + Number(row.batch.quantityReceived || 0), 0);
     const stockCurrent = batchRows.reduce((sum, row) => sum + Number(row.batch.quantityCurrent || row.batch.quantity || 0), 0);
-    const uniqueRiskStores = new Set(
-      batchRows.filter((row) => row.isOverdue || row.isExpiringSoon).map((row) => row.batch.storeLabel).filter(Boolean)
-    );
+    const uniqueRiskStores = new Set(batchRows.filter((row) => row.isOverdue || row.isExpiringSoon).map((row) => row.batch.storeLabel).filter(Boolean));
 
     const statusCards = {
       new: batchRows.filter((row) => row.batch.checkStatus === 'new').length,
@@ -869,7 +889,11 @@ export default function AdminInventoryManager({
       overdue: batchRows.filter((row) => row.isOverdue && !row.isWriteoff).length
     };
 
-    const storeRows = stores
+    const scopedStores = analyticsStoreId
+      ? stores.filter((store) => String(store.id) === analyticsStoreId)
+      : stores;
+
+    const storeRows = scopedStores
       .map((store) => {
         const label = storeLabel(store);
         const storeBatches = batchRows.filter((row) => row.batch.storeId === String(store.id));
@@ -892,7 +916,11 @@ export default function AdminInventoryManager({
       .sort((a, b) => b.attention - a.attention || b.overdue - a.overdue || b.batches - a.batches)
       .slice(0, 8);
 
-    const employeeRows = inventoryUsers
+    const scopedUsers = analyticsStoreId
+      ? inventoryUsers.filter((user) => String(user.storeId ?? '') === analyticsStoreId)
+      : inventoryUsers;
+
+    const employeeRows = scopedUsers
       .map((user) => {
         const responsibleRows = batchRows.filter((row) => Number(row.batch.responsibleUserId || 0) === user.id);
         const attention = responsibleRows.filter((row) => row.isOverdue || row.isExpiringSoon || row.isDiscussion || row.isChecked).length;
@@ -923,12 +951,15 @@ export default function AdminInventoryManager({
       stockCurrent,
       stockDelta: stockReceived - stockCurrent,
       uniqueRiskStoresCount: uniqueRiskStores.size,
+      totalBatches: relevantBatches.length,
+      analyticsDate,
+      analyticsStoreId,
       statusCards,
       riskCards,
       storeRows,
       employeeRows
     };
-  }, [batches, inventoryUsers, stores]);
+  }, [analyticsDate, analyticsStoreId, batches, inventoryUsers, stores]);
 
   useEffect(() => {
     if (productPage > productTotalPages) {
@@ -3066,6 +3097,42 @@ export default function AdminInventoryManager({
           </div>
         </div>
 
+        <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:grid-cols-[minmax(220px,320px)_minmax(220px,320px)_1fr]">
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-slate-900">Магазин для аналітики</span>
+            <select
+              value={analyticsStoreId}
+              onChange={(e) => setAnalyticsStoreId(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+            >
+              <option value="">Усі магазини</option>
+              {stores.map((store) => (
+                <option key={store.id} value={String(store.id)}>
+                  {storeLabel(store)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-slate-900">Дата аналітики</span>
+            <input
+              type="date"
+              value={analyticsDate}
+              onChange={(e) => setAnalyticsDate(e.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+            />
+          </label>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+            <p className="font-semibold text-slate-900">Пояснення фільтра</p>
+            <p className="mt-2">
+              Аналітика рахується по вибраному магазину і відносно обраної дати. Це дає змогу оцінити критичність партій
+              станом на конкретний день за строком придатності.
+            </p>
+          </div>
+        </div>
+
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Залишок зараз</p>
@@ -3094,7 +3161,7 @@ export default function AdminInventoryManager({
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-base font-semibold text-slate-900">Статуси перевірки партій</h3>
               <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                {batches.length}
+                {analyticsMetrics.totalBatches}
               </span>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -3132,7 +3199,7 @@ export default function AdminInventoryManager({
                 { label: 'Середній ризик', value: analyticsMetrics.riskCards.medium, color: 'bg-amber-500' },
                 { label: 'У запасі', value: analyticsMetrics.riskCards.safe, color: 'bg-emerald-500' }
               ].map((item) => {
-                const total = Math.max(batches.length, 1);
+                const total = Math.max(analyticsMetrics.totalBatches, 1);
                 const width = Math.max(4, Math.round((item.value / total) * 100));
                 return (
                   <div key={item.label}>
