@@ -243,7 +243,7 @@ type InventoryTasksPayload = {
   };
   error?: string;
 };
-type InventorySectionId = 'overview' | 'schema' | 'product-list' | 'batches' | 'import' | 'intake' | 'operations' | 'telegram';
+type InventorySectionId = 'overview' | 'schema' | 'product-list' | 'batches' | 'import' | 'intake' | 'operations' | 'analytics' | 'telegram';
 type InventorySubsectionId =
   | 'overview'
   | 'product-list'
@@ -253,6 +253,7 @@ type InventorySubsectionId =
   | 'registered-employees'
   | 'employee-tasks'
   | 'batch-responsibility'
+  | 'analytics'
   | 'settings-schema'
   | 'settings-telegram';
 type InventoryBatchGroup = {
@@ -275,6 +276,7 @@ const inventorySubsectionToSection: Record<InventorySubsectionId, InventorySecti
   'registered-employees': 'operations',
   'employee-tasks': 'operations',
   'batch-responsibility': 'operations',
+  analytics: 'analytics',
   'settings-schema': 'schema',
   'settings-telegram': 'telegram'
 };
@@ -822,6 +824,111 @@ export default function AdminInventoryManager({
       hasSchemaIssues: !readiness?.allRequiredTablesPresent || (readiness?.productBatches.missingColumns?.length ?? 0) > 0
     };
   }, [batches, importReviewItems.length, inventoryUsers.length, manualProductCreations.length, productsTotalCount, readiness, stores.length]);
+
+  const analyticsMetrics = useMemo(() => {
+    const batchRows = batches.map((batch) => {
+      const daysLeft = daysLeftUntil(batch.expiryDate);
+      const expiringSoonDays = Number(batch.notifiedDays || 7);
+      const isOverdue = daysLeft < 0;
+      const isExpiringSoon = daysLeft >= 0 && daysLeft <= expiringSoonDays;
+      const needsAttention = batch.checkStatus === 'new' && (isOverdue || isExpiringSoon);
+      const isWriteoff = batch.checkStatus === 'writeoff' || batch.actionTaken === 'writeoff';
+      const isDiscussion = batch.checkStatus === 'discussion_required' || batch.discussionRequired;
+      const isChecked = batch.checkStatus === 'checked';
+
+      return {
+        batch,
+        daysLeft,
+        isOverdue,
+        isExpiringSoon,
+        needsAttention,
+        isWriteoff,
+        isDiscussion,
+        isChecked
+      };
+    });
+
+    const stockReceived = batchRows.reduce((sum, row) => sum + Number(row.batch.quantityReceived || 0), 0);
+    const stockCurrent = batchRows.reduce((sum, row) => sum + Number(row.batch.quantityCurrent || row.batch.quantity || 0), 0);
+    const uniqueRiskStores = new Set(
+      batchRows.filter((row) => row.isOverdue || row.isExpiringSoon).map((row) => row.batch.storeLabel).filter(Boolean)
+    );
+
+    const statusCards = {
+      new: batchRows.filter((row) => row.batch.checkStatus === 'new').length,
+      checked: batchRows.filter((row) => row.isChecked).length,
+      writeoff: batchRows.filter((row) => row.isWriteoff).length,
+      discussion: batchRows.filter((row) => row.isDiscussion).length
+    };
+
+    const riskCards = {
+      critical: batchRows.filter((row) => row.daysLeft <= 1 && !row.isWriteoff).length,
+      high: batchRows.filter((row) => row.daysLeft > 1 && row.daysLeft <= 3 && !row.isWriteoff).length,
+      medium: batchRows.filter((row) => row.daysLeft > 3 && row.daysLeft <= 7 && !row.isWriteoff).length,
+      safe: batchRows.filter((row) => row.daysLeft > 7 && !row.isWriteoff).length,
+      overdue: batchRows.filter((row) => row.isOverdue && !row.isWriteoff).length
+    };
+
+    const storeRows = stores
+      .map((store) => {
+        const label = storeLabel(store);
+        const storeBatches = batchRows.filter((row) => row.batch.storeId === String(store.id));
+        const overdue = storeBatches.filter((row) => row.isOverdue && !row.isWriteoff).length;
+        const expiring = storeBatches.filter((row) => row.isExpiringSoon && !row.isWriteoff).length;
+        const attention = storeBatches.filter((row) => row.needsAttention).length;
+        const currentQuantity = storeBatches.reduce((sum, row) => sum + Number(row.batch.quantityCurrent || row.batch.quantity || 0), 0);
+
+        return {
+          id: store.id,
+          label,
+          batches: storeBatches.length,
+          overdue,
+          expiring,
+          attention,
+          currentQuantity
+        };
+      })
+      .filter((row) => row.batches > 0)
+      .sort((a, b) => b.attention - a.attention || b.overdue - a.overdue || b.batches - a.batches)
+      .slice(0, 8);
+
+    const employeeRows = inventoryUsers
+      .map((user) => {
+        const responsibleRows = batchRows.filter((row) => Number(row.batch.responsibleUserId || 0) === user.id);
+        const attention = responsibleRows.filter((row) => row.isOverdue || row.isExpiringSoon || row.isDiscussion || row.isChecked).length;
+        const completed = responsibleRows.filter((row) => row.isChecked || row.isWriteoff || row.isDiscussion).length;
+        const overdue = responsibleRows.filter((row) => row.isOverdue && !row.isWriteoff).length;
+        const expiring = responsibleRows.filter((row) => row.isExpiringSoon && !row.isWriteoff).length;
+        const completionRatio = getTaskCompletionRatio(completed, attention);
+
+        return {
+          id: user.id,
+          name: `${user.surname} ${user.name}`.trim(),
+          storeLabel: user.storeLabel,
+          role: formatInventoryUserRole(user.role),
+          responsibleCount: responsibleRows.length,
+          attention,
+          completed,
+          overdue,
+          expiring,
+          completionRatio
+        };
+      })
+      .filter((row) => row.responsibleCount > 0)
+      .sort((a, b) => b.attention - a.attention || b.overdue - a.overdue || b.completionRatio - a.completionRatio)
+      .slice(0, 8);
+
+    return {
+      stockReceived,
+      stockCurrent,
+      stockDelta: stockReceived - stockCurrent,
+      uniqueRiskStoresCount: uniqueRiskStores.size,
+      statusCards,
+      riskCards,
+      storeRows,
+      employeeRows
+    };
+  }, [batches, inventoryUsers, stores]);
 
   useEffect(() => {
     if (productPage > productTotalPages) {
@@ -2942,6 +3049,181 @@ export default function AdminInventoryManager({
           </div>
           </div>
           )}
+        </div>
+      </section>
+      ) : null}
+
+      {activeSection === 'analytics' ? (
+      <section id="analytics" className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Inventory / Analytics</p>
+            <h2 className="mt-1 text-xl font-bold text-slate-900">Аналітика по партіях, ризиках і роботі працівників</h2>
+            <p className="mt-2 max-w-3xl text-sm text-slate-600">
+              Тут зібрана операційна аналітика по залишках, критичних товарах, магазинах з найбільшим навантаженням і
+              працівниках, які відповідають за перевірку партій.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Залишок зараз</p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">{analyticsMetrics.stockCurrent}</p>
+            <p className="mt-1 text-xs text-slate-500">Сума `quantity_current` по всіх партіях</p>
+          </article>
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Отримано</p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">{analyticsMetrics.stockReceived}</p>
+            <p className="mt-1 text-xs text-slate-500">Сума `quantity_received` по всіх партіях</p>
+          </article>
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Розбіжність</p>
+            <p className="mt-2 text-2xl font-bold text-brand">{analyticsMetrics.stockDelta}</p>
+            <p className="mt-1 text-xs text-slate-500">Різниця між отриманим і поточним залишком</p>
+          </article>
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Магазини з ризиком</p>
+            <p className="mt-2 text-2xl font-bold text-amber-700">{analyticsMetrics.uniqueRiskStoresCount}</p>
+            <p className="mt-1 text-xs text-slate-500">Є прострочені або критичні партії</p>
+          </article>
+        </div>
+
+        <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-base font-semibold text-slate-900">Статуси перевірки партій</h3>
+              <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                {batches.length}
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Нові</p>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{analyticsMetrics.statusCards.new}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Перевірені</p>
+                <p className="mt-2 text-2xl font-bold text-emerald-700">{analyticsMetrics.statusCards.checked}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">На списанні</p>
+                <p className="mt-2 text-2xl font-bold text-rose-700">{analyticsMetrics.statusCards.writeoff}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Для обговорення</p>
+                <p className="mt-2 text-2xl font-bold text-amber-700">{analyticsMetrics.statusCards.discussion}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-base font-semibold text-slate-900">Критичність партій</h3>
+              <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                За строком придатності
+              </span>
+            </div>
+            <div className="mt-4 space-y-3">
+              {[
+                { label: 'Прострочені', value: analyticsMetrics.riskCards.overdue, color: 'bg-rose-500' },
+                { label: 'Критичні', value: analyticsMetrics.riskCards.critical, color: 'bg-red-500' },
+                { label: 'Високий ризик', value: analyticsMetrics.riskCards.high, color: 'bg-orange-500' },
+                { label: 'Середній ризик', value: analyticsMetrics.riskCards.medium, color: 'bg-amber-500' },
+                { label: 'У запасі', value: analyticsMetrics.riskCards.safe, color: 'bg-emerald-500' }
+              ].map((item) => {
+                const total = Math.max(batches.length, 1);
+                const width = Math.max(4, Math.round((item.value / total) * 100));
+                return (
+                  <div key={item.label}>
+                    <div className="mb-1 flex items-center justify-between gap-3 text-sm text-slate-700">
+                      <span>{item.label}</span>
+                      <span className="font-semibold text-slate-900">{item.value}</span>
+                    </div>
+                    <div className="h-2.5 overflow-hidden rounded-full bg-white">
+                      <div className={`h-full rounded-full ${item.color}`} style={{ width: `${width}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-base font-semibold text-slate-900">Магазини з найбільшим навантаженням</h3>
+              <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                Top {analyticsMetrics.storeRows.length}
+              </span>
+            </div>
+            {analyticsMetrics.storeRows.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-600">Ще немає достатньо даних для аналітики по магазинах.</p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {analyticsMetrics.storeRows.map((row) => (
+                  <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{row.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Партій: {row.batches} • залишок: {row.currentQuantity}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                        Потребують уваги: {row.attention}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Прострочені: {row.overdue}</span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Закінчуються: {row.expiring}</span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Активний ризик: {row.attention}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-base font-semibold text-slate-900">Працівники по відповідальних партіях</h3>
+              <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                Top {analyticsMetrics.employeeRows.length}
+              </span>
+            </div>
+            {analyticsMetrics.employeeRows.length === 0 ? (
+              <p className="mt-3 text-sm text-slate-600">Ще немає достатньо даних для аналітики по працівниках.</p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {analyticsMetrics.employeeRows.map((row) => (
+                  <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{row.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {row.role} • {row.storeLabel || 'Магазин не вказано'}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                        Продуктивність: {row.completionRatio}%
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-4">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Відповідальних партій: {row.responsibleCount}</span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Потребували уваги: {row.attention}</span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Завершено: {row.completed}</span>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">Прострочені: {row.overdue}</span>
+                    </div>
+                    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-brand" style={{ width: `${Math.max(4, row.completionRatio)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </section>
       ) : null}

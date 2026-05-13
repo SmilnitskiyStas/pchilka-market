@@ -122,7 +122,7 @@ export default function AdminNav() {
           { label: 'Дії працівників' },
           { href: '/admin/inventory/notifications', label: 'Сповіщення' },
           { href: '/admin/network', label: 'Магазини' },
-          { label: 'Аналітика' }
+          { href: '/admin/inventory/analytics', label: 'Аналітика' }
         ]
       },
       {
