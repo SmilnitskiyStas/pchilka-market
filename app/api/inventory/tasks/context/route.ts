@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
-import { listInventoryExpiryTasksFromDb } from '@/lib/inventory-expiry-tasks-repository';
-import { markInventoryNotificationOpenedInDb } from '@/lib/inventory-notification-logs-repository';
+import { findInventoryExpiryTaskByIdInDb, listInventoryExpiryTasksFromDb } from '@/lib/inventory-expiry-tasks-repository';
+import { findInventoryNotificationLogByIdInDb, markInventoryNotificationOpenedInDb } from '@/lib/inventory-notification-logs-repository';
 import { resolveInventorySessionUserFromToken } from '@/lib/inventory-session-auth';
 
 export const runtime = 'nodejs';
@@ -35,6 +35,21 @@ export async function GET(request: Request) {
         limit: 100
       })
     ]);
+
+    if (notificationId) {
+      const notification = await findInventoryNotificationLogByIdInDb(notificationId);
+      if (notification?.task_id && Number(notification.user_id) === Number(user.id)) {
+        const linkedTask = await findInventoryExpiryTaskByIdInDb(notification.task_id);
+        if (linkedTask && Number(linkedTask.storeId) === Number(user.storeId)) {
+          const targetList =
+            linkedTask.status === 'completed' || linkedTask.status === 'cancelled' ? archivedTasks : activeTasks;
+          const exists = targetList.some((task) => Number(task.id) === Number(linkedTask.id));
+          if (!exists) {
+            targetList.unshift(linkedTask);
+          }
+        }
+      }
+    }
 
     return NextResponse.json({
       ok: true,
