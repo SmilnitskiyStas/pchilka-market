@@ -853,3 +853,70 @@ export async function updateInventoryBatchCheckActionInDb(input: {
 
   return mapRow(rows[0]);
 }
+
+export async function updateInventoryBatchExpiryDateInDb(input: {
+  batchId: string | number;
+  storeId?: string | number | null;
+  expiryDate: string;
+  updatedByUserId?: string | number | null;
+}): Promise<InventoryBatchRecord> {
+  const pool = getDbPool();
+  const batchId = Number(input.batchId);
+  const scopedStoreId = input.storeId == null || input.storeId === '' ? null : Number(input.storeId);
+  const updatedByUserId =
+    input.updatedByUserId == null || input.updatedByUserId === '' ? null : Number(input.updatedByUserId);
+  const expiryDate = String(input.expiryDate ?? '').trim();
+
+  if (!Number.isFinite(batchId) || batchId <= 0) {
+    throw new Error('Некоректний batchId.');
+  }
+  if (!expiryDate) {
+    throw new Error('Вкажіть новий термін придатності.');
+  }
+
+  const [batchRows] = await pool.query<Array<RowDataPacket & { store_id: number }>>(
+    `
+      SELECT store_id
+      FROM product_batches
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [batchId]
+  );
+
+  if (batchRows.length === 0) {
+    throw new Error('Партію не знайдено.');
+  }
+
+  if (scopedStoreId != null && (!Number.isFinite(scopedStoreId) || scopedStoreId <= 0 || batchRows[0].store_id !== scopedStoreId)) {
+    throw new Error('Немає доступу до партії іншого магазину.');
+  }
+
+  await pool.query(
+    `
+      UPDATE product_batches
+      SET
+        expiry_date = ?,
+        notified = 0,
+        notified_at = NULL,
+        updated_by_user_id = COALESCE(?, updated_by_user_id),
+        updated_at = NOW()
+      WHERE id = ?
+    `,
+    [expiryDate, updatedByUserId, batchId]
+  );
+
+  const [rows] = await pool.query<BatchRow[]>(
+    `
+      ${buildBatchSelectSql('WHERE pb.id = ?')}
+      LIMIT 1
+    `,
+    [batchId]
+  );
+
+  if (rows.length === 0) {
+    throw new Error('Не вдалося прочитати оновлену партію.');
+  }
+
+  return mapRow(rows[0]);
+}

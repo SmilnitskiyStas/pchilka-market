@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import {
+  getSuspiciousInventoryExpiryDate,
+  type SuspiciousInventoryExpiryDate
+} from '@/lib/inventory-expiry-date-rules';
+import {
   buildInventoryWebhookUrl,
   defaultInventoryTelegramSettings,
   normalizeInventoryTelegramSettings,
@@ -39,6 +43,7 @@ type BatchMutationResolution = 'created' | 'merged';
 type IntakePayload = ProductsPayload &
   BatchesPayload & {
     duplicateBatch?: DuplicateBatchConflict;
+    suspiciousExpiryDate?: SuspiciousInventoryExpiryDate;
     resolution?: BatchMutationResolution;
     usedExistingProduct?: boolean;
   };
@@ -623,6 +628,7 @@ export default function AdminInventoryManager({
   const [batchForm, setBatchForm] = useState<InventoryBatchInput>(initialBatchForm);
   const [batchNotifyOverride, setBatchNotifyOverride] = useState('');
   const [intakeDuplicateBatch, setIntakeDuplicateBatch] = useState<DuplicateBatchConflict | null>(null);
+  const [intakeSuspiciousExpiryDateWarning, setIntakeSuspiciousExpiryDateWarning] = useState<SuspiciousInventoryExpiryDate | null>(null);
   const [selectedStoreId, setSelectedStoreId] = useState('');
   const [webhookInfo, setWebhookInfo] = useState<WebhookPayload['info']>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -1421,11 +1427,23 @@ export default function AdminInventoryManager({
     });
   }
 
-  async function submitIntake(duplicateAction?: 'merge' | 'create_anyway') {
+  async function submitIntake(duplicateAction?: 'merge' | 'create_anyway', confirmSuspiciousExpiryDate = false) {
     setIsCreatingIntake(true);
     setError('');
     setSuccess('');
     try {
+      const normalizedExpiryDate = String(batchForm.expiryDate ?? '').trim();
+      const normalizedDeliveryDate = String(batchForm.deliveryDate ?? '').trim();
+      if (!confirmSuspiciousExpiryDate) {
+        const localSuspiciousExpiryDate = getSuspiciousInventoryExpiryDate({
+          expiryDate: normalizedExpiryDate,
+          deliveryDate: normalizedDeliveryDate
+        });
+        if (localSuspiciousExpiryDate.isSuspicious) {
+          setIntakeSuspiciousExpiryDateWarning(localSuspiciousExpiryDate);
+          return;
+        }
+      }
       const response = await fetch('/api/admin/inventory/intake', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1435,14 +1453,19 @@ export default function AdminInventoryManager({
             storeId: batchForm.storeId,
             batchCode: batchForm.batchCode,
             quantity: batchForm.quantity,
-            expiryDate: batchForm.expiryDate,
-            deliveryDate: batchForm.deliveryDate,
+            expiryDate: normalizedExpiryDate,
+            deliveryDate: normalizedDeliveryDate,
             notifiedDays: batchNotifyOverride.trim() === '' ? null : batchNotifyOverride
           },
-          duplicateAction
+          duplicateAction,
+          confirmSuspiciousExpiryDate
         })
       });
       const payload = (await response.json()) as IntakePayload;
+      if (response.status === 428 && payload.suspiciousExpiryDate) {
+        setIntakeSuspiciousExpiryDateWarning(payload.suspiciousExpiryDate);
+        return;
+      }
       if (response.status === 409 && payload.duplicateBatch) {
         setIntakeDuplicateBatch(payload.duplicateBatch);
         return;
@@ -1456,6 +1479,7 @@ export default function AdminInventoryManager({
       setBatchForm(initialBatchForm);
       setBatchNotifyOverride('');
       setIntakeDuplicateBatch(null);
+      setIntakeSuspiciousExpiryDateWarning(null);
       if (payload.resolution === 'merged') {
         setSuccess(
           `Кількість додано до існуючої партії "${payload.batch.productName}" до ${payload.batch.expiryDate}. Нова кількість: ${payload.batch.quantity}.`
@@ -3593,6 +3617,39 @@ export default function AdminInventoryManager({
               className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
             >
               {isCreatingIntake ? 'Збереження...' : 'Додати до існуючої'}
+            </button>
+          </div>
+        </div>
+      </div>
+      ) : null}
+      {intakeSuspiciousExpiryDateWarning ? (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 px-4">
+        <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Підтвердження дати</p>
+          <h3 className="mt-2 text-xl font-semibold text-slate-900">
+            {intakeSuspiciousExpiryDateWarning.title || 'Перевірте термін придатності'}
+          </h3>
+          <p className="mt-2 text-sm text-slate-600">{intakeSuspiciousExpiryDateWarning.message}</p>
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+            <p><span className="font-semibold text-slate-900">Термін придатності:</span> {String(batchForm.expiryDate || '—')}</p>
+            <p className="mt-1"><span className="font-semibold text-slate-900">Дата поставки:</span> {String(batchForm.deliveryDate || '—')}</p>
+          </div>
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setIntakeSuspiciousExpiryDateWarning(null)}
+              disabled={isCreatingIntake}
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+            >
+              Повернутися
+            </button>
+            <button
+              type="button"
+              onClick={() => { void submitIntake(undefined, true); }}
+              disabled={isCreatingIntake}
+              className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {isCreatingIntake ? 'Збереження...' : 'Підтвердити і зберегти'}
             </button>
           </div>
         </div>

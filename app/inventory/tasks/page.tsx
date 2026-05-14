@@ -96,6 +96,40 @@ function formatOutcome(value: string) {
   }
 }
 
+function formatTaskType(value: string) {
+  switch (value) {
+    case 'expiry_check':
+      return 'Перевірка строку придатності';
+    case 'inventory_count':
+      return 'Інвентаризація';
+    case 'manual_assignment':
+      return 'Ручне завдання';
+    default:
+      return value || '—';
+  }
+}
+
+function formatRiskLevel(value: string) {
+  switch (value) {
+    case 'critical':
+      return 'Критична';
+    case 'high':
+      return 'Високий ризик';
+    case 'medium':
+      return 'Середній ризик';
+    case 'low':
+      return 'Низький ризик';
+    default:
+      return value || '—';
+  }
+}
+
+function formatDaysLeft(value: number) {
+  if (value < 0) return `Протерміновано на ${Math.abs(value)} дн.`;
+  if (value === 0) return 'Закінчується сьогодні';
+  return `Залишилось днів: ${value}`;
+}
+
 function getRiskBadgeClassName(riskLevel: string) {
   switch (riskLevel) {
     case 'critical':
@@ -153,10 +187,7 @@ export default function InventoryTasksPage() {
     void load();
   }, []);
 
-  const overdueCount = useMemo(
-    () => activeTasks.filter((task) => task.daysLeftSnapshot < 0).length,
-    [activeTasks]
-  );
+  const overdueCount = useMemo(() => activeTasks.filter((task) => task.daysLeftSnapshot < 0).length, [activeTasks]);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl items-start justify-center px-4 py-8 sm:px-6 lg:px-8">
@@ -192,7 +223,7 @@ export default function InventoryTasksPage() {
                 <p className="mt-2 text-2xl font-bold text-amber-700">{summary.high}</p>
               </article>
               <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Прострочені</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Протерміновані</p>
                 <p className="mt-2 text-2xl font-bold text-slate-900">{overdueCount}</p>
               </article>
             </div>
@@ -224,7 +255,7 @@ export default function InventoryTasksPage() {
                           </div>
                           <div className="flex flex-wrap gap-2">
                             <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getRiskBadgeClassName(task.riskLevel)}`}>
-                              {task.riskLevel}
+                              {formatRiskLevel(task.riskLevel)}
                             </span>
                             <span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
                               {formatStatus(task.status)}
@@ -233,12 +264,12 @@ export default function InventoryTasksPage() {
                         </div>
 
                         <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                          <p>Тип: <span className="font-semibold text-slate-900">{task.taskType}</span></p>
+                          <p>Тип: <span className="font-semibold text-slate-900">{formatTaskType(task.taskType)}</span></p>
                           <p>Термін: <span className="font-semibold text-slate-900">{task.dueDate}</span></p>
                           <p>Артикул: <span className="font-semibold text-slate-900">{task.article || '—'}</span></p>
                           <p>Штрихкод: <span className="font-semibold text-slate-900">{task.barcode || '—'}</span></p>
                           <p>Партія: <span className="font-semibold text-slate-900">#{task.batchId}</span></p>
-                          <p>Залишилось днів: <span className="font-semibold text-slate-900">{task.daysLeftSnapshot}</span></p>
+                          <p><span className="font-semibold text-slate-900">{formatDaysLeft(task.daysLeftSnapshot)}</span></p>
                         </div>
 
                         {task.note ? <p className="mt-3 text-sm whitespace-pre-wrap text-slate-700">{task.note}</p> : null}

@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import {
+  getSuspiciousInventoryExpiryDate,
+  type SuspiciousInventoryExpiryDate
+} from '@/lib/inventory-expiry-date-rules';
 import { normalizeInventoryBarcode, type InventoryProductInput } from '@/lib/inventory-product-types';
 
 type ProductView = {
@@ -70,6 +74,7 @@ type BatchPayload = {
     quantity: number;
     batchCode: string;
   };
+  suspiciousExpiryDate?: SuspiciousInventoryExpiryDate;
   resolution?: 'created' | 'merged';
   error?: string;
 };
@@ -293,6 +298,7 @@ export default function InventoryIntakePage() {
   const [messageError, setMessageError] = useState('');
   const [success, setSuccess] = useState('');
   const [duplicateBatch, setDuplicateBatch] = useState<NonNullable<BatchPayload['duplicateBatch']> | null>(null);
+  const [suspiciousExpiryDateWarning, setSuspiciousExpiryDateWarning] = useState<SuspiciousInventoryExpiryDate | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -780,11 +786,23 @@ export default function InventoryIntakePage() {
     }
   }
 
-  async function submitBatch(duplicateAction?: 'merge' | 'create_anyway') {
+  async function submitBatch(duplicateAction?: 'merge' | 'create_anyway', confirmSuspiciousExpiryDate = false) {
     resetMessages();
     setIsSubmitting(true);
 
     try {
+      const normalizedExpiryDate = normalizeDateForApi(expiryDate);
+      const normalizedDeliveryDate = normalizeDateForApi(deliveryDate);
+      if (!confirmSuspiciousExpiryDate) {
+        const localSuspiciousExpiryDate = getSuspiciousInventoryExpiryDate({
+          expiryDate: normalizedExpiryDate,
+          deliveryDate: normalizedDeliveryDate
+        });
+        if (localSuspiciousExpiryDate.isSuspicious) {
+          setSuspiciousExpiryDateWarning(localSuspiciousExpiryDate);
+          return;
+        }
+      }
       const response = await fetch('/api/inventory/intake/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -795,14 +813,19 @@ export default function InventoryIntakePage() {
             batchCode,
             quantity,
             unitsOfMeasurement,
-            expiryDate: normalizeDateForApi(expiryDate),
-            deliveryDate: normalizeDateForApi(deliveryDate),
+            expiryDate: normalizedExpiryDate,
+            deliveryDate: normalizedDeliveryDate,
             notifiedDays: notifiedDays.trim() === '' ? null : notifiedDays
           },
-          duplicateAction
+          duplicateAction,
+          confirmSuspiciousExpiryDate
         })
       });
       const payload = (await response.json()) as BatchPayload;
+      if (response.status === 428 && payload.suspiciousExpiryDate) {
+        setSuspiciousExpiryDateWarning(payload.suspiciousExpiryDate);
+        return;
+      }
       if (response.status === 409 && payload.duplicateBatch) {
         setDuplicateBatch(payload.duplicateBatch);
         return;
@@ -812,6 +835,7 @@ export default function InventoryIntakePage() {
       }
 
       setDuplicateBatch(null);
+      setSuspiciousExpiryDateWarning(null);
       setSuccess(
         payload.resolution === 'merged'
           ? `Кількість додано до існуючої партії "${payload.batch.productName}". Нова кількість: ${payload.batch.quantity}, термін придатності: ${payload.batch.expiryDate}.`
@@ -1304,6 +1328,41 @@ export default function InventoryIntakePage() {
                 className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
                 {isSubmitting ? 'Збереження...' : 'Додати до існуючої'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {suspiciousExpiryDateWarning ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 px-4">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Підтвердження дати</p>
+            <h3 className="mt-2 text-xl font-semibold text-slate-900">
+              {suspiciousExpiryDateWarning.title || 'Перевірте термін придатності'}
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">{suspiciousExpiryDateWarning.message}</p>
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <p><span className="font-semibold text-slate-900">Термін придатності:</span> {expiryDate || '—'}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Дата поставки:</span> {deliveryDate || '—'}</p>
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSuspiciousExpiryDateWarning(null)}
+                disabled={isSubmitting}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+              >
+                Повернутися
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void submitBatch(undefined, true);
+                }}
+                disabled={isSubmitting}
+                className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {isSubmitting ? 'Збереження...' : 'Підтвердити і зберегти'}
               </button>
             </div>
           </div>

@@ -6,6 +6,7 @@ import {
   mergeInventoryBatchQuantityInDb
 } from '@/lib/inventory-batches-repository';
 import { normalizeInventoryBatchInput } from '@/lib/inventory-batch-types';
+import { getSuspiciousInventoryExpiryDate } from '@/lib/inventory-expiry-date-rules';
 import { parseInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
 import { findInventoryProductByIdInDb } from '@/lib/inventory-products-repository';
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
       token?: string;
       batch?: Record<string, unknown>;
       duplicateAction?: 'merge' | 'create_anyway';
+      confirmSuspiciousExpiryDate?: boolean;
     };
 
     const settings = await getInventoryTelegramSettingsFromDb();
@@ -51,6 +53,21 @@ export async function POST(request: Request) {
     }
     if (normalized.quantity <= 0) {
       return NextResponse.json({ ok: false, error: 'Кількість має бути більшою за 0.' }, { status: 400 });
+    }
+
+    const suspiciousExpiryDate = getSuspiciousInventoryExpiryDate({
+      expiryDate: normalized.expiryDate,
+      deliveryDate: normalized.deliveryDate
+    });
+    if (suspiciousExpiryDate.isSuspicious && body?.confirmSuspiciousExpiryDate !== true) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: suspiciousExpiryDate.message,
+          suspiciousExpiryDate
+        },
+        { status: 428 }
+      );
     }
 
     const product = await findInventoryProductByIdInDb(normalized.productId);

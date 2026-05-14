@@ -7,6 +7,7 @@ import {
   findInventoryDuplicateBatchInDb,
   mergeInventoryBatchQuantityInDb
 } from '@/lib/inventory-batches-repository';
+import { getSuspiciousInventoryExpiryDate } from '@/lib/inventory-expiry-date-rules';
 import { createInventoryProductInDb, findInventoryProductDuplicateInDb } from '@/lib/inventory-products-repository';
 import { normalizeInventoryBatchInput } from '@/lib/inventory-batch-types';
 import { normalizeInventoryProductInput } from '@/lib/inventory-product-types';
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
       product?: Record<string, unknown>;
       batch?: Record<string, unknown>;
       duplicateAction?: 'merge' | 'create_anyway';
+      confirmSuspiciousExpiryDate?: boolean;
     };
 
     const productInput = normalizeInventoryProductInput(body?.product);
@@ -37,6 +39,21 @@ export async function POST(request: Request) {
     }
 
     const batchInput = normalizeInventoryBatchInput(body?.batch);
+
+    const suspiciousExpiryDate = getSuspiciousInventoryExpiryDate({
+      expiryDate: batchInput.expiryDate,
+      deliveryDate: batchInput.deliveryDate
+    });
+    if (suspiciousExpiryDate.isSuspicious && body?.confirmSuspiciousExpiryDate !== true) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: suspiciousExpiryDate.message,
+          suspiciousExpiryDate
+        },
+        { status: 428 }
+      );
+    }
 
     const duplicateProduct = await findInventoryProductDuplicateInDb({
       article: productInput.article,

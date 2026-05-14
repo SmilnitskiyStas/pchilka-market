@@ -104,7 +104,7 @@ function buildDigestText(tasks: InventoryExpiryNotificationCandidate[]) {
     ...topProducts.map((task) => {
       const daysLabel =
         task.daysLeftSnapshot < 0
-          ? `прострочено на ${Math.abs(task.daysLeftSnapshot)} дн.`
+          ? `протерміновано на ${Math.abs(task.daysLeftSnapshot)} дн.`
           : `залишилось ${task.daysLeftSnapshot} дн.`;
       return `• ${task.productName} — партія #${task.batchId}, ${daysLabel}`;
     }),

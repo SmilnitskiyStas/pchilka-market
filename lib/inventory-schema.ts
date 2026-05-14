@@ -6,6 +6,7 @@ export const INVENTORY_REQUIRED_TABLES = [
   'product_batches',
   'batch_sales',
   'batch_checks',
+  'batch_expiry_corrections',
   'inventory_count_sessions',
   'inventory_count_items',
   'inventory_adjustments',

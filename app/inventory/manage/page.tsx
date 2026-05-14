@@ -1,7 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { type InventoryUserRole } from '@/lib/inventory-user-roles';
+import { uploadRequestAttachment } from '@/lib/request-attachment-client';
+import {
+  getSuspiciousInventoryExpiryDate,
+  type SuspiciousInventoryExpiryDate
+} from '@/lib/inventory-expiry-date-rules';
+import { canEditInventoryBatchExpiry, type InventoryUserRole } from '@/lib/inventory-user-roles';
 
 type InventoryUserView = {
   id: number;
@@ -86,6 +91,31 @@ type ManageContextPayload = {
   error?: string;
 };
 
+type BatchExpiryCorrectionPayload = {
+  ok?: boolean;
+  batch?: ExpiringBatchView;
+  suspiciousExpiryDate?: SuspiciousInventoryExpiryDate;
+  correction?: {
+    id: number;
+    oldExpiryDate: string;
+    newExpiryDate: string;
+    reason: string;
+    comment: string;
+    photoUrl: string;
+    changedByUserName: string;
+    createdAt: string;
+  };
+  error?: string;
+};
+
+const expiryCorrectionReasonOptions = [
+  { value: 'wrong_year', label: 'Помилка в році' },
+  { value: 'wrong_day_or_month', label: 'Помилка в дні або місяці' },
+  { value: 'label_rechecked', label: 'Перевірено по етикетці' },
+  { value: 'supplier_data_error', label: 'Помилка в даних постачальника' },
+  { value: 'other', label: 'Інша причина' }
+] as const;
+
 function formatDaysLeft(value: number) {
   if (value < 0) return `Прострочено на ${Math.abs(value)} дн.`;
   if (value === 0) return 'Спливає сьогодні';
@@ -133,6 +163,14 @@ function formatDate(value: string) {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('uk-UA');
+}
+
+function daysUntil(value: string) {
+  const target = new Date(`${value}T00:00:00`);
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const diff = target.getTime() - start.getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
 function groupBatchesBySupply(
@@ -250,6 +288,14 @@ export default function InventoryManagePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [savingUserId, setSavingUserId] = useState<number | null>(null);
   const [assigningBatchId, setAssigningBatchId] = useState<string>('');
+  const [editingExpiryBatch, setEditingExpiryBatch] = useState<ExpiringBatchView | null>(null);
+  const [expiryCorrectionNewDate, setExpiryCorrectionNewDate] = useState('');
+  const [expiryCorrectionReason, setExpiryCorrectionReason] = useState('wrong_year');
+  const [expiryCorrectionComment, setExpiryCorrectionComment] = useState('');
+  const [expiryCorrectionPhotoFile, setExpiryCorrectionPhotoFile] = useState<File | null>(null);
+  const [expiryCorrectionPhotoUrl, setExpiryCorrectionPhotoUrl] = useState('');
+  const [expiryCorrectionWarning, setExpiryCorrectionWarning] = useState<SuspiciousInventoryExpiryDate | null>(null);
+  const [isSavingExpiryCorrection, setIsSavingExpiryCorrection] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -303,6 +349,46 @@ export default function InventoryManagePage() {
     () => groupBatchesBySupply(expiringBatches, focusedBatchId, 'expiry'),
     [expiringBatches, focusedBatchId]
   );
+
+  function openExpiryCorrectionModal(batch: ExpiringBatchView) {
+    setEditingExpiryBatch(batch);
+    setExpiryCorrectionNewDate(batch.expiryDate);
+    setExpiryCorrectionReason('wrong_year');
+    setExpiryCorrectionComment('');
+    setExpiryCorrectionPhotoFile(null);
+    setExpiryCorrectionPhotoUrl('');
+    setExpiryCorrectionWarning(null);
+    setError('');
+    setSuccess('');
+  }
+
+  function closeExpiryCorrectionModal() {
+    setEditingExpiryBatch(null);
+    setExpiryCorrectionPhotoFile(null);
+    setExpiryCorrectionPhotoUrl('');
+    setExpiryCorrectionWarning(null);
+  }
+
+  function upsertBatch(batch: ExpiringBatchView) {
+    const nextBatch = {
+      ...batch,
+      daysLeft: daysUntil(batch.expiryDate)
+    };
+
+    setStoreBatches((prev) =>
+      prev.some((item) => item.id === nextBatch.id)
+        ? prev.map((item) => (item.id === nextBatch.id ? nextBatch : item))
+        : [nextBatch, ...prev]
+    );
+    setExpiringBatches((prev) => {
+      const next = prev.some((item) => item.id === nextBatch.id)
+        ? prev.map((item) => (item.id === nextBatch.id ? nextBatch : item))
+        : [nextBatch, ...prev];
+      return nextBatch.daysLeft <= 30
+        ? next
+        : next.filter((item) => item.id !== nextBatch.id);
+    });
+  }
 
   async function handleSaveUser(user: InventoryUserView) {
     setSavingUserId(user.id);
@@ -380,6 +466,71 @@ export default function InventoryManagePage() {
       setError(assignError instanceof Error ? assignError.message : 'Не вдалося переназначити відповідального.');
     } finally {
       setAssigningBatchId('');
+    }
+  }
+
+  async function handleSaveExpiryCorrection(confirmSuspiciousExpiryDate = false) {
+    if (!editingExpiryBatch) return;
+
+    setIsSavingExpiryCorrection(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      if (!confirmSuspiciousExpiryDate) {
+        const localSuspiciousExpiryDate = getSuspiciousInventoryExpiryDate({
+          expiryDate: expiryCorrectionNewDate,
+          deliveryDate: editingExpiryBatch.deliveryDate
+        });
+        if (localSuspiciousExpiryDate.isSuspicious) {
+          setExpiryCorrectionWarning(localSuspiciousExpiryDate);
+          return;
+        }
+      }
+
+      let nextPhotoUrl = expiryCorrectionPhotoUrl.trim();
+      if (!nextPhotoUrl) {
+        if (!expiryCorrectionPhotoFile) {
+          throw new Error('Додайте фото товару як підтвердження зміни.');
+        }
+        const uploaded = await uploadRequestAttachment(expiryCorrectionPhotoFile, {
+          folder: 'inventory/expiry-corrections'
+        });
+        nextPhotoUrl = uploaded.url;
+        setExpiryCorrectionPhotoUrl(uploaded.url);
+      }
+
+      const response = await fetch('/api/inventory/manage/expiry-date', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          batchId: editingExpiryBatch.id,
+          newExpiryDate: expiryCorrectionNewDate,
+          reason: expiryCorrectionReason,
+          comment: expiryCorrectionComment,
+          photoUrl: nextPhotoUrl,
+          confirmSuspiciousExpiryDate
+        })
+      });
+      const payload = (await response.json()) as BatchExpiryCorrectionPayload;
+      if (response.status === 428 && payload.suspiciousExpiryDate) {
+        setExpiryCorrectionWarning(payload.suspiciousExpiryDate);
+        return;
+      }
+      if (!response.ok || !payload.ok || !payload.batch || !payload.correction) {
+        throw new Error(payload.error || 'Не вдалося змінити термін придатності.');
+      }
+
+      upsertBatch(payload.batch);
+      setSuccess(
+        `Термін придатності для "${payload.batch.productName}" змінено з ${payload.correction.oldExpiryDate} на ${payload.correction.newExpiryDate}.`
+      );
+      closeExpiryCorrectionModal();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Не вдалося змінити термін придатності.');
+    } finally {
+      setIsSavingExpiryCorrection(false);
     }
   }
 
@@ -573,6 +724,15 @@ export default function InventoryManagePage() {
                                         </option>
                                       ))}
                                     </select>
+                                    {canEditInventoryBatchExpiry(currentUserRole) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => openExpiryCorrectionModal(batch)}
+                                        className="mt-2 rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
+                                      >
+                                        Змінити термін придатності
+                                      </button>
+                                    ) : null}
                                   </div>
                                 ))}
                               </div>
@@ -695,6 +855,15 @@ export default function InventoryManagePage() {
                                         </option>
                                       ))}
                                     </select>
+                                    {canEditInventoryBatchExpiry(currentUserRole) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => openExpiryCorrectionModal(batch)}
+                                        className="mt-2 rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
+                                      >
+                                        Змінити термін придатності
+                                      </button>
+                                    ) : null}
                                   </div>
                                 ))}
                               </div>
@@ -711,6 +880,140 @@ export default function InventoryManagePage() {
           </>
         ) : null}
       </section>
+      {editingExpiryBatch ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6">
+          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Контрольована зміна дати</p>
+            <h3 className="mt-2 text-xl font-semibold text-slate-900">{editingExpiryBatch.productName}</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Зміна терміну придатності зберігається в історію разом із причиною, коментарем, фото, користувачем і часом зміни.
+            </p>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="block text-sm">
+                <span className="font-semibold text-slate-900">Стара дата</span>
+                <input
+                  value={editingExpiryBatch.expiryDate}
+                  readOnly
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="font-semibold text-slate-900">Нова дата</span>
+                <input
+                  type="date"
+                  value={expiryCorrectionNewDate}
+                  onChange={(event) => setExpiryCorrectionNewDate(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="block text-sm">
+                <span className="font-semibold text-slate-900">Причина зміни</span>
+                <select
+                  value={expiryCorrectionReason}
+                  onChange={(event) => setExpiryCorrectionReason(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
+                >
+                  {expiryCorrectionReasonOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm">
+                <span className="font-semibold text-slate-900">Фото товару</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setExpiryCorrectionPhotoFile(event.target.files?.[0] ?? null)}
+                  className="mt-1.5 block w-full rounded-xl border border-slate-300 p-3 text-sm"
+                />
+                <span className="mt-1 block text-xs text-slate-500">
+                  {expiryCorrectionPhotoFile?.name || (expiryCorrectionPhotoUrl ? 'Фото вже додано' : 'Фото обов’язкове')}
+                </span>
+              </label>
+            </div>
+
+            <label className="mt-4 block text-sm">
+              <span className="font-semibold text-slate-900">Коментар</span>
+              <textarea
+                value={expiryCorrectionComment}
+                onChange={(event) => setExpiryCorrectionComment(event.target.value)}
+                rows={4}
+                placeholder="Опишіть, що саме перевірили і чому змінюєте дату."
+                className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
+              />
+            </label>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <p><span className="font-semibold text-slate-900">Партія:</span> #{editingExpiryBatch.id}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Код партії:</span> {editingExpiryBatch.batchCode || '—'}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Кількість:</span> {editingExpiryBatch.quantity}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Дата поставки:</span> {editingExpiryBatch.deliveryDate || '—'}</p>
+            </div>
+
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeExpiryCorrectionModal}
+                disabled={isSavingExpiryCorrection}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+              >
+                Скасувати
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSaveExpiryCorrection(false);
+                }}
+                disabled={isSavingExpiryCorrection}
+                className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {isSavingExpiryCorrection ? 'Збереження...' : 'Зберегти зміну'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {editingExpiryBatch && expiryCorrectionWarning ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 px-4 py-6">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Підтвердження дати</p>
+            <h3 className="mt-2 text-xl font-semibold text-slate-900">
+              {expiryCorrectionWarning.title || 'Перевірте нову дату'}
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">{expiryCorrectionWarning.message}</p>
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <p><span className="font-semibold text-slate-900">Стара дата:</span> {editingExpiryBatch.expiryDate}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Нова дата:</span> {expiryCorrectionNewDate || '—'}</p>
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setExpiryCorrectionWarning(null)}
+                disabled={isSavingExpiryCorrection}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+              >
+                Повернутися
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSaveExpiryCorrection(true);
+                }}
+                disabled={isSavingExpiryCorrection}
+                className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {isSavingExpiryCorrection ? 'Збереження...' : 'Підтвердити зміну'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
