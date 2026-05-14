@@ -212,6 +212,31 @@ type NotificationsRunPayload = {
   };
   error?: string;
 };
+type InventoryNotificationLogView = {
+  id: number;
+  taskId: number | null;
+  batchId: number | null;
+  productId: number | null;
+  storeId: number | null;
+  userId: number | null;
+  notificationType: string;
+  messageText: string;
+  status: string;
+  openedAt: string;
+  openedByUserId: number | null;
+  sentAt: string;
+  productName: string;
+  article: string;
+  batchCode: string;
+  storeLabel: string;
+  recipientName: string;
+  openedByName: string;
+};
+type InventoryNotificationLogsPayload = {
+  ok?: boolean;
+  logs?: InventoryNotificationLogView[];
+  error?: string;
+};
 type InventoryExpiryTaskView = {
   id: number;
   batchId: number;
@@ -258,6 +283,7 @@ type InventorySubsectionId =
   | 'registered-employees'
   | 'employee-tasks'
   | 'batch-responsibility'
+  | 'notifications'
   | 'analytics'
   | 'settings-schema'
   | 'settings-telegram';
@@ -281,6 +307,7 @@ const inventorySubsectionToSection: Record<InventorySubsectionId, InventorySecti
   'registered-employees': 'operations',
   'employee-tasks': 'operations',
   'batch-responsibility': 'operations',
+  notifications: 'telegram',
   analytics: 'analytics',
   'settings-schema': 'schema',
   'settings-telegram': 'telegram'
@@ -520,6 +547,29 @@ function getExpiryTaskRiskClassName(level: string) {
   }
 }
 
+function formatNotificationLogStatus(status: string) {
+  switch (status) {
+    case 'opened':
+      return 'Відкрито';
+    case 'sent':
+    default:
+      return 'Надіслано';
+  }
+}
+
+function formatNotificationLogType(type: string) {
+  switch (type) {
+    case 'inventory_task_digest':
+      return 'Зведене сповіщення по задачах';
+    case 'inventory_task_repeat':
+      return 'Повторне нагадування';
+    case 'inventory_expiry':
+      return 'Сповіщення про термін';
+    default:
+      return type || '—';
+  }
+}
+
 function formatDaysLeftLabel(daysLeft: number) {
   if (daysLeft < 0) return `Прострочено на ${Math.abs(daysLeft)} дн.`;
   if (daysLeft === 0) return 'Закінчується сьогодні';
@@ -638,6 +688,11 @@ export default function AdminInventoryManager({
   const [isRunningNotifications, setIsRunningNotifications] = useState(false);
   const [isLoadingInventoryTasks, setIsLoadingInventoryTasks] = useState(false);
   const [notificationsDebug, setNotificationsDebug] = useState<InventoryNotificationDebugItem[]>([]);
+  const [notificationLogs, setNotificationLogs] = useState<InventoryNotificationLogView[]>([]);
+  const [isLoadingNotificationLogs, setIsLoadingNotificationLogs] = useState(false);
+  const [notificationsStoreFilter, setNotificationsStoreFilter] = useState('');
+  const [notificationsDateFrom, setNotificationsDateFrom] = useState(formatDateInputValue());
+  const [notificationsDateTo, setNotificationsDateTo] = useState(formatDateInputValue());
   const [isCreatingIntake, setIsCreatingIntake] = useState(false);
   const [assigningBatchId, setAssigningBatchId] = useState('');
   const [savingInventoryUserId, setSavingInventoryUserId] = useState<number | null>(null);
@@ -725,13 +780,44 @@ export default function AdminInventoryManager({
     }
   }
 
+  async function loadNotificationLogs(options?: {
+    storeId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }) {
+    setIsLoadingNotificationLogs(true);
+    try {
+      const params = new URLSearchParams();
+      const storeId = options?.storeId ?? notificationsStoreFilter;
+      const dateFrom = options?.dateFrom ?? notificationsDateFrom;
+      const dateTo = options?.dateTo ?? notificationsDateTo;
+      params.set('limit', '300');
+      if (storeId.trim()) params.set('storeId', storeId.trim());
+      if (dateFrom.trim()) params.set('dateFrom', dateFrom.trim());
+      if (dateTo.trim()) params.set('dateTo', dateTo.trim());
+
+      const response = await fetch(`/api/admin/inventory/notifications?${params.toString()}`, { cache: 'no-store' });
+      const payload = (await response.json()) as InventoryNotificationLogsPayload;
+      if (!response.ok || !payload.ok || !Array.isArray(payload.logs)) {
+        throw new Error(payload.error || 'Не вдалося завантажити журнал сповіщень.');
+      }
+
+      setNotificationLogs(payload.logs);
+    } catch (loadError) {
+      setNotificationLogs([]);
+      setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити журнал сповіщень.');
+    } finally {
+      setIsLoadingNotificationLogs(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       setIsLoading(true);
       try {
-        const [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11] = await Promise.all([
+        const [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12] = await Promise.all([
           fetch('/api/admin/inventory/readiness', { cache: 'no-store' }),
           fetch('/api/admin/inventory/settings', { cache: 'no-store' }),
           fetch('/api/admin/inventory/products', { cache: 'no-store' }),
@@ -742,7 +828,8 @@ export default function AdminInventoryManager({
           fetch('/api/admin/inventory/manual-products?limit=100', { cache: 'no-store' }),
           fetch('/api/admin/inventory/product-change-logs?limit=40', { cache: 'no-store' }),
           fetch('/api/admin/inventory/import-review?status=pending&limit=100', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/products/import?latest=1', { cache: 'no-store' })
+          fetch('/api/admin/inventory/products/import?latest=1', { cache: 'no-store' }),
+          fetch(`/api/admin/inventory/notifications?limit=300&dateFrom=${encodeURIComponent(notificationsDateFrom)}&dateTo=${encodeURIComponent(notificationsDateTo)}`, { cache: 'no-store' })
         ]);
 
         const p1 = (await r1.json()) as ReadinessPayload;
@@ -756,6 +843,7 @@ export default function AdminInventoryManager({
         const p9 = (await r9.json()) as ProductChangeLogsPayload;
         const p10 = (await r10.json()) as ImportReviewPayload;
         const p11 = (await r11.json()) as ProductImportPayload;
+        const p12 = (await r12.json()) as InventoryNotificationLogsPayload;
 
         if (!r1.ok || !p1.ok || !p1.readiness) throw new Error(p1.error || 'Не вдалося перевірити готовність inventory-модуля.');
         if (!r2.ok || !p2.ok) throw new Error(p2.error || 'Не вдалося завантажити Telegram-налаштування.');
@@ -779,6 +867,7 @@ export default function AdminInventoryManager({
           setImportReviewItems(r10.ok && p10.ok && Array.isArray(p10.items) ? p10.items : []);
           setLatestImportLog(r11.ok && p11.ok ? p11.importLog ?? null : null);
           setImportSummary(r11.ok && p11.ok ? p11.importLog?.summary ?? null : null);
+          setNotificationLogs(r12.ok && p12.ok && Array.isArray(p12.logs) ? p12.logs : []);
           setError('');
           setSuccess('');
           setIsApplied(false);
@@ -798,6 +887,11 @@ export default function AdminInventoryManager({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (activeSubsection !== 'notifications') return;
+    void loadNotificationLogs();
+  }, [activeSubsection, notificationsStoreFilter, notificationsDateFrom, notificationsDateTo]);
 
   useEffect(() => {
     void loadProducts();
@@ -3477,16 +3571,150 @@ export default function AdminInventoryManager({
       ) : null}
 
       {activeSection === 'telegram' ? (
-      <section id="settings-telegram" className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Telegram інтеграція</h2>
-            <p className="mt-1 text-sm text-slate-600">Спочатку збережи дані, потім окремо зареєструй webhook у Telegram.</p>
-          </div>
-          <p className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">Webhook: {webhookUrl || 'не сформовано'}</p>
-        </div>
+      <section id={activeSubsection === 'notifications' ? 'inventory-notifications' : 'settings-telegram'} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+        {activeSubsection === 'notifications' ? (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Журнал сповіщень</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Тут видно, які повідомлення були надіслані працівникам, кому саме, по якому магазину і чи відкривали їх.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => { void handleRunNotifications(); }} disabled={isRunningNotifications} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60">
+                  {isRunningNotifications ? 'Запуск сповіщень...' : 'Запустити сповіщення'}
+                </button>
+                <button type="button" onClick={() => { void loadNotificationLogs(); }} disabled={isLoadingNotificationLogs} className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+                  {isLoadingNotificationLogs ? 'Оновлення...' : 'Оновити журнал'}
+                </button>
+              </div>
+            </div>
 
-        <form onSubmit={handleSaveTelegramSettings} className="mt-4 space-y-4">
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <select value={notificationsStoreFilter} onChange={(e) => setNotificationsStoreFilter(e.target.value)} className="rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand">
+                <option value="">Усі магазини</option>
+                {stores.filter((store) => store.isActive).map((store) => (
+                  <option key={store.id} value={store.id}>{storeLabel(store)}</option>
+                ))}
+              </select>
+              <input type="date" value={notificationsDateFrom} onChange={(e) => setNotificationsDateFrom(e.target.value)} className="rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
+              <input type="date" value={notificationsDateTo} onChange={(e) => setNotificationsDateTo(e.target.value)} className="rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <p className="font-semibold text-slate-900">Автозапуск сповіщень</p>
+              <p className="mt-1">
+                Endpoint для cron: <span className="font-mono">POST /api/inventory/notifications/run</span> з header
+                <span className="font-mono"> x-inventory-notify-secret</span>.
+              </p>
+            </div>
+
+            {notificationsDebug.length > 0 ? (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-900">Debug по останньому запуску</p>
+                  <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                    {notificationsDebug.length}
+                  </span>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {notificationsDebug.map((item) => (
+                    <div
+                      key={`${item.userId ?? 'none'}-${item.taskIds.join('-') || 'empty'}`}
+                      className={`rounded-xl border p-4 text-sm ${
+                        item.skipped ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-900">{item.name || 'Немає отримувача'}</p>
+                          <p className="mt-1 text-xs text-slate-600">
+                            {item.role ? `${item.role} • ` : ''}
+                            {item.chatId ? `chat_id: ${item.chatId} • ` : ''}
+                            Магазини: {item.stores.length > 0 ? item.stores.join('; ') : '—'}
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                          {item.skipped ? 'Пропущено' : `Надіслано: ${item.sentCount}`}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-slate-800">{item.reason}</p>
+                      <p className="mt-1 text-xs text-slate-600">
+                        Задач: {item.active} • Критичні: {item.critical} • Високий ризик: {item.high} • Прострочені: {item.overdue}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-600">
+                        Повторні нагадування: {item.repeat} • ID задач: {item.taskIds.length > 0 ? item.taskIds.join(', ') : '—'}
+                      </p>
+                      {item.error ? <p className="mt-2 text-xs text-red-700">Помилка: {item.error}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+              <div className="grid grid-cols-[150px_1fr_1fr_150px_150px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <span>Надіслано</span>
+                <span>Магазин / отримувач</span>
+                <span>Товар / текст</span>
+                <span>Статус</span>
+                <span>Відкрито</span>
+              </div>
+              {notificationLogs.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-slate-600">
+                  {isLoadingNotificationLogs ? 'Завантаження журналу...' : 'За вибраними фільтрами сповіщень не знайдено.'}
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-200">
+                  {notificationLogs.map((log) => (
+                    <div key={log.id} className="grid grid-cols-[150px_1fr_1fr_150px_150px] gap-3 px-4 py-4 text-sm text-slate-700">
+                      <div>
+                        <p className="font-semibold text-slate-900">{formatDate(log.sentAt)}</p>
+                        <p className="mt-1 text-xs text-slate-500">#{log.id}</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-900">{log.storeLabel || '—'}</p>
+                        <p className="mt-1 text-xs text-slate-500">{log.recipientName || 'Отримувача не визначено'}</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-900">{log.productName || 'Без прив’язки до товару'}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {formatNotificationLogType(log.notificationType)}
+                          {log.article ? ` • арт. ${log.article}` : ''}
+                          {log.batchCode ? ` • партія ${log.batchCode}` : ''}
+                        </p>
+                        <p className="mt-2 line-clamp-3 text-xs text-slate-600">{log.messageText}</p>
+                      </div>
+                      <div>
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                          log.status === 'opened'
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : 'border-sky-200 bg-sky-50 text-sky-700'
+                        }`}>
+                          {formatNotificationLogStatus(log.status)}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-900">{log.openedAt ? formatDate(log.openedAt) : '—'}</p>
+                        <p className="mt-1 text-xs text-slate-500">{log.openedByName || 'Ще не відкрито'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+        <form onSubmit={handleSaveTelegramSettings} className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Telegram інтеграція</h2>
+              <p className="mt-1 text-sm text-slate-600">Спочатку збережи дані, потім окремо зареєструй webhook у Telegram.</p>
+            </div>
+            <p className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">Webhook: {webhookUrl || 'не сформовано'}</p>
+          </div>
+
           <label className="flex items-center gap-2 text-sm text-slate-800">
             <input type="checkbox" checked={telegramSettings.enabled} onChange={(e) => updateTelegramSetting('enabled', e.target.checked)} className="h-4 w-4" />
             Увімкнути Telegram integration для inventory-модуля
@@ -3576,6 +3804,7 @@ export default function AdminInventoryManager({
             </button>
           </div>
         </form>
+        )}
       </section>
       ) : null}
       {intakeDuplicateBatch ? (

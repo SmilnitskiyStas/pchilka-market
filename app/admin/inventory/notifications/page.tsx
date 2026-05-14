@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function AdminInventoryNotificationsPage() {
-  return <AdminInventoryManager key="inventory-notifications" initialSubsection="settings-telegram" />;
+  return <AdminInventoryManager key="inventory-notifications" initialSubsection="notifications" />;
 }

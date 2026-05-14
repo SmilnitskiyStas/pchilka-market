@@ -7,10 +7,73 @@ type InventoryDbExecutor = Pool | PoolConnection;
 type NotificationLogRow = RowDataPacket & {
   id: number;
   task_id: number | null;
+  batch_id?: number | null;
+  product_id?: number | null;
+  store_id?: number | null;
   user_id: number | null;
+  notification_type?: string;
+  message_text?: string;
   status: string;
   opened_at: Date | string | null;
+  opened_by_user_id?: number | null;
+  sent_at?: Date | string;
+  product_name?: string | null;
+  article?: string | null;
+  batch_code?: string | null;
+  store_label?: string | null;
+  recipient_name?: string | null;
+  opened_by_name?: string | null;
 };
+
+export type InventoryNotificationLogRecord = {
+  id: number;
+  taskId: number | null;
+  batchId: number | null;
+  productId: number | null;
+  storeId: number | null;
+  userId: number | null;
+  notificationType: string;
+  messageText: string;
+  status: string;
+  openedAt: string;
+  openedByUserId: number | null;
+  sentAt: string;
+  productName: string;
+  article: string;
+  batchCode: string;
+  storeLabel: string;
+  recipientName: string;
+  openedByName: string;
+};
+
+function toIso(value: Date | string | null | undefined): string {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
+function mapNotificationLogRow(row: NotificationLogRow): InventoryNotificationLogRecord {
+  return {
+    id: row.id,
+    taskId: row.task_id ?? null,
+    batchId: row.batch_id ?? null,
+    productId: row.product_id ?? null,
+    storeId: row.store_id ?? null,
+    userId: row.user_id ?? null,
+    notificationType: String(row.notification_type ?? ''),
+    messageText: String(row.message_text ?? ''),
+    status: String(row.status ?? 'sent'),
+    openedAt: toIso(row.opened_at),
+    openedByUserId: row.opened_by_user_id ?? null,
+    sentAt: toIso(row.sent_at),
+    productName: String(row.product_name ?? ''),
+    article: String(row.article ?? ''),
+    batchCode: String(row.batch_code ?? ''),
+    storeLabel: String(row.store_label ?? ''),
+    recipientName: String(row.recipient_name ?? ''),
+    openedByName: String(row.opened_by_name ?? '')
+  };
+}
 
 export async function createInventoryNotificationLogInDb(
   input: {
@@ -88,4 +151,71 @@ export async function findInventoryNotificationLogByIdInDb(notificationId: strin
   );
 
   return rows[0] ?? null;
+}
+
+export async function listInventoryNotificationLogsFromDb(options?: {
+  storeId?: string | number | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  limit?: number;
+}) {
+  const db = getDbPool();
+  const storeId = Number(options?.storeId ?? 0);
+  const dateFrom = String(options?.dateFrom ?? '').trim();
+  const dateTo = String(options?.dateTo ?? '').trim();
+  const limit = Math.min(Math.max(Number(options?.limit ?? 200), 1), 1000);
+
+  const whereClauses: string[] = [];
+  const params: Array<string | number> = [];
+
+  if (Number.isFinite(storeId) && storeId > 0) {
+    whereClauses.push('nl.store_id = ?');
+    params.push(storeId);
+  }
+  if (dateFrom) {
+    whereClauses.push('DATE(nl.sent_at) >= ?');
+    params.push(dateFrom);
+  }
+  if (dateTo) {
+    whereClauses.push('DATE(nl.sent_at) <= ?');
+    params.push(dateTo);
+  }
+
+  params.push(limit);
+
+  const [rows] = await db.query<NotificationLogRow[]>(
+    `
+      SELECT
+        nl.id,
+        nl.task_id,
+        nl.batch_id,
+        nl.product_id,
+        nl.store_id,
+        nl.user_id,
+        nl.notification_type,
+        nl.message_text,
+        nl.status,
+        nl.opened_at,
+        nl.opened_by_user_id,
+        nl.sent_at,
+        p.product_name,
+        p.article,
+        pb.batch_code,
+        CONCAT_WS(' | ', s.store_code, s.city, s.address_line) AS store_label,
+        CONCAT_WS(' ', ru.surname, ru.name) AS recipient_name,
+        CONCAT_WS(' ', ou.surname, ou.name) AS opened_by_name
+      FROM notification_logs nl
+      LEFT JOIN products p ON p.id = nl.product_id
+      LEFT JOIN product_batches pb ON pb.id = nl.batch_id
+      LEFT JOIN stores s ON s.id = nl.store_id
+      LEFT JOIN users ru ON ru.id = nl.user_id
+      LEFT JOIN users ou ON ou.id = nl.opened_by_user_id
+      ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''}
+      ORDER BY nl.sent_at DESC, nl.id DESC
+      LIMIT ?
+    `,
+    params
+  );
+
+  return rows.map(mapNotificationLogRow);
 }
