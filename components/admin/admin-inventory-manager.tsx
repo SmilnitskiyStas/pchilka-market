@@ -689,6 +689,7 @@ export default function AdminInventoryManager({
   const [isLoadingInventoryTasks, setIsLoadingInventoryTasks] = useState(false);
   const [notificationsDebug, setNotificationsDebug] = useState<InventoryNotificationDebugItem[]>([]);
   const [notificationLogs, setNotificationLogs] = useState<InventoryNotificationLogView[]>([]);
+  const [selectedNotificationLog, setSelectedNotificationLog] = useState<InventoryNotificationLogView | null>(null);
   const [isLoadingNotificationLogs, setIsLoadingNotificationLogs] = useState(false);
   const [notificationsStoreFilter, setNotificationsStoreFilter] = useState('');
   const [notificationsDateFrom, setNotificationsDateFrom] = useState(formatDateInputValue());
@@ -3685,6 +3686,13 @@ export default function AdminInventoryManager({
                           {log.batchCode ? ` • партія ${log.batchCode}` : ''}
                         </p>
                         <p className="mt-2 line-clamp-3 text-xs text-slate-600">{log.messageText}</p>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedNotificationLog(log)}
+                          className="mt-2 text-xs font-semibold text-brand transition hover:opacity-80"
+                        >
+                          Переглянути повний текст
+                        </button>
                       </div>
                       <div>
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
@@ -3806,6 +3814,47 @@ export default function AdminInventoryManager({
         </form>
         )}
       </section>
+      ) : null}
+      {selectedNotificationLog ? (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 px-4 py-6">
+        <div className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white shadow-2xl">
+          <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Повідомлення</p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-900">
+                {selectedNotificationLog.productName || 'Службове сповіщення'}
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                {selectedNotificationLog.storeLabel || '—'} • {selectedNotificationLog.recipientName || 'Отримувача не визначено'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedNotificationLog(null)}
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Закрити
+            </button>
+          </div>
+          <div className="grid gap-4 px-5 py-5 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <p><span className="font-semibold text-slate-900">Тип:</span> {formatNotificationLogType(selectedNotificationLog.notificationType)}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Надіслано:</span> {formatDate(selectedNotificationLog.sentAt)}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Статус:</span> {formatNotificationLogStatus(selectedNotificationLog.status)}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Відкрито:</span> {selectedNotificationLog.openedAt ? formatDate(selectedNotificationLog.openedAt) : 'Не відкрито'}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Хто відкрив:</span> {selectedNotificationLog.openedByName || '—'}</p>
+              {selectedNotificationLog.article ? <p className="mt-1"><span className="font-semibold text-slate-900">Артикул:</span> {selectedNotificationLog.article}</p> : null}
+              {selectedNotificationLog.batchCode ? <p className="mt-1"><span className="font-semibold text-slate-900">Партія:</span> {selectedNotificationLog.batchCode}</p> : null}
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <p className="text-sm font-semibold text-slate-900">Повний текст повідомлення</p>
+              <pre className="mt-3 whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
+                {selectedNotificationLog.messageText}
+              </pre>
+            </div>
+          </div>
+        </div>
+      </div>
       ) : null}
       {intakeDuplicateBatch ? (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 px-4">

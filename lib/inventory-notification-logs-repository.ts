@@ -88,7 +88,7 @@ export async function createInventoryNotificationLogInDb(
   executor?: InventoryDbExecutor
 ) {
   const db = executor ?? getDbPool();
-  await db.query(
+  const [result] = await db.query(
     `
       INSERT INTO notification_logs (
         task_id,
@@ -110,6 +110,8 @@ export async function createInventoryNotificationLogInDb(
       input.messageText
     ]
   );
+
+  return Number((result as { insertId?: number }).insertId ?? 0);
 }
 
 export async function markInventoryNotificationOpenedInDb(input: {

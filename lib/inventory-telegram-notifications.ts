@@ -6,9 +6,12 @@ import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-set
 import { type InventoryUserRole } from '@/lib/inventory-user-roles';
 import { listInventoryUsersFromDb, type InventoryUserRecord } from '@/lib/inventory-users-repository';
 
-function buildInventoryTasksUrl(baseUrl: string, token: string) {
+function buildInventoryTasksUrl(baseUrl: string, token: string, notificationId?: number | null) {
   const url = new URL('/inventory/tasks', baseUrl);
   url.searchParams.set('token', token);
+  if (notificationId && Number.isFinite(notificationId) && notificationId > 0) {
+    url.searchParams.set('notificationId', String(notificationId));
+  }
   return url.toString();
 }
 
@@ -199,18 +202,8 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
       settings.webhookSecret,
       1000 * 60 * 60 * 24 * 7
     );
-    const tasksUrl = buildInventoryTasksUrl(settings.publicBaseUrl, token);
-
     try {
-      await sendInventoryTelegramMessage({
-        botToken: settings.botToken,
-        chatId: digest.recipient.userChatId,
-        text,
-        buttonText: 'Відкрити задачі',
-        buttonUrl: tasksUrl
-      });
-
-      await createInventoryNotificationLogInDb({
+      const notificationId = await createInventoryNotificationLogInDb({
         taskId: null,
         batchId: null,
         productId: null,
@@ -218,6 +211,14 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
         userId: digest.recipient.id,
         notificationType: repeat > 0 ? 'inventory_tasks_digest_repeat' : 'inventory_tasks_digest',
         messageText: text
+      });
+      const tasksUrl = buildInventoryTasksUrl(settings.publicBaseUrl, token, notificationId);
+      await sendInventoryTelegramMessage({
+        botToken: settings.botToken,
+        chatId: digest.recipient.userChatId,
+        text,
+        buttonText: 'Відкрити задачі',
+        buttonUrl: tasksUrl
       });
 
       for (const task of tasks) {
