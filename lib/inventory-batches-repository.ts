@@ -373,7 +373,11 @@ export async function findLatestInventoryBatchCodeForStoreInDb(storeId: string |
     `
       SELECT batch_code
       FROM product_batches
-      WHERE store_id = ? AND batch_code IS NOT NULL AND TRIM(batch_code) <> ''
+      WHERE
+        store_id = ?
+        AND batch_code IS NOT NULL
+        AND TRIM(batch_code) <> ''
+        AND DATE(created_at) = CURDATE()
       ORDER BY created_at DESC, id DESC
       LIMIT 1
     `,

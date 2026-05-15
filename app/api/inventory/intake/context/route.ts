@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 
 import {
-  findLatestInventoryBatchCodeForStoreInDb,
   generateNextInventoryBatchCodeForStoreInDb,
   listOpenInventoryBatchCodesForStoreInDb
 } from '@/lib/inventory-batches-repository';
@@ -35,13 +34,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'Для користувача не прив’язано магазин.' }, { status: 400 });
     }
 
-    const [products, stores, lastBatchCode, openBatchCodes, nextBatchCode] = await Promise.all([
+    const [products, stores, openBatchCodes, nextBatchCode] = await Promise.all([
       listInventoryProductsFromDb('', 500),
       listStoresFromDb(),
-      findLatestInventoryBatchCodeForStoreInDb(user.storeId),
       listOpenInventoryBatchCodesForStoreInDb(user.storeId),
       generateNextInventoryBatchCodeForStoreInDb(user.storeId)
     ]);
+    const lastBatchCode = String(openBatchCodes[0]?.batchCode ?? '').trim();
     const store = stores.find((item) => item.id === String(user.storeId) && item.isActive);
 
     if (!store) {

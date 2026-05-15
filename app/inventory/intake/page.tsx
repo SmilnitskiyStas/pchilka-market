@@ -483,6 +483,39 @@ export default function InventoryIntakePage() {
   }, [selectedProduct?.id, selectedProduct?.unitsOfMeasurement]);
 
   useEffect(() => {
+    if (openBatchCodes.length === 0) {
+      if (batchSelectionMode !== 'new') {
+        setBatchSelectionMode('new');
+      }
+      if (trimmedBatchCode) {
+        setBatchCode('');
+      }
+      return;
+    }
+
+    if (trimmedBatchCode && selectedOpenBatch) {
+      return;
+    }
+
+    const fallbackBatchCode = String(openBatchCodes[0]?.batchCode ?? '').trim();
+    if (!fallbackBatchCode) {
+      setBatchCode('');
+      setBatchSelectionMode('new');
+      return;
+    }
+
+    if (batchSelectionMode === 'new' && trimmedBatchCode && !selectedOpenBatch) {
+      setBatchCode('');
+      return;
+    }
+
+    if (batchSelectionMode === 'existing' || !trimmedBatchCode) {
+      setBatchCode(fallbackBatchCode);
+      setBatchSelectionMode('existing');
+    }
+  }, [batchSelectionMode, openBatchCodes, selectedOpenBatch, trimmedBatchCode]);
+
+  useEffect(() => {
     const normalized = normalizeInventoryBarcode(productFilter);
     if (!normalized) {
       setBarcodeLookupStatus('idle');
