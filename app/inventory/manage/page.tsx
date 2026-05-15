@@ -281,6 +281,7 @@ export default function InventoryManagePage() {
   const [token, setToken] = useState('');
   const [focusedBatchId, setFocusedBatchId] = useState('');
   const [currentUserRole, setCurrentUserRole] = useState<InventoryUserRole>('staff');
+  const [isUsersSectionOpen, setIsUsersSectionOpen] = useState(false);
   const [storeLabel, setStoreLabel] = useState('');
   const [users, setUsers] = useState<InventoryUserView[]>([]);
   const [storeBatches, setStoreBatches] = useState<ExpiringBatchView[]>([]);
@@ -568,12 +569,22 @@ export default function InventoryManagePage() {
             </div>
 
             <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_1.4fr]">
-              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <section>
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-lg font-semibold text-slate-900">Працівники магазину</h2>
-                  <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{users.length}</span>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-semibold text-slate-900">{'Працівники магазину'}</h2>
+                    <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{users.length}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsUsersSectionOpen((prev) => !prev)}
+                    className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    {isUsersSectionOpen ? 'Згорнути' : 'Розгорнути'}
+                  </button>
                 </div>
-                <div className="mt-4 space-y-3">
+                {isUsersSectionOpen ? (
+                  <div className="mt-4 space-y-3">
                   {users.map((user) => (
                     <div key={user.id} className="rounded-2xl border border-slate-200 bg-white p-4">
                       <p className="text-sm font-semibold text-slate-900">
@@ -633,14 +644,17 @@ export default function InventoryManagePage() {
                       </div>
                     </div>
                   ))}
-                </div>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-600">{'Список працівників приховано. Відкрийте блок, якщо потрібно змінити ролі або статуси.'}</p>
+                )}
               </section>
 
               <div className="space-y-6">
-              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <section>
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="text-lg font-semibold text-slate-900">Поточні поставки магазину</h2>
-                  <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                  <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
                     {groupedStoreBatches.length} поставок
                   </span>
                 </div>
@@ -665,14 +679,14 @@ export default function InventoryManagePage() {
                               Товарів: {supply.productsCount} • партій: {supply.batchesCount} • кількість: {supply.totalQuantity}
                             </p>
                           </div>
-                          <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                          <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
                             Оновлено: {formatDate(supply.latestCreatedAt)}
                           </span>
                         </div>
 
-                        <div className="mt-3 space-y-2">
+                        <div className="mt-3 space-y-3">
                           {supply.products.map((product) => (
-                            <div key={product.key} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div key={product.key} className="border-t border-slate-200 pt-3 first:border-t-0 first:pt-0">
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                   <p className="text-sm font-semibold text-slate-900">{product.productName}</p>
@@ -680,7 +694,7 @@ export default function InventoryManagePage() {
                                     Артикул: {product.article || '—'} • ШК: {product.barcode || '—'}
                                   </p>
                                 </div>
-                                <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                                <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
                                   {product.totalQuantity} од.
                                 </span>
                               </div>
@@ -690,7 +704,7 @@ export default function InventoryManagePage() {
                                   <div
                                     key={batch.id}
                                     className={`rounded-xl border p-3 ${
-                                      focusedBatchId === batch.id ? 'border-brand bg-white' : 'border-slate-200 bg-white'
+                                      focusedBatchId === batch.id ? 'border-brand bg-brand/5' : 'border-slate-200 bg-slate-50'
                                     }`}
                                   >
                                     <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
@@ -748,7 +762,7 @@ export default function InventoryManagePage() {
               <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="text-lg font-semibold text-slate-900">Поставки і товари зі строком, що спливає</h2>
-                  <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                  <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
                     {groupedExpiringBatches.length} поставок
                   </span>
                 </div>
@@ -781,7 +795,7 @@ export default function InventoryManagePage() {
                           </span>
                         </div>
 
-                        <div className="mt-3 grid gap-2 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 md:grid-cols-3">
+                        <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-3">
                           <p>Найближчий термін: {supply.nearestExpiryDate}</p>
                           <p>Загальна кількість: {supply.totalQuantity}</p>
                           <p>Карток у поставці: {supply.batchesCount}</p>
@@ -789,12 +803,7 @@ export default function InventoryManagePage() {
 
                         <div className="mt-3 space-y-2">
                           {supply.products.map((product) => (
-                            <div
-                              key={product.key}
-                              className={`rounded-xl border p-3 ${
-                                product.hasFocusedBatch ? 'border-brand bg-brand/5' : 'border-slate-200 bg-slate-50'
-                              }`}
-                            >
+                            <div key={product.key} className="border-t border-slate-200 pt-3 first:border-t-0 first:pt-0">
                               <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                   <p className="text-sm font-semibold text-slate-900">{product.productName}</p>
@@ -807,7 +816,7 @@ export default function InventoryManagePage() {
                                 </span>
                               </div>
 
-                              <div className="mt-3 grid gap-2 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 md:grid-cols-3">
+                              <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-3">
                                 <p>Найближчий термін: {product.nearestExpiryDate}</p>
                                 <p>Загальна кількість: {product.totalQuantity}</p>
                                 <p>Карток по товару: {product.batchesCount}</p>
@@ -818,7 +827,7 @@ export default function InventoryManagePage() {
                                   <div
                                     key={batch.id}
                                     className={`rounded-xl border p-3 ${
-                                      focusedBatchId === batch.id ? 'border-brand bg-white' : 'border-slate-200 bg-white'
+                                      focusedBatchId === batch.id ? 'border-brand bg-brand/5' : 'border-slate-200 bg-slate-50'
                                     }`}
                                   >
                                     <div className="flex flex-wrap items-start justify-between gap-3">
