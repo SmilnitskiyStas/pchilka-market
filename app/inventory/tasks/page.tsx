@@ -228,8 +228,8 @@ export default function InventoryTasksPage() {
               </article>
             </div>
 
-            <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+            <div className="mt-6 space-y-8">
+              <section>
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <h2 className="text-lg font-semibold text-slate-900">Активні задачі</h2>
@@ -272,7 +272,7 @@ export default function InventoryTasksPage() {
                           <p><span className="font-semibold text-slate-900">{formatDaysLeft(task.daysLeftSnapshot)}</span></p>
                         </div>
 
-                        {task.note ? <p className="mt-3 text-sm whitespace-pre-wrap text-slate-700">{task.note}</p> : null}
+                        {task.note ? <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{task.note}</p> : null}
 
                         <div className="mt-4 flex flex-wrap gap-3">
                           <a
@@ -286,11 +286,18 @@ export default function InventoryTasksPage() {
                     ))}
                   </div>
                 )}
-              </div>
+              </section>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <h2 className="text-lg font-semibold text-slate-900">Архів задач</h2>
-                <p className="mt-1 text-sm text-slate-600">Останні завершені або скасовані задачі для контролю історії.</p>
+              <section>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-900">Архів задач</h2>
+                    <p className="mt-1 text-sm text-slate-600">Останні завершені або скасовані задачі для контролю історії.</p>
+                  </div>
+                  <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                    {summary.archived}
+                  </span>
+                </div>
 
                 {archivedTasks.length === 0 ? (
                   <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
@@ -318,7 +325,7 @@ export default function InventoryTasksPage() {
                     ))}
                   </div>
                 )}
-              </div>
+              </section>
             </div>
           </>
         ) : null}
