@@ -58,6 +58,8 @@ type Payload = {
   error?: string;
 };
 
+type QuickTaskFilter = 'all' | 'critical' | 'overdue' | 'high';
+
 function formatDate(value: string) {
   if (!value) return '—';
   const date = new Date(value);
@@ -147,6 +149,8 @@ export default function InventoryTasksPage() {
   const [token, setToken] = useState('');
   const [notificationId, setNotificationId] = useState('');
   const [currentUserRole, setCurrentUserRole] = useState<InventoryUserRole>('staff');
+  const [taskFilter, setTaskFilter] = useState('');
+  const [quickTaskFilter, setQuickTaskFilter] = useState<QuickTaskFilter>('all');
   const [activeTasks, setActiveTasks] = useState<TaskView[]>([]);
   const [archivedTasks, setArchivedTasks] = useState<TaskView[]>([]);
   const [summary, setSummary] = useState({ active: 0, archived: 0, critical: 0, high: 0 });
@@ -189,13 +193,77 @@ export default function InventoryTasksPage() {
     void load();
   }, []);
 
-  const overdueCount = useMemo(() => activeTasks.filter((task) => task.daysLeftSnapshot < 0).length, [activeTasks]);
+  const normalizedTaskFilter = taskFilter.trim().toLowerCase();
+  const filteredActiveTasks = useMemo(() => {
+    return activeTasks.filter((task) => {
+      const matchesQuickFilter =
+        quickTaskFilter === 'all'
+          ? true
+          : quickTaskFilter === 'critical'
+            ? task.riskLevel === 'critical'
+            : quickTaskFilter === 'high'
+              ? task.riskLevel === 'high'
+              : task.daysLeftSnapshot < 0;
+
+      if (!matchesQuickFilter) {
+        return false;
+      }
+
+      if (!normalizedTaskFilter) {
+        return true;
+      }
+
+      const searchable = [
+        task.productName,
+        task.article,
+        task.barcode,
+        task.batchCode,
+        task.storeLabel,
+        task.title,
+        task.note,
+        task.responsibleUserName
+      ];
+
+      return searchable.some((value) => String(value ?? '').toLowerCase().includes(normalizedTaskFilter));
+    });
+  }, [activeTasks, normalizedTaskFilter, quickTaskFilter]);
+  const filteredArchivedTasks = useMemo(() => {
+    if (!normalizedTaskFilter) return archivedTasks;
+
+    return archivedTasks.filter((task) => {
+      const searchable = [
+        task.productName,
+        task.article,
+        task.barcode,
+        task.batchCode,
+        task.storeLabel,
+        task.title,
+        task.note,
+        task.resolutionNote,
+        task.responsibleUserName
+      ];
+
+      return searchable.some((value) => String(value ?? '').toLowerCase().includes(normalizedTaskFilter));
+    });
+  }, [archivedTasks, normalizedTaskFilter]);
+  const overdueCount = useMemo(
+    () => filteredActiveTasks.filter((task) => task.daysLeftSnapshot < 0).length,
+    [filteredActiveTasks]
+  );
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl items-start justify-center px-4 py-8 sm:px-6 lg:px-8">
       <section className="w-full rounded-3xl border border-brand/20 bg-white p-5 shadow-sm sm:p-7">
         <div className="flex items-start justify-between gap-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Tasks</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href="/"
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Назад
+            </a>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Tasks</p>
+          </div>
           {canManageInventoryUsers(currentUserRole) ? (
             <a
               href={`/inventory/manage?token=${encodeURIComponent(token)}`}
@@ -221,10 +289,75 @@ export default function InventoryTasksPage() {
 
         {!isLoading && !error ? (
           <>
+            <div className="mt-5">
+              <label className="block text-sm">
+                <span className="font-semibold text-slate-900">Пошук по задачах</span>
+                <input
+                  value={taskFilter}
+                  onChange={(event) => setTaskFilter(event.target.value)}
+                  placeholder="Назва, артикул, штрихкод, код партії..."
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
+                />
+              </label>
+              <p className="mt-2 text-xs text-slate-500">
+                Фільтр шукає по назві товару, артикулу, штрихкоду, коду партії, магазину і примітках.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuickTaskFilter('all')}
+                  className={[
+                    'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                    quickTaskFilter === 'all'
+                      ? 'border-brand bg-brand text-white'
+                      : 'border-slate-300 bg-white text-slate-700 hover:border-brand hover:text-brand'
+                  ].join(' ')}
+                >
+                  Усі
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuickTaskFilter('critical')}
+                  className={[
+                    'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                    quickTaskFilter === 'critical'
+                      ? 'border-red-600 bg-red-600 text-white'
+                      : 'border-red-200 bg-red-50 text-red-700 hover:border-red-300'
+                  ].join(' ')}
+                >
+                  Критичні
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuickTaskFilter('overdue')}
+                  className={[
+                    'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                    quickTaskFilter === 'overdue'
+                      ? 'border-slate-800 bg-slate-800 text-white'
+                      : 'border-slate-300 bg-slate-100 text-slate-800 hover:border-slate-400'
+                  ].join(' ')}
+                >
+                  Протерміновані
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuickTaskFilter('high')}
+                  className={[
+                    'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                    quickTaskFilter === 'high'
+                      ? 'border-amber-500 bg-amber-500 text-white'
+                      : 'border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300'
+                  ].join(' ')}
+                >
+                  Високий ризик
+                </button>
+              </div>
+            </div>
+
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Активні</p>
-                <p className="mt-2 text-2xl font-bold text-slate-900">{summary.active}</p>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{filteredActiveTasks.length}</p>
               </article>
               <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Критичні</p>
@@ -248,17 +381,17 @@ export default function InventoryTasksPage() {
                     <p className="mt-1 text-sm text-slate-600">Тут відображаються задачі, які потрібно виконати зараз.</p>
                   </div>
                   <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                    {summary.active}
+                    {filteredActiveTasks.length}
                   </span>
                 </div>
 
-                {activeTasks.length === 0 ? (
+                {filteredActiveTasks.length === 0 ? (
                   <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                     Активних задач зараз немає.
                   </p>
                 ) : (
                   <div className="mt-4 space-y-3">
-                    {activeTasks.map((task) => (
+                    {filteredActiveTasks.map((task) => (
                       <article key={task.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
@@ -307,17 +440,17 @@ export default function InventoryTasksPage() {
                     <p className="mt-1 text-sm text-slate-600">Останні завершені або скасовані задачі для контролю історії.</p>
                   </div>
                   <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                    {summary.archived}
+                    {filteredArchivedTasks.length}
                   </span>
                 </div>
 
-                {archivedTasks.length === 0 ? (
+                {filteredArchivedTasks.length === 0 ? (
                   <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                     Архівних задач поки немає.
                   </p>
                 ) : (
                   <div className="mt-4 space-y-3">
-                    {archivedTasks.map((task) => (
+                    {filteredArchivedTasks.map((task) => (
                       <article key={task.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
