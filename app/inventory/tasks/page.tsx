@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { type InventoryUserRole } from '@/lib/inventory-user-roles';
+import { canManageInventoryUsers, type InventoryUserRole } from '@/lib/inventory-user-roles';
 
 type TaskView = {
   id: number;
@@ -196,7 +196,7 @@ export default function InventoryTasksPage() {
       <section className="w-full rounded-3xl border border-brand/20 bg-white p-5 shadow-sm sm:p-7">
         <div className="flex items-start justify-between gap-3">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Tasks</p>
-          {currentUserRole === 'store_manager' ? (
+          {canManageInventoryUsers(currentUserRole) ? (
             <a
               href={`/inventory/manage?token=${encodeURIComponent(token)}`}
               className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
