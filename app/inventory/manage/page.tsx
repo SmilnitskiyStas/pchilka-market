@@ -173,6 +173,33 @@ function daysUntil(value: string) {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
+function normalizeFilterValue(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function batchMatchesFilter(batch: ExpiringBatchView, filterValue: string) {
+  if (!filterValue) return true;
+
+  const haystack = [
+    batch.productName,
+    batch.article,
+    batch.barcode,
+    batch.batchCode,
+    batch.storeLabel,
+    batch.responsibleUserName,
+    batch.actionNote,
+    batch.checkStatus,
+    batch.actionTaken,
+    batch.expiryDate,
+    batch.deliveryDate,
+    batch.id
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  return haystack.includes(filterValue);
+}
+
 function groupBatchesBySupply(
   batches: ExpiringBatchView[],
   focusedBatchId: string,
@@ -282,6 +309,7 @@ export default function InventoryManagePage() {
   const [focusedBatchId, setFocusedBatchId] = useState('');
   const [currentUserRole, setCurrentUserRole] = useState<InventoryUserRole>('staff');
   const [isUsersSectionOpen, setIsUsersSectionOpen] = useState(false);
+  const [manageFilter, setManageFilter] = useState('');
   const [storeLabel, setStoreLabel] = useState('');
   const [users, setUsers] = useState<InventoryUserView[]>([]);
   const [storeBatches, setStoreBatches] = useState<ExpiringBatchView[]>([]);
@@ -342,13 +370,22 @@ export default function InventoryManagePage() {
   }, []);
 
   const activeUsers = useMemo(() => users.filter((item) => item.isActive), [users]);
+  const normalizedManageFilter = useMemo(() => normalizeFilterValue(manageFilter), [manageFilter]);
+  const filteredStoreBatches = useMemo(
+    () => storeBatches.filter((item) => batchMatchesFilter(item, normalizedManageFilter)),
+    [storeBatches, normalizedManageFilter]
+  );
+  const filteredExpiringBatches = useMemo(
+    () => expiringBatches.filter((item) => batchMatchesFilter(item, normalizedManageFilter)),
+    [expiringBatches, normalizedManageFilter]
+  );
   const groupedStoreBatches = useMemo(
-    () => groupBatchesBySupply(storeBatches, focusedBatchId, 'recent'),
-    [storeBatches, focusedBatchId]
+    () => groupBatchesBySupply(filteredStoreBatches, focusedBatchId, 'recent'),
+    [filteredStoreBatches, focusedBatchId]
   );
   const groupedExpiringBatches = useMemo(
-    () => groupBatchesBySupply(expiringBatches, focusedBatchId, 'expiry'),
-    [expiringBatches, focusedBatchId]
+    () => groupBatchesBySupply(filteredExpiringBatches, focusedBatchId, 'expiry'),
+    [filteredExpiringBatches, focusedBatchId]
   );
 
   function openExpiryCorrectionModal(batch: ExpiringBatchView) {
@@ -585,6 +622,21 @@ export default function InventoryManagePage() {
               </div>
             </div>
 
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+              <label className="block text-sm">
+                <span className="font-semibold text-slate-900">Пошук по товарах і партіях</span>
+                <input
+                  value={manageFilter}
+                  onChange={(event) => setManageFilter(event.target.value)}
+                  placeholder="Назва, артикул, штрихкод, код поставки, партія, відповідальний"
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
+                />
+              </label>
+              <p className="mt-2 text-xs text-slate-500">
+                Фільтр одночасно звужує поточні поставки і товари зі строком, що спливає.
+              </p>
+            </div>
+
             <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_1.4fr]">
               <section>
                 <div className="flex items-center justify-between gap-3">
@@ -682,6 +734,9 @@ export default function InventoryManagePage() {
                   <p className="mt-4 text-sm text-slate-600">У поточному магазині ще немає внесених партій.</p>
                 ) : (
                   <div className="mt-4 space-y-3">
+                    {groupedStoreBatches.length === 0 ? (
+                      <p className="text-sm text-slate-600">За вибраним фільтром у поточних поставках нічого не знайдено.</p>
+                    ) : null}
                     {groupedStoreBatches.map((supply) => (
                       <div
                         key={supply.key}
@@ -787,6 +842,9 @@ export default function InventoryManagePage() {
                   <p className="mt-4 text-sm text-slate-600">У поточному магазині немає партій зі строком до 30 днів.</p>
                 ) : (
                   <div className="mt-4 space-y-3">
+                    {groupedExpiringBatches.length === 0 ? (
+                      <p className="text-sm text-slate-600">За вибраним фільтром у блоці термінових товарів нічого не знайдено.</p>
+                    ) : null}
                     {groupedExpiringBatches.map((supply) => (
                       <div
                         key={supply.key}
