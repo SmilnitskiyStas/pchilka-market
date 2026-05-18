@@ -146,6 +146,7 @@ function getRiskBadgeClassName(riskLevel: string) {
 export default function InventoryTasksPage() {
   const [token, setToken] = useState('');
   const [notificationId, setNotificationId] = useState('');
+  const [currentUserRole, setCurrentUserRole] = useState<InventoryUserRole>('staff');
   const [activeTasks, setActiveTasks] = useState<TaskView[]>([]);
   const [archivedTasks, setArchivedTasks] = useState<TaskView[]>([]);
   const [summary, setSummary] = useState({ active: 0, archived: 0, critical: 0, high: 0 });
@@ -172,6 +173,7 @@ export default function InventoryTasksPage() {
           throw new Error(payload.error || 'Не вдалося завантажити список задач.');
         }
 
+        setCurrentUserRole(payload.user.role);
         setUserName([payload.user.surname, payload.user.name].filter(Boolean).join(' '));
         setActiveTasks(Array.isArray(payload.activeTasks) ? payload.activeTasks : []);
         setArchivedTasks(Array.isArray(payload.archivedTasks) ? payload.archivedTasks : []);
@@ -192,7 +194,17 @@ export default function InventoryTasksPage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl items-start justify-center px-4 py-8 sm:px-6 lg:px-8">
       <section className="w-full rounded-3xl border border-brand/20 bg-white p-5 shadow-sm sm:p-7">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Tasks</p>
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Tasks</p>
+          {currentUserRole === 'store_manager' ? (
+            <a
+              href={`/inventory/manage?token=${encodeURIComponent(token)}`}
+              className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
+            >
+              Admin
+            </a>
+          ) : null}
+        </div>
         <h1 className="mt-2 text-2xl font-bold text-slate-900">Мої задачі по інвентарю</h1>
         <p className="mt-2 text-sm text-slate-600">
           Telegram використовується тільки як канал сповіщення. Усі перевірки і дії виконуються тут, у Web App.

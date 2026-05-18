@@ -10,3 +10,4 @@ out
 .env.production.local
 .deploy.local.json
 .DS_Store
+.claude
