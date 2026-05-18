@@ -255,15 +255,7 @@ export default function InventoryTasksPage() {
     <main className="mx-auto flex min-h-screen w-full max-w-6xl items-start justify-center px-4 py-8 sm:px-6 lg:px-8">
       <section className="w-full rounded-3xl border border-brand/20 bg-white p-5 shadow-sm sm:p-7">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <a
-              href="/"
-              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              Назад
-            </a>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Tasks</p>
-          </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Tasks</p>
           {canManageInventoryUsers(currentUserRole) ? (
             <a
               href={`/inventory/manage?token=${encodeURIComponent(token)}`}

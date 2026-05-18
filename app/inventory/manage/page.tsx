@@ -538,7 +538,24 @@ export default function InventoryManagePage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl items-start justify-center px-4 py-8 sm:px-6 lg:px-8">
       <section className="w-full rounded-3xl border border-brand/20 bg-white p-5 shadow-sm sm:p-7">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Store Management</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Store Management</p>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`/inventory/tasks?token=${encodeURIComponent(token)}`}
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Назад
+            </a>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
+            >
+              Перезавантажити
+            </button>
+          </div>
+        </div>
         <h1 className="mt-2 text-2xl font-bold text-slate-900">Керування працівниками і партіями магазину</h1>
         <p className="mt-2 text-sm text-slate-600">
           Доступно для ролей manager, store_manager і admin. Тут можна оновлювати посади, ролі, активність працівників і
