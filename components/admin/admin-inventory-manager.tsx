@@ -437,13 +437,6 @@ function compareDateDesc(left: string, right: string) {
   return rightTime - leftTime;
 }
 
-function isCreatedAtWithinRange(createdAt: string, dateFrom: string, dateTo: string) {
-  const createdDate = createdAt.slice(0, 10);
-  if (dateFrom && createdDate < dateFrom) return false;
-  if (dateTo && createdDate > dateTo) return false;
-  return true;
-}
-
 function storeLabel(store: StoreRecord) {
   return [store.storeCode, store.city, store.addressLine].filter(Boolean).join(' | ');
 }
@@ -599,7 +592,7 @@ function getTaskCompletionRatio(completed: number, total: number) {
   return Math.round((completed / total) * 100);
 }
 
-function groupInventoryBatchesBySupply(batches: InventoryBatchRecord[]): InventoryBatchGroup[] {
+function groupInventoryBatchesBySupply(batches: InventoryBatchRecord[], sortMode: BatchesSortMode): InventoryBatchGroup[] {
   const groups = new Map<string, InventoryBatchGroup>();
 
   for (const batch of batches) {
@@ -626,12 +619,38 @@ function groupInventoryBatchesBySupply(batches: InventoryBatchRecord[]): Invento
   return Array.from(groups.values())
     .map((group) => ({
       ...group,
-      batches: [...group.batches].sort((a, b) => compareDateDesc(a.createdAt, b.createdAt) || Number(b.id) - Number(a.id))
+      batches: [...group.batches].sort((a, b) => {
+        switch (sortMode) {
+          case 'date-asc':
+            return compareDateDesc(b.createdAt, a.createdAt) || Number(a.id) - Number(b.id);
+          case 'alpha-asc':
+            return a.productName.localeCompare(b.productName, 'uk') || Number(a.id) - Number(b.id);
+          case 'alpha-desc':
+            return b.productName.localeCompare(a.productName, 'uk') || Number(b.id) - Number(a.id);
+          case 'date-desc':
+          default:
+            return compareDateDesc(a.createdAt, b.createdAt) || Number(b.id) - Number(a.id);
+        }
+      })
     }))
     .sort((a, b) => {
-      const latestA = a.batches[0]?.createdAt ?? '';
-      const latestB = b.batches[0]?.createdAt ?? '';
-      return compareDateDesc(latestA, latestB) || a.label.localeCompare(b.label, 'uk');
+      switch (sortMode) {
+        case 'date-asc': {
+          const earliestA = a.batches[a.batches.length - 1]?.createdAt ?? '';
+          const earliestB = b.batches[b.batches.length - 1]?.createdAt ?? '';
+          return compareDateDesc(earliestB, earliestA) || a.label.localeCompare(b.label, 'uk');
+        }
+        case 'alpha-asc':
+          return a.label.localeCompare(b.label, 'uk');
+        case 'alpha-desc':
+          return b.label.localeCompare(a.label, 'uk');
+        case 'date-desc':
+        default: {
+          const latestA = a.batches[0]?.createdAt ?? '';
+          const latestB = b.batches[0]?.createdAt ?? '';
+          return compareDateDesc(latestA, latestB) || a.label.localeCompare(b.label, 'uk');
+        }
+      }
     });
 }
 
@@ -674,6 +693,8 @@ type AdminInventoryManagerProps = {
   initialBatchView?: InventoryBatchView;
 };
 
+type BatchesSortMode = 'date-desc' | 'date-asc' | 'alpha-asc' | 'alpha-desc';
+
 export default function AdminInventoryManager({
   initialSubsection = 'overview',
   initialBatchView = 'all'
@@ -702,8 +723,7 @@ export default function AdminInventoryManager({
   const [intakeDuplicateBatch, setIntakeDuplicateBatch] = useState<DuplicateBatchConflict | null>(null);
   const [intakeSuspiciousExpiryDateWarning, setIntakeSuspiciousExpiryDateWarning] = useState<SuspiciousInventoryExpiryDate | null>(null);
   const [selectedStoreId, setSelectedStoreId] = useState('');
-  const [batchesDateFrom, setBatchesDateFrom] = useState('');
-  const [batchesDateTo, setBatchesDateTo] = useState('');
+  const [batchesSortMode, setBatchesSortMode] = useState<BatchesSortMode>('date-desc');
   const [webhookInfo, setWebhookInfo] = useState<WebhookPayload['info']>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isApplying, setIsApplying] = useState(false);
@@ -1118,10 +1138,6 @@ export default function AdminInventoryManager({
   const batchViewMeta = batchViewLabels[initialBatchView];
   const filteredBatches = useMemo(() => {
     return batches.filter((batch) => {
-      if (!isCreatedAtWithinRange(batch.createdAt, batchesDateFrom, batchesDateTo)) {
-        return false;
-      }
-
       const daysLeft = daysLeftUntil(batch.expiryDate);
       const expiringSoonDays = Number(batch.notifiedDays || 7);
       const isOverdue = daysLeft < 0;
@@ -1143,14 +1159,14 @@ export default function AdminInventoryManager({
           return true;
       }
     });
-  }, [batches, batchesDateFrom, batchesDateTo, initialBatchView]);
+  }, [batches, initialBatchView]);
   const selectedStoreBatches = useMemo(
     () => (!selectedStoreId ? filteredBatches : filteredBatches.filter((batch) => batch.storeId === selectedStoreId)),
     [filteredBatches, selectedStoreId]
   );
   const selectedStoreBatchGroups = useMemo(
-    () => groupInventoryBatchesBySupply(selectedStoreBatches),
-    [selectedStoreBatches]
+    () => groupInventoryBatchesBySupply(selectedStoreBatches, batchesSortMode),
+    [batchesSortMode, selectedStoreBatches]
   );
   const selectedInventoryUser = useMemo(() => {
     if (selectedStoreUsers.length === 0) return null;
@@ -1169,8 +1185,8 @@ export default function AdminInventoryManager({
     [selectedStoreBatches, selectedInventoryUser]
   );
   const selectedInventoryUserBatchGroups = useMemo(
-    () => groupInventoryBatchesBySupply(selectedInventoryUserResponsibleBatches),
-    [selectedInventoryUserResponsibleBatches]
+    () => groupInventoryBatchesBySupply(selectedInventoryUserResponsibleBatches, batchesSortMode),
+    [batchesSortMode, selectedInventoryUserResponsibleBatches]
   );
   const selectedBatchGroup = useMemo(() => {
     const preferredGroups =
@@ -2308,22 +2324,17 @@ export default function AdminInventoryManager({
               Партій: {selectedStoreBatchGroups.length}
             </span>
             <label className="text-sm text-slate-700">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">З дати</span>
-              <input
-                type="date"
-                value={batchesDateFrom}
-                onChange={(e) => setBatchesDateFrom(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
-              />
-            </label>
-            <label className="text-sm text-slate-700">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">До дати</span>
-              <input
-                type="date"
-                value={batchesDateTo}
-                onChange={(e) => setBatchesDateTo(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
-              />
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Сортування</span>
+              <select
+                value={batchesSortMode}
+                onChange={(e) => setBatchesSortMode(e.target.value as BatchesSortMode)}
+                className="min-w-[240px] rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+              >
+                <option value="date-desc">Спочатку нові</option>
+                <option value="date-asc">Спочатку старі</option>
+                <option value="alpha-asc">За алфавітом: А-Я</option>
+                <option value="alpha-desc">За алфавітом: Я-А</option>
+              </select>
             </label>
             <select value={selectedStoreId} onChange={(e) => setSelectedStoreId(e.target.value)} className="min-w-[260px] rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand">
               <option value="">Усі магазини</option>
