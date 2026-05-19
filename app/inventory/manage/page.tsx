@@ -174,6 +174,17 @@ function daysUntil(value: string) {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
+function compareDateDesc(left: string, right: string) {
+  const leftTime = Date.parse(left);
+  const rightTime = Date.parse(right);
+
+  if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+    return right.localeCompare(left);
+  }
+
+  return rightTime - leftTime;
+}
+
 function normalizeFilterValue(value: string) {
   return value.trim().toLowerCase();
 }
@@ -294,7 +305,7 @@ function groupBatchesBySupply(
           ...product,
           batches: [...product.batches].sort((a, b) => {
             if (sortMode === 'recent') {
-              return b.createdAt.localeCompare(a.createdAt) || Number(b.id) - Number(a.id);
+              return compareDateDesc(a.createdAt, b.createdAt) || Number(b.id) - Number(a.id);
             }
 
             return (
@@ -306,7 +317,7 @@ function groupBatchesBySupply(
         }))
         .sort((a, b) => {
           if (sortMode === 'recent') {
-            return b.latestCreatedAt.localeCompare(a.latestCreatedAt) || a.productName.localeCompare(b.productName, 'uk');
+            return compareDateDesc(a.latestCreatedAt, b.latestCreatedAt) || a.productName.localeCompare(b.productName, 'uk');
           }
 
           return a.minDaysLeft - b.minDaysLeft || a.productName.localeCompare(b.productName, 'uk');
@@ -314,7 +325,7 @@ function groupBatchesBySupply(
     }))
     .sort((a, b) => {
       if (sortMode === 'recent') {
-        return b.latestCreatedAt.localeCompare(a.latestCreatedAt) || a.label.localeCompare(b.label, 'uk');
+        return compareDateDesc(a.latestCreatedAt, b.latestCreatedAt) || a.label.localeCompare(b.label, 'uk');
       }
 
       return a.minDaysLeft - b.minDaysLeft || a.label.localeCompare(b.label, 'uk');
@@ -401,7 +412,7 @@ export default function InventoryManagePage() {
     [filteredStoreBatches, focusedBatchId]
   );
   const groupedExpiringBatches = useMemo(
-    () => groupBatchesBySupply(filteredExpiringBatches, focusedBatchId, 'expiry'),
+    () => groupBatchesBySupply(filteredExpiringBatches, focusedBatchId, 'recent'),
     [filteredExpiringBatches, focusedBatchId]
   );
 
