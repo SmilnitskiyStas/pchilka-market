@@ -71,6 +71,10 @@ const expiryCorrectionReasonOptions = [
   { value: 'other', label: 'Інша причина' }
 ] as const;
 
+function RequiredMark() {
+  return <span className="ml-1 font-semibold text-red-600">*</span>;
+}
+
 export default function InventoryManageExpiryDatePage() {
   const [token, setToken] = useState('');
   const [batchId, setBatchId] = useState('');
@@ -215,7 +219,9 @@ export default function InventoryManageExpiryDatePage() {
     <main className="mx-auto flex min-h-screen w-full max-w-3xl items-start justify-center px-4 py-8 sm:px-6 lg:px-8">
       <section className="w-full rounded-3xl border border-brand/20 bg-white p-5 shadow-sm sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Controlled Expiry Date Change</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">
+            Inventory / Controlled Expiry Date Change
+          </p>
           <div className="flex flex-wrap gap-2">
             <a
               href={backHref}
@@ -235,12 +241,21 @@ export default function InventoryManageExpiryDatePage() {
 
         <h1 className="mt-2 text-2xl font-bold text-slate-900">Контрольована зміна дати</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Окремий екран для store manager та admin. Зміна терміну придатності зберігається в історію разом із причиною, коментарем, фото, користувачем і часом зміни.
+          Окремий екран для store manager та admin. Зміна терміну придатності зберігається в історію разом із
+          причиною, коментарем, фото, користувачем і часом зміни.
         </p>
 
         {isLoading ? <p className="mt-4 text-sm text-slate-600">Завантаження...</p> : null}
-        {error ? <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p> : null}
-        {success ? <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{success}</p> : null}
+        {error ? (
+          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+            {error}
+          </p>
+        ) : null}
+        {success ? (
+          <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
+            {success}
+          </p>
+        ) : null}
 
         {!isLoading && batch ? (
           <>
@@ -253,6 +268,10 @@ export default function InventoryManageExpiryDatePage() {
               </p>
             </div>
 
+            <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+              Поля, позначені <span className="font-semibold text-red-600">*</span>, є обов’язковими.
+            </div>
+
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="block text-sm">
                 <span className="font-semibold text-slate-900">Стара дата</span>
@@ -263,7 +282,10 @@ export default function InventoryManageExpiryDatePage() {
                 />
               </label>
               <label className="block text-sm">
-                <span className="font-semibold text-slate-900">Нова дата</span>
+                <span className="font-semibold text-slate-900">
+                  Нова дата
+                  <RequiredMark />
+                </span>
                 <input
                   type="date"
                   value={expiryCorrectionNewDate}
@@ -275,7 +297,10 @@ export default function InventoryManageExpiryDatePage() {
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="block text-sm">
-                <span className="font-semibold text-slate-900">Причина зміни</span>
+                <span className="font-semibold text-slate-900">
+                  Причина зміни
+                  <RequiredMark />
+                </span>
                 <select
                   value={expiryCorrectionReason}
                   onChange={(event) => setExpiryCorrectionReason(event.target.value)}
@@ -290,7 +315,10 @@ export default function InventoryManageExpiryDatePage() {
               </label>
 
               <div className="block text-sm">
-                <span className="font-semibold text-slate-900">Фото товару *</span>
+                <span className="font-semibold text-slate-900">
+                  Фото товару
+                  <RequiredMark />
+                </span>
                 <input
                   type="file"
                   accept="image/*"
@@ -313,13 +341,17 @@ export default function InventoryManageExpiryDatePage() {
                   Верхнє поле відкриває галерею, кнопка нижче дозволяє одразу зробити фото камерою.
                 </span>
                 <span className="mt-1 block text-xs text-slate-500">
-                  {expiryCorrectionPhotoFile?.name || (expiryCorrectionPhotoUrl ? 'Фото вже додано' : 'Фото обов’язкове для збереження зміни')}
+                  {expiryCorrectionPhotoFile?.name ||
+                    (expiryCorrectionPhotoUrl ? 'Фото вже додано' : 'Фото обов’язкове для збереження зміни')}
                 </span>
               </div>
             </div>
 
             <label className="mt-4 block text-sm">
-              <span className="font-semibold text-slate-900">Коментар</span>
+              <span className="font-semibold text-slate-900">
+                Коментар
+                <RequiredMark />
+              </span>
               <textarea
                 value={expiryCorrectionComment}
                 onChange={(event) => setExpiryCorrectionComment(event.target.value)}
@@ -330,10 +362,18 @@ export default function InventoryManageExpiryDatePage() {
             </label>
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-              <p><span className="font-semibold text-slate-900">Код партії:</span> {batch.batchCode || '—'}</p>
-              <p className="mt-1"><span className="font-semibold text-slate-900">Кількість:</span> {batch.quantity}</p>
-              <p className="mt-1"><span className="font-semibold text-slate-900">Дата поставки:</span> {batch.deliveryDate || '—'}</p>
-              <p className="mt-1"><span className="font-semibold text-slate-900">Роль:</span> {currentUserRole}</p>
+              <p>
+                <span className="font-semibold text-slate-900">Код партії:</span> {batch.batchCode || '—'}
+              </p>
+              <p className="mt-1">
+                <span className="font-semibold text-slate-900">Кількість:</span> {batch.quantity}
+              </p>
+              <p className="mt-1">
+                <span className="font-semibold text-slate-900">Дата поставки:</span> {batch.deliveryDate || '—'}
+              </p>
+              <p className="mt-1">
+                <span className="font-semibold text-slate-900">Роль:</span> {currentUserRole}
+              </p>
             </div>
 
             {expiryCorrectionWarning ? (
