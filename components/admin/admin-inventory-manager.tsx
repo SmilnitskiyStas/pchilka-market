@@ -2323,19 +2323,16 @@ export default function AdminInventoryManager({
             <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
               Партій: {selectedStoreBatchGroups.length}
             </span>
-            <label className="text-sm text-slate-700">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Сортування</span>
-              <select
-                value={batchesSortMode}
-                onChange={(e) => setBatchesSortMode(e.target.value as BatchesSortMode)}
-                className="min-w-[240px] rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
-              >
-                <option value="date-desc">Спочатку нові</option>
-                <option value="date-asc">Спочатку старі</option>
-                <option value="alpha-asc">За алфавітом: А-Я</option>
-                <option value="alpha-desc">За алфавітом: Я-А</option>
-              </select>
-            </label>
+            <select
+              value={batchesSortMode}
+              onChange={(e) => setBatchesSortMode(e.target.value as BatchesSortMode)}
+              className="min-w-[240px] rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+            >
+              <option value="date-desc">Спочатку нові</option>
+              <option value="date-asc">Спочатку старі</option>
+              <option value="alpha-asc">За алфавітом: А-Я</option>
+              <option value="alpha-desc">За алфавітом: Я-А</option>
+            </select>
             <select value={selectedStoreId} onChange={(e) => setSelectedStoreId(e.target.value)} className="min-w-[260px] rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand">
               <option value="">Усі магазини</option>
               {stores.filter((store) => store.isActive).map((store) => (
