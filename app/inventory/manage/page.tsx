@@ -1042,14 +1042,17 @@ export default function InventoryManagePage() {
                   onChange={(event) => handleExpiryCorrectionPhotoChange(event.target.files?.[0] ?? null)}
                   className="mt-1.5 block w-full rounded-xl border border-slate-300 p-3 text-sm"
                 />
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  required
-                  onChange={(event) => handleExpiryCorrectionPhotoChange(event.target.files?.[0] ?? null)}
-                  className="mt-2 block w-full rounded-xl border border-slate-300 p-3 text-sm"
-                />
+                <label className="mt-2 inline-flex cursor-pointer items-center justify-center rounded-xl border border-brand px-4 py-3 text-sm font-semibold text-brand transition hover:bg-brand/5">
+                  Зробити фото
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    required
+                    onChange={(event) => handleExpiryCorrectionPhotoChange(event.target.files?.[0] ?? null)}
+                    className="sr-only"
+                  />
+                </label>
                 <span className="mt-1 block text-xs text-slate-500">
                   Перший інпут відкриває галерею, другий дозволяє одразу зробити фото камерою.
                 </span>
