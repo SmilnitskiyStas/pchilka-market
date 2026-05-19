@@ -426,6 +426,24 @@ function formatDateInputValue(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function compareDateDesc(left: string, right: string) {
+  const leftTime = Date.parse(left);
+  const rightTime = Date.parse(right);
+
+  if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+    return right.localeCompare(left);
+  }
+
+  return rightTime - leftTime;
+}
+
+function isCreatedAtWithinRange(createdAt: string, dateFrom: string, dateTo: string) {
+  const createdDate = createdAt.slice(0, 10);
+  if (dateFrom && createdDate < dateFrom) return false;
+  if (dateTo && createdDate > dateTo) return false;
+  return true;
+}
+
 function storeLabel(store: StoreRecord) {
   return [store.storeCode, store.city, store.addressLine].filter(Boolean).join(' | ');
 }
@@ -608,9 +626,13 @@ function groupInventoryBatchesBySupply(batches: InventoryBatchRecord[]): Invento
   return Array.from(groups.values())
     .map((group) => ({
       ...group,
-      batches: [...group.batches].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate) || Number(a.id) - Number(b.id))
+      batches: [...group.batches].sort((a, b) => compareDateDesc(a.createdAt, b.createdAt) || Number(b.id) - Number(a.id))
     }))
-    .sort((a, b) => a.label.localeCompare(b.label, 'uk'));
+    .sort((a, b) => {
+      const latestA = a.batches[0]?.createdAt ?? '';
+      const latestB = b.batches[0]?.createdAt ?? '';
+      return compareDateDesc(latestA, latestB) || a.label.localeCompare(b.label, 'uk');
+    });
 }
 
 function getBatchUrgencyMeta(batch: InventoryBatchRecord) {
@@ -680,6 +702,8 @@ export default function AdminInventoryManager({
   const [intakeDuplicateBatch, setIntakeDuplicateBatch] = useState<DuplicateBatchConflict | null>(null);
   const [intakeSuspiciousExpiryDateWarning, setIntakeSuspiciousExpiryDateWarning] = useState<SuspiciousInventoryExpiryDate | null>(null);
   const [selectedStoreId, setSelectedStoreId] = useState('');
+  const [batchesDateFrom, setBatchesDateFrom] = useState('');
+  const [batchesDateTo, setBatchesDateTo] = useState('');
   const [webhookInfo, setWebhookInfo] = useState<WebhookPayload['info']>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isApplying, setIsApplying] = useState(false);
@@ -1094,6 +1118,10 @@ export default function AdminInventoryManager({
   const batchViewMeta = batchViewLabels[initialBatchView];
   const filteredBatches = useMemo(() => {
     return batches.filter((batch) => {
+      if (!isCreatedAtWithinRange(batch.createdAt, batchesDateFrom, batchesDateTo)) {
+        return false;
+      }
+
       const daysLeft = daysLeftUntil(batch.expiryDate);
       const expiringSoonDays = Number(batch.notifiedDays || 7);
       const isOverdue = daysLeft < 0;
@@ -1115,7 +1143,7 @@ export default function AdminInventoryManager({
           return true;
       }
     });
-  }, [batches, initialBatchView]);
+  }, [batches, batchesDateFrom, batchesDateTo, initialBatchView]);
   const selectedStoreBatches = useMemo(
     () => (!selectedStoreId ? filteredBatches : filteredBatches.filter((batch) => batch.storeId === selectedStoreId)),
     [filteredBatches, selectedStoreId]
@@ -2275,10 +2303,28 @@ export default function AdminInventoryManager({
             <h2 className="text-lg font-semibold text-slate-900">{batchViewMeta.title}</h2>
             <p className="mt-1 text-sm text-slate-600">{batchViewMeta.description}</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
               Партій: {selectedStoreBatchGroups.length}
             </span>
+            <label className="text-sm text-slate-700">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">З дати</span>
+              <input
+                type="date"
+                value={batchesDateFrom}
+                onChange={(e) => setBatchesDateFrom(e.target.value)}
+                className="rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+              />
+            </label>
+            <label className="text-sm text-slate-700">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">До дати</span>
+              <input
+                type="date"
+                value={batchesDateTo}
+                onChange={(e) => setBatchesDateTo(e.target.value)}
+                className="rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+              />
+            </label>
             <select value={selectedStoreId} onChange={(e) => setSelectedStoreId(e.target.value)} className="min-w-[260px] rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand">
               <option value="">Усі магазини</option>
               {stores.filter((store) => store.isActive).map((store) => (
