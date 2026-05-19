@@ -836,13 +836,12 @@ export default function InventoryManagePage() {
                                       ))}
                                     </select>
                                     {canEditInventoryBatchExpiry(currentUserRole) ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => openExpiryCorrectionModal(batch)}
-                                        className="mt-2 rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
+                                      <a
+                                        href={`/inventory/manage/expiry-date?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(batch.id)}`}
+                                        className="mt-2 inline-flex rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
                                       >
                                         Змінити термін придатності
-                                      </button>
+                                      </a>
                                     ) : null}
                                   </div>
                                 ))}
@@ -965,13 +964,12 @@ export default function InventoryManagePage() {
                                       ))}
                                     </select>
                                     {canEditInventoryBatchExpiry(currentUserRole) ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => openExpiryCorrectionModal(batch)}
-                                        className="mt-2 rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
+                                      <a
+                                        href={`/inventory/manage/expiry-date?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(batch.id)}`}
+                                        className="mt-2 inline-flex rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
                                       >
                                         Змінити термін придатності
-                                      </button>
+                                      </a>
                                     ) : null}
                                   </div>
                                 ))}
