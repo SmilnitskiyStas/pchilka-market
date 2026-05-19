@@ -52,6 +52,7 @@ type ExpiringProductGroup = {
   batchesCount: number;
   minDaysLeft: number;
   nearestExpiryDate: string;
+  latestCreatedAt: string;
   hasFocusedBatch: boolean;
   batches: ExpiringBatchView[];
 };
@@ -232,6 +233,7 @@ function groupBatchesBySupply(
             batchesCount: 1,
             minDaysLeft: batch.daysLeft,
             nearestExpiryDate: batch.expiryDate,
+            latestCreatedAt: batch.createdAt,
             hasFocusedBatch: focusedBatchId === batch.id,
             batches: [batch]
           }
@@ -263,6 +265,7 @@ function groupBatchesBySupply(
         batchesCount: 1,
         minDaysLeft: batch.daysLeft,
         nearestExpiryDate: batch.expiryDate,
+        latestCreatedAt: batch.createdAt,
         hasFocusedBatch: focusedBatchId === batch.id,
         batches: [batch]
       });
@@ -276,6 +279,9 @@ function groupBatchesBySupply(
       existingProduct.minDaysLeft = batch.daysLeft;
       existingProduct.nearestExpiryDate = batch.expiryDate;
     }
+    if (batch.createdAt > existingProduct.latestCreatedAt) {
+      existingProduct.latestCreatedAt = batch.createdAt;
+    }
     existingProduct.batches.push(batch);
   }
 
@@ -286,14 +292,25 @@ function groupBatchesBySupply(
       products: supply.products
         .map((product) => ({
           ...product,
-          batches: [...product.batches].sort(
-            (a, b) =>
+          batches: [...product.batches].sort((a, b) => {
+            if (sortMode === 'recent') {
+              return b.createdAt.localeCompare(a.createdAt) || Number(b.id) - Number(a.id);
+            }
+
+            return (
               a.daysLeft - b.daysLeft ||
               a.expiryDate.localeCompare(b.expiryDate) ||
               Number(a.id) - Number(b.id)
-          )
+            );
+          })
         }))
-        .sort((a, b) => a.minDaysLeft - b.minDaysLeft || a.productName.localeCompare(b.productName, 'uk'))
+        .sort((a, b) => {
+          if (sortMode === 'recent') {
+            return b.latestCreatedAt.localeCompare(a.latestCreatedAt) || a.productName.localeCompare(b.productName, 'uk');
+          }
+
+          return a.minDaysLeft - b.minDaysLeft || a.productName.localeCompare(b.productName, 'uk');
+        })
     }))
     .sort((a, b) => {
       if (sortMode === 'recent') {
@@ -405,6 +422,14 @@ export default function InventoryManagePage() {
     setExpiryCorrectionPhotoFile(null);
     setExpiryCorrectionPhotoUrl('');
     setExpiryCorrectionWarning(null);
+  }
+
+  function handleExpiryCorrectionPhotoChange(file: File | null) {
+    setExpiryCorrectionPhotoFile(file);
+    if (file) {
+      setExpiryCorrectionPhotoUrl('');
+      setError('');
+    }
   }
 
   function upsertBatch(batch: ExpiringBatchView) {
@@ -1013,9 +1038,21 @@ export default function InventoryManagePage() {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(event) => setExpiryCorrectionPhotoFile(event.target.files?.[0] ?? null)}
+                  required
+                  onChange={(event) => handleExpiryCorrectionPhotoChange(event.target.files?.[0] ?? null)}
                   className="mt-1.5 block w-full rounded-xl border border-slate-300 p-3 text-sm"
                 />
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  required
+                  onChange={(event) => handleExpiryCorrectionPhotoChange(event.target.files?.[0] ?? null)}
+                  className="mt-2 block w-full rounded-xl border border-slate-300 p-3 text-sm"
+                />
+                <span className="mt-1 block text-xs text-slate-500">
+                  Перший інпут відкриває галерею, другий дозволяє одразу зробити фото камерою.
+                </span>
                 <span className="mt-1 block text-xs text-slate-500">
                   {expiryCorrectionPhotoFile?.name || (expiryCorrectionPhotoUrl ? 'Фото вже додано' : 'Фото обов’язкове')}
                 </span>
