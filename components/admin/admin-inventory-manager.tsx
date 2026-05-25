@@ -914,7 +914,27 @@ export default function AdminInventoryManager({
         throw new Error(payload.error || 'Не вдалося оновити статус погодження товару.');
       }
 
-      await Promise.all([loadProducts(), loadManualProducts()]);
+      const updatedProduct = payload.product;
+      setProducts((prev) =>
+        prev.map((product) => (product.id === updatedProduct.id ? updatedProduct : product))
+      );
+      setManualProductCreations((prev) =>
+        prev.map((entry) =>
+          Number(entry.productId) === Number(updatedProduct.id)
+            ? {
+                ...entry,
+                article: updatedProduct.article,
+                barcode: updatedProduct.barcodes?.[0] || updatedProduct.barcode || '',
+                productName: updatedProduct.productName,
+                approvalStatus: updatedProduct.approvalStatus,
+                approvalRequestedAt: updatedProduct.approvalRequestedAt,
+                approvedAt: updatedProduct.approvedAt,
+                approvedByUserId: updatedProduct.approvedByUserId ? Number(updatedProduct.approvedByUserId) : null,
+                approvalNote: updatedProduct.approvalNote
+              }
+            : entry
+        )
+      );
       resetManualProductReviewEdit();
       setSuccess(
         action === 'approve'
@@ -923,6 +943,8 @@ export default function AdminInventoryManager({
             ? 'Товар відхилено.'
             : 'Дані товару оновлено.'
       );
+      void loadProducts().catch(() => {});
+      void loadManualProducts().catch(() => {});
     } catch (reviewError) {
       setError(reviewError instanceof Error ? reviewError.message : 'Не вдалося зберегти перевірку товару.');
     } finally {
