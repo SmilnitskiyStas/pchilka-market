@@ -19,6 +19,12 @@ type InventoryManualProductCreationRow = RowDataPacket & {
   store_code: string | null;
   city: string | null;
   address_line: string | null;
+  approval_status: string | null;
+  created_source: string | null;
+  approval_requested_at: Date | string | null;
+  approved_at: Date | string | null;
+  approved_by_user_id: number | null;
+  approval_note: string | null;
 };
 
 export type InventoryManualProductCreationRecord = {
@@ -34,6 +40,12 @@ export type InventoryManualProductCreationRecord = {
   userSurname: string;
   storeId: number | null;
   storeLabel: string;
+  approvalStatus: string;
+  createdSource: string;
+  approvalRequestedAt: string;
+  approvedAt: string;
+  approvedByUserId: number | null;
+  approvalNote: string;
 };
 
 function toIso(value: Date | string | null | undefined): string {
@@ -55,7 +67,13 @@ function mapManualProductCreationRow(row: InventoryManualProductCreationRow): In
     userName: row.user_name ?? '',
     userSurname: row.user_surname ?? '',
     storeId: row.store_id,
-    storeLabel: [row.store_code, row.city, row.address_line].filter(Boolean).join(' | ')
+    storeLabel: [row.store_code, row.city, row.address_line].filter(Boolean).join(' | '),
+    approvalStatus: String(row.approval_status ?? 'approved').trim() || 'approved',
+    createdSource: String(row.created_source ?? 'admin').trim() || 'admin',
+    approvalRequestedAt: toIso(row.approval_requested_at),
+    approvedAt: toIso(row.approved_at),
+    approvedByUserId: row.approved_by_user_id ?? null,
+    approvalNote: row.approval_note ?? ''
   };
 }
 
@@ -125,6 +143,12 @@ export async function listInventoryManualProductCreationsFromDb(limit = 100): Pr
           ORDER BY pb.id ASC
           LIMIT 1
         ) AS barcode,
+        p.approval_status,
+        p.created_source,
+        p.approval_requested_at,
+        p.approved_at,
+        p.approved_by_user_id,
+        p.approval_note,
         al.user_id,
         u.name AS user_name,
         u.surname AS user_surname,

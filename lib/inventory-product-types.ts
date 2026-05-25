@@ -9,6 +9,12 @@ export type InventoryProductRecord = {
   category: string;
   notifiedDaysDefault: number;
   isActive: boolean;
+  approvalStatus: string;
+  createdSource: string;
+  approvalRequestedAt: string;
+  approvedAt: string;
+  approvedByUserId: string;
+  approvalNote: string;
   createdAt: string;
   updatedAt: string;
 };

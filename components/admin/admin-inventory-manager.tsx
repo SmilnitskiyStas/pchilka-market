@@ -163,8 +163,24 @@ type ManualProductCreationView = {
   userSurname: string;
   storeId: number | null;
   storeLabel: string;
+  approvalStatus: string;
+  createdSource: string;
+  approvalRequestedAt: string;
+  approvedAt: string;
+  approvedByUserId: number | null;
+  approvalNote: string;
 };
 type ManualProductsPayload = { ok?: boolean; items?: ManualProductCreationView[]; error?: string };
+type ManualProductReviewDraft = {
+  article: string;
+  barcode: string;
+  productName: string;
+  unitsOfMeasurement: string;
+  category: string;
+  notifiedDaysDefault: number;
+  isActive: boolean;
+  note: string;
+};
 type InventoryUserView = {
   id: number;
   storeId: number | null;
@@ -581,6 +597,36 @@ function formatNotificationLogType(type: string) {
   }
 }
 
+function formatProductApprovalStatus(status: string) {
+  switch (status) {
+    case 'pending':
+      return 'На погодженні';
+    case 'approved':
+      return 'Погоджено';
+    case 'rejected':
+      return 'Відхилено';
+    case 'merged':
+      return 'Обʼєднано';
+    default:
+      return status || '—';
+  }
+}
+
+function getProductApprovalStatusClassName(status: string) {
+  switch (status) {
+    case 'pending':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'approved':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'rejected':
+      return 'border-rose-200 bg-rose-50 text-rose-700';
+    case 'merged':
+      return 'border-sky-200 bg-sky-50 text-sky-700';
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-700';
+  }
+}
+
 function formatDaysLeftLabel(daysLeft: number) {
   if (daysLeft < 0) return `Прострочено на ${Math.abs(daysLeft)} дн.`;
   if (daysLeft === 0) return 'Закінчується сьогодні';
@@ -715,6 +761,9 @@ export default function AdminInventoryManager({
   const [inventoryActiveTasks, setInventoryActiveTasks] = useState<InventoryExpiryTaskView[]>([]);
   const [inventoryArchivedTasks, setInventoryArchivedTasks] = useState<InventoryExpiryTaskView[]>([]);
   const [manualProductCreations, setManualProductCreations] = useState<ManualProductCreationView[]>([]);
+  const [manualProductEditId, setManualProductEditId] = useState<number | null>(null);
+  const [manualProductReviewDraft, setManualProductReviewDraft] = useState<ManualProductReviewDraft | null>(null);
+  const [manualProductReviewBusyId, setManualProductReviewBusyId] = useState<number | null>(null);
   const [productChangeLogs, setProductChangeLogs] = useState<InventoryProductChangeLogView[]>([]);
   const [importReviewItems, setImportReviewItems] = useState<InventoryImportReviewView[]>([]);
   const [productForm, setProductForm] = useState<InventoryProductInput>(initialProductForm);
@@ -788,6 +837,96 @@ export default function AdminInventoryManager({
       setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити список товарів.');
     } finally {
       setIsLoadingProducts(false);
+    }
+  }
+
+  async function loadManualProducts() {
+    const response = await fetch('/api/admin/inventory/manual-products?limit=200', { cache: 'no-store' });
+    const payload = (await response.json()) as ManualProductsPayload;
+    if (!response.ok || !payload.ok || !Array.isArray(payload.items)) {
+      throw new Error(payload.error || 'Не вдалося завантажити товари, створені працівниками.');
+    }
+    setManualProductCreations(payload.items);
+  }
+
+  function startManualProductReviewEdit(item: ManualProductCreationView) {
+    const product = products.find((entry) => Number(entry.id) === Number(item.productId));
+    setManualProductEditId(item.id);
+    setManualProductReviewDraft({
+      article: product?.article || item.article || '',
+      barcode: product?.barcodes?.join(', ') || item.barcode || '',
+      productName: product?.productName || item.productName || '',
+      unitsOfMeasurement: product?.unitsOfMeasurement || '',
+      category: product?.category || '',
+      notifiedDaysDefault: Number(product?.notifiedDaysDefault ?? 7),
+      isActive: product?.isActive !== false,
+      note: item.approvalNote || ''
+    });
+  }
+
+  function resetManualProductReviewEdit() {
+    setManualProductEditId(null);
+    setManualProductReviewDraft(null);
+  }
+
+  async function submitManualProductReview(
+    item: ManualProductCreationView,
+    action: 'approve' | 'reject' | 'update'
+  ) {
+    if (!item.productId) {
+      setError('Для цього запису не знайдено повʼязаний товар.');
+      return;
+    }
+
+    const draft = manualProductEditId === item.id ? manualProductReviewDraft : null;
+    if (action === 'update' && !draft) {
+      startManualProductReviewEdit(item);
+      return;
+    }
+
+    setManualProductReviewBusyId(item.id);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await fetch('/api/admin/inventory/manual-products', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: item.productId,
+          action,
+          note: draft?.note ?? item.approvalNote ?? '',
+          product:
+            action === 'reject' || !draft
+              ? undefined
+              : {
+                  article: draft?.article,
+                  barcode: draft?.barcode,
+                  productName: draft?.productName,
+                  unitsOfMeasurement: draft?.unitsOfMeasurement,
+                  category: draft?.category,
+                  notifiedDaysDefault: draft?.notifiedDaysDefault,
+                  isActive: draft?.isActive
+                }
+        })
+      });
+      const payload = (await response.json()) as ProductsPayload;
+      if (!response.ok || !payload.ok || !payload.product) {
+        throw new Error(payload.error || 'Не вдалося оновити статус погодження товару.');
+      }
+
+      await Promise.all([loadProducts(), loadManualProducts()]);
+      resetManualProductReviewEdit();
+      setSuccess(
+        action === 'approve'
+          ? 'Товар погоджено.'
+          : action === 'reject'
+            ? 'Товар відхилено.'
+            : 'Дані товару оновлено.'
+      );
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : 'Не вдалося зберегти перевірку товару.');
+    } finally {
+      setManualProductReviewBusyId(null);
     }
   }
 
@@ -870,7 +1009,7 @@ export default function AdminInventoryManager({
           fetch('/api/admin/stores', { cache: 'no-store' }),
           fetch('/api/admin/inventory/users?limit=300', { cache: 'no-store' }),
           fetch('/api/admin/inventory/webhook', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/manual-products?limit=100', { cache: 'no-store' }),
+          fetch('/api/admin/inventory/manual-products?limit=200', { cache: 'no-store' }),
           fetch('/api/admin/inventory/product-change-logs?limit=40', { cache: 'no-store' }),
           fetch('/api/admin/inventory/import-review?status=pending&limit=100', { cache: 'no-store' }),
           fetch('/api/admin/inventory/products/import?latest=1', { cache: 'no-store' }),
@@ -2196,9 +2335,14 @@ export default function AdminInventoryManager({
                         Артикул: {product.article || '—'} • ШК: {formatProductBarcodes(product.barcodes, product.barcode)} • {product.category || 'Без категорії'}
                       </p>
                     </div>
-                    <span className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                      {product.isActive ? 'active' : 'inactive'}
-                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getProductApprovalStatusClassName(product.approvalStatus)}`}>
+                        {formatProductApprovalStatus(product.approvalStatus)}
+                      </span>
+                      <span className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                        {product.isActive ? 'active' : 'inactive'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -2235,7 +2379,10 @@ export default function AdminInventoryManager({
 
         <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-base font-semibold text-slate-900">Товари, створені працівниками</h3>
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">Товари, створені працівниками</h3>
+              <p className="mt-1 text-sm text-slate-600">Працівник може користуватися таким товаром одразу, а глобальний адміністратор окремо перевіряє і погоджує довідник.</p>
+            </div>
             <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
               {manualProductCreations.length}
             </span>
@@ -2245,7 +2392,7 @@ export default function AdminInventoryManager({
           ) : (
           <div className="mt-4 space-y-3">
             {manualProductCreations.map((item) => (
-              <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-900">{item.productName || 'Товар без назви'}</p>
@@ -2253,16 +2400,90 @@ export default function AdminInventoryManager({
                       Артикул: {item.article || '—'} • ШК: {item.barcode || '—'} • Дата: {formatDate(item.createdAt)}
                     </p>
                   </div>
-                  <p className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                    #{item.productId ?? item.id}
-                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getProductApprovalStatusClassName(item.approvalStatus)}`}>
+                      {formatProductApprovalStatus(item.approvalStatus)}
+                    </span>
+                    <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                      #{item.productId ?? item.id}
+                    </span>
+                  </div>
                 </div>
                 <p className="mt-3 text-sm text-slate-700">
                   Додав: {[item.userSurname, item.userName].filter(Boolean).join(' ').trim() || 'Невідомий користувач'}
                 </p>
                 <p className="mt-1 text-sm text-slate-600">Магазин: {item.storeLabel || 'Не вказано'}</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Черга погодження: {item.approvalRequestedAt ? formatDate(item.approvalRequestedAt) : '—'}
+                  {item.approvedAt ? ` • погоджено ${formatDate(item.approvedAt)}` : ''}
+                </p>
                 <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-slate-800 whitespace-pre-wrap">
                   {item.comment || 'Примітка відсутня.'}
+                </div>
+                {item.approvalNote ? (
+                  <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-sm text-slate-800 whitespace-pre-wrap">
+                    {item.approvalNote}
+                  </div>
+                ) : null}
+                {manualProductEditId === item.id && manualProductReviewDraft ? (
+                  <div className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+                    <input value={manualProductReviewDraft.article} onChange={(event) => setManualProductReviewDraft((prev) => prev ? { ...prev, article: event.target.value } : prev)} placeholder="Артикул *" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+                    <input value={manualProductReviewDraft.barcode} onChange={(event) => setManualProductReviewDraft((prev) => prev ? { ...prev, barcode: event.target.value } : prev)} placeholder="Штрихкоди через кому" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+                    <input value={manualProductReviewDraft.productName} onChange={(event) => setManualProductReviewDraft((prev) => prev ? { ...prev, productName: event.target.value } : prev)} placeholder="Назва товару *" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand md:col-span-2" />
+                    <input value={manualProductReviewDraft.unitsOfMeasurement} onChange={(event) => setManualProductReviewDraft((prev) => prev ? { ...prev, unitsOfMeasurement: event.target.value } : prev)} placeholder="Одиниця вимірювання *" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+                    <input value={manualProductReviewDraft.category} onChange={(event) => setManualProductReviewDraft((prev) => prev ? { ...prev, category: event.target.value } : prev)} placeholder="Категорія" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+                    <input type="number" min={1} max={90} value={manualProductReviewDraft.notifiedDaysDefault} onChange={(event) => setManualProductReviewDraft((prev) => prev ? { ...prev, notifiedDaysDefault: Number(event.target.value || 7) } : prev)} placeholder="Днів до сповіщення" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+                    <label className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800">
+                      <input type="checkbox" checked={manualProductReviewDraft.isActive} onChange={(event) => setManualProductReviewDraft((prev) => prev ? { ...prev, isActive: event.target.checked } : prev)} className="h-4 w-4" />
+                      Активний товар
+                    </label>
+                    <textarea value={manualProductReviewDraft.note} onChange={(event) => setManualProductReviewDraft((prev) => prev ? { ...prev, note: event.target.value } : prev)} placeholder="Примітка адміністратора" rows={3} className="rounded-2xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand md:col-span-2" />
+                  </div>
+                ) : null}
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  {manualProductEditId === item.id ? (
+                    <button
+                      type="button"
+                      onClick={resetManualProductReviewEdit}
+                      disabled={manualProductReviewBusyId === item.id}
+                      className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+                    >
+                      Скасувати
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => startManualProductReviewEdit(item)}
+                      disabled={manualProductReviewBusyId === item.id}
+                      className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+                    >
+                      Редагувати
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { void submitManualProductReview(item, 'update'); }}
+                    disabled={manualProductReviewBusyId === item.id || manualProductEditId !== item.id}
+                    className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand disabled:opacity-60"
+                  >
+                    {manualProductReviewBusyId === item.id ? 'Збереження...' : 'Зберегти правки'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void submitManualProductReview(item, 'approve'); }}
+                    disabled={manualProductReviewBusyId === item.id}
+                    className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {manualProductReviewBusyId === item.id ? 'Обробка...' : 'Погодити'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void submitManualProductReview(item, 'reject'); }}
+                    disabled={manualProductReviewBusyId === item.id || manualProductEditId !== item.id}
+                    className="rounded-full bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    Відхилити
+                  </button>
                 </div>
               </div>
             ))}

@@ -59,6 +59,10 @@ export async function POST(request: Request) {
     const product = await createInventoryProductInDb({
       ...normalized,
       isActive: true
+    }, undefined, {
+      approvalStatus: 'pending',
+      createdSource: 'manual_worker',
+      approvalRequestedAt: new Date()
     });
 
     const createdAt = new Date().toISOString();

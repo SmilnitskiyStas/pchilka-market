@@ -24,9 +24,28 @@ type ProductRow = RowDataPacket & {
   default_units_of_measurement: string | null;
   notified_days_default: number | null;
   is_active: number;
+  approval_status: string | null;
+  created_source: string | null;
+  approval_requested_at: Date | string | null;
+  approved_at: Date | string | null;
+  approved_by_user_id: number | null;
+  approval_note: string | null;
   matched_units_of_measurement?: string | null;
   created_at: Date | string;
   updated_at: Date | string;
+};
+
+export type InventoryProductApprovalAction = 'approve' | 'reject' | 'update';
+
+export type InventoryProductApprovalReviewRecord = {
+  id: number;
+  productId: number;
+  action: InventoryProductApprovalAction;
+  oldValuesJson: string;
+  newValuesJson: string;
+  note: string;
+  reviewedByUserId: number | null;
+  createdAt: string;
 };
 
 function toIso(value: Date | string | null | undefined): string {
@@ -73,6 +92,12 @@ function mapRow(row: ProductRow): InventoryProductRecord {
     category: row.category ?? '',
     notifiedDaysDefault: Number(row.notified_days_default ?? 7),
     isActive: row.is_active === 1,
+    approvalStatus: String(row.approval_status ?? 'approved').trim() || 'approved',
+    createdSource: String(row.created_source ?? 'admin').trim() || 'admin',
+    approvalRequestedAt: toIso(row.approval_requested_at),
+    approvedAt: toIso(row.approved_at),
+    approvedByUserId: row.approved_by_user_id ? String(row.approved_by_user_id) : '',
+    approvalNote: String(row.approval_note ?? ''),
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at)
   };
@@ -97,6 +122,12 @@ function buildProductsSelectSql(
         p.default_units_of_measurement,
         p.notified_days_default,
         p.is_active,
+        p.approval_status,
+        p.created_source,
+        p.approval_requested_at,
+        p.approved_at,
+        p.approved_by_user_id,
+        p.approval_note,
         ${extraSelectSql ? `${extraSelectSql},` : ''}
         p.created_at,
         p.updated_at
@@ -111,6 +142,12 @@ function buildProductsSelectSql(
         p.default_units_of_measurement,
         p.notified_days_default,
         p.is_active,
+        p.approval_status,
+        p.created_source,
+        p.approval_requested_at,
+        p.approved_at,
+        p.approved_by_user_id,
+        p.approval_note,
         p.created_at,
         p.updated_at
       ${orderSql}
@@ -497,9 +534,51 @@ export async function findInventoryProductDuplicateInDb(
   return rows[0] ? mapRow(rows[0]) : null;
 }
 
+async function createInventoryProductApprovalReviewInDb(
+  input: {
+    productId: number;
+    action: InventoryProductApprovalAction;
+    oldValues?: Record<string, unknown> | null;
+    newValues?: Record<string, unknown> | null;
+    note?: string;
+    reviewedByUserId?: number | null;
+  },
+  executor?: InventoryDbExecutor
+) {
+  const db = executor ?? getDbPool();
+  await db.query(
+    `
+      INSERT INTO product_approval_reviews (
+        product_id,
+        action,
+        old_values_json,
+        new_values_json,
+        note,
+        reviewed_by_user_id
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    [
+      input.productId,
+      input.action,
+      JSON.stringify(input.oldValues ?? {}),
+      JSON.stringify(input.newValues ?? {}),
+      input.note?.trim() || null,
+      input.reviewedByUserId ?? null
+    ]
+  );
+}
+
 export async function createInventoryProductInDb(
   input: InventoryProductInput,
-  executor?: InventoryDbExecutor
+  executor?: InventoryDbExecutor,
+  options?: {
+    approvalStatus?: string;
+    createdSource?: string;
+    approvalRequestedAt?: string | Date | null;
+    approvedAt?: string | Date | null;
+    approvedByUserId?: number | null;
+    approvalNote?: string;
+  }
 ): Promise<InventoryProductRecord> {
   const normalized = normalizeInventoryProductInput(input);
   const db = executor ?? getDbPool();
@@ -519,8 +598,19 @@ export async function createInventoryProductInDb(
   const [result] = await db.query<ResultSetHeader>(
     `
       INSERT INTO products (
-        article, product_name, category, default_units_of_measurement, notified_days_default, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?)
+        article,
+        product_name,
+        category,
+        default_units_of_measurement,
+        notified_days_default,
+        is_active,
+        approval_status,
+        created_source,
+        approval_requested_at,
+        approved_at,
+        approved_by_user_id,
+        approval_note
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       normalized.article,
@@ -528,7 +618,13 @@ export async function createInventoryProductInDb(
       normalized.category || null,
       normalized.barcodeEntries.length === 0 ? normalized.unitsOfMeasurement || null : null,
       normalized.notifiedDaysDefault,
-      normalized.isActive ? 1 : 0
+      normalized.isActive ? 1 : 0,
+      options?.approvalStatus?.trim() || 'approved',
+      options?.createdSource?.trim() || 'admin',
+      options?.approvalRequestedAt ?? null,
+      options?.approvedAt ?? null,
+      options?.approvedByUserId ?? null,
+      options?.approvalNote?.trim() || null
     ]
   );
 
@@ -548,6 +644,186 @@ export async function createInventoryProductInDb(
   }
 
   return created;
+}
+
+export async function updateInventoryProductInDb(
+  productId: string | number,
+  input: InventoryProductInput,
+  executor?: InventoryDbExecutor,
+  options?: {
+    changeSource?: string;
+    changedBy?: string;
+    approvalStatus?: string;
+    approvalNote?: string;
+    approvedAt?: string | Date | null;
+    approvedByUserId?: number | null;
+  }
+): Promise<InventoryProductRecord> {
+  const normalized = normalizeInventoryProductInput(input);
+  const db = executor ?? getDbPool();
+  const numericProductId = Number(productId);
+  if (!Number.isFinite(numericProductId) || numericProductId <= 0) {
+    throw new Error('Invalid product id.');
+  }
+
+  const currentRow = await findInventoryProductRowByIdInDb(numericProductId, db);
+  if (!currentRow) {
+    throw new Error('Товар не знайдено.');
+  }
+
+  const duplicate = await findInventoryProductDuplicateInDb(
+    {
+      article: normalized.article,
+      barcode: normalized.barcode,
+      productName: normalized.productName,
+      unitsOfMeasurement: normalized.unitsOfMeasurement
+    },
+    db
+  );
+  if (duplicate && Number(duplicate.id) !== numericProductId) {
+    throw new Error(`Товар уже існує в базі: ${duplicate.productName}.`);
+  }
+
+  const beforeRecord = mapRow(currentRow);
+  const currentBarcodeEntries = await listInventoryProductBarcodeEntriesInDb(numericProductId, db);
+  const nextBarcodeEntries =
+    normalized.barcodeEntries.length > 0
+      ? normalized.barcodeEntries
+      : currentBarcodeEntries.filter((entry) => entry.barcode);
+
+  const nextDefaultUnitsOfMeasurement =
+    normalized.barcodeEntries.length === 0 ? normalized.unitsOfMeasurement || null : null;
+
+  await db.query(
+    `
+      UPDATE products
+      SET
+        article = ?,
+        product_name = ?,
+        category = ?,
+        default_units_of_measurement = ?,
+        notified_days_default = ?,
+        is_active = ?,
+        approval_status = COALESCE(?, approval_status),
+        approval_note = ?,
+        approved_at = ?,
+        approved_by_user_id = ?
+      WHERE id = ?
+    `,
+    [
+      normalized.article,
+      normalized.productName,
+      normalized.category || null,
+      nextDefaultUnitsOfMeasurement,
+      normalized.notifiedDaysDefault,
+      normalized.isActive ? 1 : 0,
+      options?.approvalStatus ?? null,
+      options?.approvalNote?.trim() || null,
+      options?.approvedAt ?? null,
+      options?.approvedByUserId ?? null,
+      numericProductId
+    ]
+  );
+
+  await replaceInventoryProductBarcodesInDb(numericProductId, nextBarcodeEntries, db);
+  const afterRecord = await findInventoryProductByIdInDb(numericProductId, db);
+  if (!afterRecord) {
+    throw new Error('Не вдалося прочитати оновлений товар.');
+  }
+
+  await createInventoryProductFieldChangeLogsInDb(
+    {
+      productId: numericProductId,
+      before: beforeRecord,
+      after: afterRecord,
+      changeSource: options?.changeSource?.trim() || 'admin_product_review',
+      changedBy: options?.changedBy?.trim() || '',
+      changeNote:
+        options?.approvalNote?.trim() ||
+        `Product updated during approval workflow (${options?.approvalStatus?.trim() || 'update'}).`
+    },
+    db
+  );
+
+  return afterRecord;
+}
+
+export async function updateInventoryProductApprovalInDb(
+  input: {
+    productId: number;
+    action: InventoryProductApprovalAction;
+    reviewedByUserId?: number | null;
+    changedBy?: string;
+    note?: string;
+    product?: InventoryProductInput | null;
+  },
+  executor?: InventoryDbExecutor
+): Promise<InventoryProductRecord> {
+  const db = executor ?? getDbPool();
+  const product = await findInventoryProductByIdInDb(input.productId, db);
+  if (!product) {
+    throw new Error('Товар не знайдено.');
+  }
+
+  const beforeSnapshot = product as Record<string, unknown>;
+  let nextRecord = product;
+  const trimmedNote = input.note?.trim() || '';
+
+  if (input.product) {
+    nextRecord = await updateInventoryProductInDb(
+      input.productId,
+      input.product,
+      db,
+      {
+        changeSource: 'admin_product_review',
+        changedBy: input.changedBy,
+        approvalStatus: input.action === 'approve' ? 'approved' : input.action === 'reject' ? 'rejected' : undefined,
+        approvalNote: trimmedNote || product.approvalNote,
+        approvedAt: input.action === 'approve' ? new Date() : null,
+        approvedByUserId: input.action === 'approve' ? input.reviewedByUserId ?? null : null
+      }
+    );
+  } else {
+    const nextStatus =
+      input.action === 'approve'
+        ? 'approved'
+        : input.action === 'reject'
+          ? 'rejected'
+          : product.approvalStatus || 'pending';
+    await db.query(
+      `
+        UPDATE products
+        SET
+          approval_status = ?,
+          approval_note = ?,
+          approved_at = ?,
+          approved_by_user_id = ?
+        WHERE id = ?
+      `,
+      [
+        nextStatus,
+        trimmedNote || null,
+        input.action === 'approve' ? new Date() : null,
+        input.action === 'approve' ? input.reviewedByUserId ?? null : null,
+        input.productId
+      ]
+    );
+    nextRecord = (await findInventoryProductByIdInDb(input.productId, db)) ?? product;
+  }
+
+  await createInventoryProductApprovalReviewInDb(
+    {
+      productId: input.productId,
+      action: input.action,
+      oldValues: beforeSnapshot,
+      newValues: nextRecord as Record<string, unknown>,
+      note: trimmedNote,
+      reviewedByUserId: input.reviewedByUserId ?? null
+    },
+    db
+  );
+
+  return nextRecord;
 }
 
 export async function importInventoryProductsToDb(
