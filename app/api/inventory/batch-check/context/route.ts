@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 
 import { listInventoryBatchChecksForBatchInDb } from '@/lib/inventory-batch-checks-repository';
 import { findInventoryBatchByIdInDb } from '@/lib/inventory-batches-repository';
-import { findInventoryExpiryTaskByIdInDb, markInventoryExpiryTaskStartedInDb } from '@/lib/inventory-expiry-tasks-repository';
+import {
+  findInventoryExpiryTaskByIdInDb,
+  markInventoryExpiryTaskStartedInDb,
+  takeInventoryExpiryTaskInDb
+} from '@/lib/inventory-expiry-tasks-repository';
+import { canManageInventoryUsers } from '@/lib/inventory-user-roles';
 import { parseInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
 import { findInventoryUserByChatId } from '@/lib/inventory-users-repository';
@@ -36,10 +41,32 @@ export async function GET(request: Request) {
     }
 
     if (taskId) {
-      const task = await findInventoryExpiryTaskByIdInDb(taskId);
+      let task = await findInventoryExpiryTaskByIdInDb(taskId);
       if (!task || String(task.batchId) !== String(batch.id) || Number(task.storeId) !== Number(user.storeId)) {
         return NextResponse.json({ ok: false, error: 'Завдання не знайдено або воно не відповідає цій партії.' }, { status: 404 });
       }
+
+      if (!canManageInventoryUsers(user.role)) {
+        if (task.taskAssignmentMode === 'shared') {
+          if (task.assignedUserId && Number(task.assignedUserId) !== Number(user.id)) {
+            return NextResponse.json({ ok: false, error: 'Цю задачу вже взяв у роботу інший працівник.' }, { status: 409 });
+          }
+
+          if (!task.assignedUserId) {
+            const takenTask = await takeInventoryExpiryTaskInDb({ taskId: task.id, userId: user.id });
+            if (!takenTask) {
+              return NextResponse.json({ ok: false, error: 'Не вдалося взяти задачу в роботу.' }, { status: 409 });
+            }
+            task = takenTask;
+          }
+        } else {
+          const effectiveAssigneeId = Number(task.assignedUserId ?? task.responsibleUserId ?? 0);
+          if (effectiveAssigneeId > 0 && effectiveAssigneeId !== Number(user.id)) {
+            return NextResponse.json({ ok: false, error: 'У вас немає доступу до цієї задачі.' }, { status: 403 });
+          }
+        }
+      }
+
       await markInventoryExpiryTaskStartedInDb(task.id);
     }
 

@@ -1002,6 +1002,24 @@ async function ensureUsersRoleColumnSupportsInventoryRoles() {
   await pool.query("UPDATE users SET role = 'store_manager' WHERE role = 'manager'");
 }
 
+async function ensureStoresTaskAssignmentModeColumn() {
+  const pool = getDbPool();
+  const columns = await listTableColumns('stores');
+  if (!columns.has('task_assignment_mode')) {
+    await pool.query(
+      "ALTER TABLE stores ADD COLUMN task_assignment_mode VARCHAR(30) NOT NULL DEFAULT 'personal' AFTER sort_order"
+    );
+  }
+
+  await pool.query(`
+    UPDATE stores
+    SET task_assignment_mode = CASE
+      WHEN task_assignment_mode IN ('shared', 'hybrid') THEN task_assignment_mode
+      ELSE 'personal'
+    END
+  `);
+}
+
 export async function applyInventorySchemaMigrations() {
   const pool = getDbPool();
   const [tableRows] = await pool.query<ShowTablesRow[]>('SHOW TABLES');
@@ -1017,6 +1035,7 @@ export async function applyInventorySchemaMigrations() {
 
   await ensureUsersPositionTitleColumn();
   await ensureUsersRoleColumnSupportsInventoryRoles();
+  await ensureStoresTaskAssignmentModeColumn();
   await ensureProductsDefaultNotifyColumn();
   await ensureProductsDefaultUnitsColumn();
   await ensureProductsApprovalWorkflowColumns();

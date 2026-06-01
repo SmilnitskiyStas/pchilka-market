@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { canManageInventoryUsers, type InventoryUserRole } from '@/lib/inventory-user-roles';
+import type { InventoryTaskAssignmentMode } from '@/lib/store-types';
 
 type TaskView = {
   id: number;
@@ -11,6 +12,8 @@ type TaskView = {
   storeId: number;
   responsibleUserId: number | null;
   assignedUserId: number | null;
+  assignedUserName: string;
+  taskAssignmentMode: InventoryTaskAssignmentMode;
   sourceType: string;
   taskType: string;
   status: string;
@@ -46,6 +49,7 @@ type Payload = {
     surname: string;
     role: InventoryUserRole;
     storeId: number;
+    taskAssignmentMode: InventoryTaskAssignmentMode;
   };
   activeTasks?: TaskView[];
   archivedTasks?: TaskView[];
@@ -132,6 +136,17 @@ function formatDaysLeft(value: number) {
   return `Залишилось днів: ${value}`;
 }
 
+function formatTaskAssignmentMode(value: InventoryTaskAssignmentMode) {
+  switch (value) {
+    case 'shared':
+      return 'Спільний список';
+    case 'hybrid':
+      return 'Змішаний режим';
+    default:
+      return 'Персональні задачі';
+  }
+}
+
 function getRiskBadgeClassName(riskLevel: string) {
   switch (riskLevel) {
     case 'critical':
@@ -149,6 +164,8 @@ export default function InventoryTasksPage() {
   const [token, setToken] = useState('');
   const [notificationId, setNotificationId] = useState('');
   const [currentUserRole, setCurrentUserRole] = useState<InventoryUserRole>('staff');
+  const [currentUserId, setCurrentUserId] = useState<number>(0);
+  const [storeTaskAssignmentMode, setStoreTaskAssignmentMode] = useState<InventoryTaskAssignmentMode>('personal');
   const [taskFilter, setTaskFilter] = useState('');
   const [quickTaskFilter, setQuickTaskFilter] = useState<QuickTaskFilter>('all');
   const [activeTasks, setActiveTasks] = useState<TaskView[]>([]);
@@ -156,7 +173,35 @@ export default function InventoryTasksPage() {
   const [summary, setSummary] = useState({ active: 0, archived: 0, critical: 0, high: 0 });
   const [userName, setUserName] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [takingTaskId, setTakingTaskId] = useState<number | null>(null);
   const [error, setError] = useState('');
+
+  async function loadTasks(nextToken: string, nextNotificationId: string) {
+    setIsLoading(true);
+    try {
+      const response = await fetch(
+        `/api/inventory/tasks/context?token=${encodeURIComponent(nextToken)}&notificationId=${encodeURIComponent(nextNotificationId)}`,
+        { cache: 'no-store' }
+      );
+      const payload = (await response.json()) as Payload;
+      if (!response.ok || !payload.ok || !payload.user) {
+        throw new Error(payload.error || 'Не вдалося завантажити список задач.');
+      }
+
+      setCurrentUserId(payload.user.id);
+      setCurrentUserRole(payload.user.role);
+      setStoreTaskAssignmentMode(payload.user.taskAssignmentMode);
+      setUserName([payload.user.surname, payload.user.name].filter(Boolean).join(' '));
+      setActiveTasks(Array.isArray(payload.activeTasks) ? payload.activeTasks : []);
+      setArchivedTasks(Array.isArray(payload.archivedTasks) ? payload.archivedTasks : []);
+      setSummary(payload.summary ?? { active: 0, archived: 0, critical: 0, high: 0 });
+      setError('');
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити список задач.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -164,33 +209,7 @@ export default function InventoryTasksPage() {
     const nextNotificationId = url.searchParams.get('notificationId') ?? '';
     setToken(nextToken);
     setNotificationId(nextNotificationId);
-
-    async function load() {
-      setIsLoading(true);
-      try {
-        const response = await fetch(
-          `/api/inventory/tasks/context?token=${encodeURIComponent(nextToken)}&notificationId=${encodeURIComponent(nextNotificationId)}`,
-          { cache: 'no-store' }
-        );
-        const payload = (await response.json()) as Payload;
-        if (!response.ok || !payload.ok || !payload.user) {
-          throw new Error(payload.error || 'Не вдалося завантажити список задач.');
-        }
-
-        setCurrentUserRole(payload.user.role);
-        setUserName([payload.user.surname, payload.user.name].filter(Boolean).join(' '));
-        setActiveTasks(Array.isArray(payload.activeTasks) ? payload.activeTasks : []);
-        setArchivedTasks(Array.isArray(payload.archivedTasks) ? payload.archivedTasks : []);
-        setSummary(payload.summary ?? { active: 0, archived: 0, critical: 0, high: 0 });
-        setError('');
-      } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити список задач.');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    void load();
+    void loadTasks(nextToken, nextNotificationId);
   }, []);
 
   const normalizedTaskFilter = taskFilter.trim().toLowerCase();
@@ -221,12 +240,14 @@ export default function InventoryTasksPage() {
         task.storeLabel,
         task.title,
         task.note,
-        task.responsibleUserName
+        task.responsibleUserName,
+        task.assignedUserName
       ];
 
       return searchable.some((value) => String(value ?? '').toLowerCase().includes(normalizedTaskFilter));
     });
   }, [activeTasks, normalizedTaskFilter, quickTaskFilter]);
+
   const filteredArchivedTasks = useMemo(() => {
     if (!normalizedTaskFilter) return archivedTasks;
 
@@ -240,16 +261,43 @@ export default function InventoryTasksPage() {
         task.title,
         task.note,
         task.resolutionNote,
-        task.responsibleUserName
+        task.responsibleUserName,
+        task.assignedUserName
       ];
 
       return searchable.some((value) => String(value ?? '').toLowerCase().includes(normalizedTaskFilter));
     });
   }, [archivedTasks, normalizedTaskFilter]);
+
   const overdueCount = useMemo(
     () => filteredActiveTasks.filter((task) => task.daysLeftSnapshot < 0).length,
     [filteredActiveTasks]
   );
+
+  async function handleTakeTask(taskId: number) {
+    setTakingTaskId(taskId);
+    setError('');
+    try {
+      const response = await fetch('/api/inventory/tasks/take', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          taskId
+        })
+      });
+      const payload = (await response.json()) as { ok?: boolean; task?: TaskView; error?: string };
+      if (!response.ok || !payload.ok || !payload.task) {
+        throw new Error(payload.error || 'Не вдалося взяти задачу в роботу.');
+      }
+
+      setActiveTasks((prev) => prev.map((task) => (task.id === payload.task?.id ? payload.task : task)));
+    } catch (takeError) {
+      setError(takeError instanceof Error ? takeError.message : 'Не вдалося взяти задачу в роботу.');
+    } finally {
+      setTakingTaskId(null);
+    }
+  }
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl items-start justify-center px-4 py-8 sm:px-6 lg:px-8">
@@ -267,14 +315,19 @@ export default function InventoryTasksPage() {
         </div>
         <h1 className="mt-2 text-2xl font-bold text-slate-900">Мої задачі по інвентарю</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Telegram використовується тільки як канал сповіщення. Усі перевірки і дії виконуються тут, у Web App.
+          Telegram використовується тільки як канал сповіщення. Усі перевірки та дії виконуються тут, у Web App.
         </p>
 
-        {userName ? (
-          <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-            Працівник: <span className="font-semibold text-slate-900">{userName}</span>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {userName ? (
+            <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              Працівник: <span className="font-semibold text-slate-900">{userName}</span>
+            </p>
+          ) : null}
+          <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            Режим задач магазину: <span className="font-semibold text-slate-900">{formatTaskAssignmentMode(storeTaskAssignmentMode)}</span>
           </p>
-        ) : null}
+        </div>
 
         {isLoading ? <p className="mt-4 text-sm text-slate-600">Завантаження задач...</p> : null}
         {error ? <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p> : null}
@@ -292,57 +345,41 @@ export default function InventoryTasksPage() {
                 />
               </label>
               <p className="mt-2 text-xs text-slate-500">
-                Фільтр шукає по назві товару, артикулу, штрихкоду, коду партії, магазину і примітках.
+                Фільтр шукає по назві товару, артикулу, штрихкоду, коду партії, магазину, відповідальному та примітках.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setQuickTaskFilter('all')}
-                  className={[
-                    'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-                    quickTaskFilter === 'all'
-                      ? 'border-brand bg-brand text-white'
-                      : 'border-slate-300 bg-white text-slate-700 hover:border-brand hover:text-brand'
-                  ].join(' ')}
-                >
-                  Усі
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setQuickTaskFilter('critical')}
-                  className={[
-                    'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-                    quickTaskFilter === 'critical'
-                      ? 'border-red-600 bg-red-600 text-white'
-                      : 'border-red-200 bg-red-50 text-red-700 hover:border-red-300'
-                  ].join(' ')}
-                >
-                  Критичні
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setQuickTaskFilter('overdue')}
-                  className={[
-                    'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-                    quickTaskFilter === 'overdue'
-                      ? 'border-slate-800 bg-slate-800 text-white'
-                      : 'border-slate-300 bg-slate-100 text-slate-800 hover:border-slate-400'
-                  ].join(' ')}
-                >
-                  Протерміновані
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setQuickTaskFilter('high')}
-                  className={[
-                    'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-                    quickTaskFilter === 'high'
-                      ? 'border-amber-500 bg-amber-500 text-white'
-                      : 'border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300'
-                  ].join(' ')}
-                >
-                  Високий ризик
-                </button>
+                {[
+                  ['all', 'Усі'],
+                  ['critical', 'Критичні'],
+                  ['overdue', 'Протерміновані'],
+                  ['high', 'Високий ризик']
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setQuickTaskFilter(value as QuickTaskFilter)}
+                    className={[
+                      'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
+                      quickTaskFilter === value
+                        ? value === 'critical'
+                          ? 'border-red-600 bg-red-600 text-white'
+                          : value === 'overdue'
+                            ? 'border-slate-800 bg-slate-800 text-white'
+                            : value === 'high'
+                              ? 'border-amber-500 bg-amber-500 text-white'
+                              : 'border-brand bg-brand text-white'
+                        : value === 'critical'
+                          ? 'border-red-200 bg-red-50 text-red-700 hover:border-red-300'
+                          : value === 'overdue'
+                            ? 'border-slate-300 bg-slate-100 text-slate-800 hover:border-slate-400'
+                            : value === 'high'
+                              ? 'border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300'
+                              : 'border-slate-300 bg-white text-slate-700 hover:border-brand hover:text-brand'
+                    ].join(' ')}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -383,44 +420,82 @@ export default function InventoryTasksPage() {
                   </p>
                 ) : (
                   <div className="mt-4 space-y-3">
-                    {filteredActiveTasks.map((task) => (
-                      <article key={task.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <h3 className="text-sm font-semibold text-slate-900">{task.productName}</h3>
-                            <p className="mt-1 text-xs text-slate-500">{task.storeLabel}</p>
+                    {filteredActiveTasks.map((task) => {
+                      const isManagerView = canManageInventoryUsers(currentUserRole);
+                      const isSharedTask = task.taskAssignmentMode === 'shared';
+                      const isTakenByCurrentUser = Number(task.assignedUserId ?? 0) === Number(currentUserId);
+                      const isTakenByAnotherUser =
+                        Number(task.assignedUserId ?? 0) > 0 && Number(task.assignedUserId ?? 0) !== Number(currentUserId);
+                      const canTakeTask = !isManagerView && isSharedTask && !task.assignedUserId;
+                      const canOpenTask = isManagerView || !isSharedTask || isTakenByCurrentUser;
+
+                      return (
+                        <article key={task.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <h3 className="text-sm font-semibold text-slate-900">{task.productName}</h3>
+                              <p className="mt-1 text-xs text-slate-500">{task.storeLabel}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getRiskBadgeClassName(task.riskLevel)}`}>
+                                {formatRiskLevel(task.riskLevel)}
+                              </span>
+                              <span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                                {formatStatus(task.status)}
+                              </span>
+                              <span className="rounded-full border border-brand/30 bg-brand/5 px-2.5 py-1 text-xs font-semibold text-brand">
+                                {formatTaskAssignmentMode(task.taskAssignmentMode)}
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getRiskBadgeClassName(task.riskLevel)}`}>
-                              {formatRiskLevel(task.riskLevel)}
-                            </span>
-                            <span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
-                              {formatStatus(task.status)}
-                            </span>
+
+                          <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                            <p>Тип: <span className="font-semibold text-slate-900">{formatTaskType(task.taskType)}</span></p>
+                            <p>Термін: <span className="font-semibold text-slate-900">{task.dueDate}</span></p>
+                            <p>Артикул: <span className="font-semibold text-slate-900">{task.article || '—'}</span></p>
+                            <p>Штрихкод: <span className="font-semibold text-slate-900">{task.barcode || '—'}</span></p>
+                            <p>Партія: <span className="font-semibold text-slate-900">#{task.batchId}</span></p>
+                            <p><span className="font-semibold text-slate-900">{formatDaysLeft(task.daysLeftSnapshot)}</span></p>
+                            <p>Відповідальний: <span className="font-semibold text-slate-900">{task.responsibleUserName || '—'}</span></p>
+                            <p>
+                              У роботі:
+                              <span className="font-semibold text-slate-900"> {task.assignedUserName || 'ще не взято'}</span>
+                            </p>
                           </div>
-                        </div>
 
-                        <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                          <p>Тип: <span className="font-semibold text-slate-900">{formatTaskType(task.taskType)}</span></p>
-                          <p>Термін: <span className="font-semibold text-slate-900">{task.dueDate}</span></p>
-                          <p>Артикул: <span className="font-semibold text-slate-900">{task.article || '—'}</span></p>
-                          <p>Штрихкод: <span className="font-semibold text-slate-900">{task.barcode || '—'}</span></p>
-                          <p>Партія: <span className="font-semibold text-slate-900">#{task.batchId}</span></p>
-                          <p><span className="font-semibold text-slate-900">{formatDaysLeft(task.daysLeftSnapshot)}</span></p>
-                        </div>
+                          {task.note ? <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{task.note}</p> : null}
+                          {isTakenByAnotherUser && !isManagerView ? (
+                            <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                              Цю задачу вже взяв у роботу: <span className="font-semibold">{task.assignedUserName}</span>
+                            </p>
+                          ) : null}
 
-                        {task.note ? <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{task.note}</p> : null}
+                          <div className="mt-4 flex flex-wrap gap-3">
+                            {canTakeTask ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void handleTakeTask(task.id);
+                                }}
+                                disabled={takingTaskId === task.id}
+                                className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+                              >
+                                {takingTaskId === task.id ? 'Беремо в роботу...' : 'Взяти в роботу'}
+                              </button>
+                            ) : null}
 
-                        <div className="mt-4 flex flex-wrap gap-3">
-                          <a
-                            href={`/inventory/batch-check?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(String(task.batchId))}&taskId=${encodeURIComponent(String(task.id))}`}
-                            className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
-                          >
-                            Відкрити перевірку
-                          </a>
-                        </div>
-                      </article>
-                    ))}
+                            {canOpenTask ? (
+                              <a
+                                href={`/inventory/batch-check?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(String(task.batchId))}&taskId=${encodeURIComponent(String(task.id))}`}
+                                className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
+                              >
+                                Відкрити перевірку
+                              </a>
+                            ) : null}
+                          </div>
+                        </article>
+                      );
+                    })}
                   </div>
                 )}
               </section>
@@ -456,6 +531,9 @@ export default function InventoryTasksPage() {
                         <div className="mt-3 space-y-1 text-sm text-slate-700">
                           <p>Результат: <span className="font-semibold text-slate-900">{formatOutcome(task.outcome)}</span></p>
                           <p>Завершено: <span className="font-semibold text-slate-900">{formatDate(task.completedAt)}</span></p>
+                          {task.assignedUserName ? (
+                            <p>Хто виконав: <span className="font-semibold text-slate-900">{task.assignedUserName}</span></p>
+                          ) : null}
                           {task.resolutionNote ? <p>Коментар: <span className="text-slate-900">{task.resolutionNote}</span></p> : null}
                         </div>
                       </article>

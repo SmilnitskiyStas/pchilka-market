@@ -6,7 +6,8 @@ import {
   getSuspiciousInventoryExpiryDate,
   type SuspiciousInventoryExpiryDate
 } from '@/lib/inventory-expiry-date-rules';
-import { canEditInventoryBatchExpiry, type InventoryUserRole } from '@/lib/inventory-user-roles';
+import { canEditInventoryBatchExpiry, canManageInventoryTaskMode, type InventoryUserRole } from '@/lib/inventory-user-roles';
+import type { InventoryTaskAssignmentMode } from '@/lib/store-types';
 
 type InventoryUserView = {
   id: number;
@@ -89,6 +90,7 @@ type ManageContextPayload = {
   users?: InventoryUserView[];
   storeBatches?: ExpiringBatchView[];
   expiringBatches?: ExpiringBatchView[];
+  taskAssignmentMode?: InventoryTaskAssignmentMode;
   error?: string;
 };
 
@@ -116,6 +118,28 @@ const expiryCorrectionReasonOptions = [
   { value: 'supplier_data_error', label: 'Помилка в даних постачальника' },
   { value: 'other', label: 'Інша причина' }
 ] as const;
+
+const taskAssignmentModeOptions: Array<{
+  value: InventoryTaskAssignmentMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 'personal',
+    label: 'Персональні задачі',
+    description: 'Кожен працівник бачить і отримує тільки свої задачі.'
+  },
+  {
+    value: 'shared',
+    label: 'Спільний список магазину',
+    description: 'Усі працівники бачать спільний список і беруть задачі в роботу вручну.'
+  },
+  {
+    value: 'hybrid',
+    label: 'Змішаний режим',
+    description: 'Критичні задачі персональні, інші доступні у спільному списку магазину.'
+  }
+];
 
 function formatDaysLeft(value: number) {
   if (value < 0) return `Прострочено на ${Math.abs(value)} дн.`;
@@ -339,6 +363,7 @@ export default function InventoryManagePage() {
   const [isUsersSectionOpen, setIsUsersSectionOpen] = useState(false);
   const [manageFilter, setManageFilter] = useState('');
   const [storeLabel, setStoreLabel] = useState('');
+  const [taskAssignmentMode, setTaskAssignmentMode] = useState<InventoryTaskAssignmentMode>('personal');
   const [users, setUsers] = useState<InventoryUserView[]>([]);
   const [storeBatches, setStoreBatches] = useState<ExpiringBatchView[]>([]);
   const [expiringBatches, setExpiringBatches] = useState<ExpiringBatchView[]>([]);
@@ -353,6 +378,7 @@ export default function InventoryManagePage() {
   const [expiryCorrectionPhotoUrl, setExpiryCorrectionPhotoUrl] = useState('');
   const [expiryCorrectionWarning, setExpiryCorrectionWarning] = useState<SuspiciousInventoryExpiryDate | null>(null);
   const [isSavingExpiryCorrection, setIsSavingExpiryCorrection] = useState(false);
+  const [isSavingTaskMode, setIsSavingTaskMode] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -383,6 +409,7 @@ export default function InventoryManagePage() {
 
         setCurrentUserRole(payload.user.role);
         setStoreLabel(payload.user.storeLabel);
+        setTaskAssignmentMode(payload.taskAssignmentMode ?? 'personal');
         setUsers(payload.users);
         setStoreBatches(payload.storeBatches);
         setExpiringBatches(payload.expiringBatches);
@@ -491,6 +518,37 @@ export default function InventoryManagePage() {
       setError(saveError instanceof Error ? saveError.message : 'Не вдалося оновити працівника.');
     } finally {
       setSavingUserId(null);
+    }
+  }
+
+  async function handleSaveTaskAssignmentMode() {
+    setIsSavingTaskMode(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await fetch('/api/inventory/manage/task-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          taskAssignmentMode
+        })
+      });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        taskAssignmentMode?: InventoryTaskAssignmentMode;
+        error?: string;
+      };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Не вдалося оновити режим задач.');
+      }
+
+      setTaskAssignmentMode(payload.taskAssignmentMode ?? taskAssignmentMode);
+      setSuccess('Режим розподілу задач оновлено для цього магазину.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Не вдалося оновити режим задач.');
+    } finally {
+      setIsSavingTaskMode(false);
     }
   }
 
@@ -672,6 +730,58 @@ export default function InventoryManagePage() {
                 Фільтр одночасно звужує поточні поставки і товари зі строком, що спливає.
               </p>
             </div>
+
+            {canManageInventoryTaskMode(currentUserRole) ? (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900">Режим розподілу задач</h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Керівник магазину вирішує, чи працівники отримують лише свої задачі, чи команда працює зі спільним списком.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleSaveTaskAssignmentMode();
+                    }}
+                    disabled={isSavingTaskMode}
+                    className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  >
+                    {isSavingTaskMode ? 'Збереження...' : 'Зберегти режим'}
+                  </button>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  {taskAssignmentModeOptions.map((option) => {
+                    const isSelected = taskAssignmentMode === option.value;
+                    return (
+                      <label
+                        key={option.value}
+                        className={`cursor-pointer rounded-2xl border p-4 transition ${
+                          isSelected ? 'border-brand bg-brand/5' : 'border-slate-200 bg-slate-50 hover:border-brand/40'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="radio"
+                            name="task-assignment-mode"
+                            value={option.value}
+                            checked={isSelected}
+                            onChange={() => setTaskAssignmentMode(option.value)}
+                            className="mt-1 h-4 w-4"
+                          />
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{option.label}</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-600">{option.description}</p>
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_1.4fr]">
               <section>

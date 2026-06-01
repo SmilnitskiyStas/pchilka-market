@@ -15,40 +15,35 @@ function buildInventoryTasksUrl(baseUrl: string, token: string, notificationId?:
   return url.toString();
 }
 
-function uniqueRecipients(users: InventoryUserRecord[], responsibleUserDbId: number | null) {
-  const seen = new Set<number>();
-  const prioritized = [...users].sort((a, b) => {
-    const getPriority = (role: InventoryUserRole) =>
-      role === 'admin' || role === 'store_manager' || role === 'manager' ? 1 : 2;
-    const aPriority = a.id === responsibleUserDbId ? 0 : getPriority(a.role);
-    const bPriority = b.id === responsibleUserDbId ? 0 : getPriority(b.role);
-    return aPriority - bPriority || a.id - b.id;
-  });
-
-  return prioritized.filter((user) => {
-    if (!user.isActive || !user.userChatId) return false;
-    if (seen.has(user.id)) return false;
-    seen.add(user.id);
-    return true;
-  });
+function rolePriority(role: InventoryUserRole) {
+  return role === 'admin' || role === 'store_manager' || role === 'manager' ? 0 : 1;
 }
 
-function repeatReminderRecipients(users: InventoryUserRecord[], responsibleUserDbId: number | null) {
+function normalizeRecipients(users: InventoryUserRecord[]) {
   const seen = new Set<number>();
-  const prioritized = [...users]
-    .filter((user) => user.id === responsibleUserDbId || user.role === 'store_manager')
-    .sort((a, b) => {
-      const aPriority = a.id === responsibleUserDbId ? 0 : 1;
-      const bPriority = b.id === responsibleUserDbId ? 0 : 1;
-      return aPriority - bPriority || a.id - b.id;
+  return [...users]
+    .filter((user) => user.isActive && Boolean(user.userChatId))
+    .sort((a, b) => rolePriority(a.role) - rolePriority(b.role) || a.id - b.id)
+    .filter((user) => {
+      if (seen.has(user.id)) return false;
+      seen.add(user.id);
+      return true;
     });
+}
 
-  return prioritized.filter((user) => {
-    if (!user.isActive || !user.userChatId) return false;
-    if (seen.has(user.id)) return false;
-    seen.add(user.id);
-    return true;
-  });
+function recipientsForTask(task: InventoryExpiryNotificationCandidate, users: InventoryUserRecord[]) {
+  const managers = users.filter((user) => rolePriority(user.role) === 0);
+  const responsibleUsers = users.filter((user) => user.id === task.responsibleUserId);
+
+  if (task.taskAssignmentMode === 'shared') {
+    return normalizeRecipients(users);
+  }
+
+  if (task.taskAssignmentMode === 'hybrid') {
+    return normalizeRecipients([...users.filter((user) => rolePriority(user.role) === 1), ...managers]);
+  }
+
+  return normalizeRecipients([...responsibleUsers, ...managers]);
 }
 
 type RecipientDigest = {
@@ -147,10 +142,7 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
       storeUsersCache.set(task.storeId, storeUsers);
     }
 
-    const recipients =
-      task.reminderKind === 'repeat'
-        ? repeatReminderRecipients(storeUsers, task.responsibleUserId)
-        : uniqueRecipients(storeUsers, task.responsibleUserId);
+    const recipients = recipientsForTask(task, storeUsers);
 
     if (recipients.length === 0) {
       debug.push({

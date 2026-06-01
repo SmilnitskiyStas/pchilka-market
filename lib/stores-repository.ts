@@ -1,7 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 
 import { getDbPool } from '@/lib/db';
-import { normalizeStore, type StoreRecord } from '@/lib/store-types';
+import { normalizeStore, type InventoryTaskAssignmentMode, type StoreRecord } from '@/lib/store-types';
 
 type StoreRow = RowDataPacket & {
   id: number;
@@ -16,6 +16,7 @@ type StoreRow = RowDataPacket & {
   work_hours: string | null;
   is_active: number;
   sort_order: number;
+  task_assignment_mode: string | null;
 };
 
 type StoreReferenceRow = RowDataPacket & {
@@ -38,7 +39,11 @@ function mapRow(row: StoreRow): StoreRecord {
     longitude: row.longitude == null ? '' : String(row.longitude),
     workHours: row.work_hours ?? '',
     isActive: row.is_active === 1,
-    sortOrder: row.sort_order
+    sortOrder: row.sort_order,
+    taskAssignmentMode:
+      row.task_assignment_mode === 'shared' || row.task_assignment_mode === 'hybrid'
+        ? row.task_assignment_mode
+        : 'personal'
   };
 }
 
@@ -54,6 +59,7 @@ export async function listStoresFromDb(): Promise<StoreRecord[]> {
   const [rows] = await pool.query<StoreRow[]>(
     `
       SELECT id, store_code, name, region, city, address_line, phone, latitude, longitude, work_hours, is_active, sort_order
+        , task_assignment_mode
       FROM stores
       ORDER BY sort_order ASC, city ASC, id ASC
     `
@@ -88,7 +94,8 @@ export async function replaceStoresInDb(stores: StoreRecord[]): Promise<StoreRec
         toDecimalOrNull(item.longitude),
         item.workHours || null,
         item.isActive ? 1 : 0,
-        index
+        index,
+        item.taskAssignmentMode
       ];
 
       if (Number.isFinite(numericId) && numericId > 0 && existingIds.has(numericId)) {
@@ -107,7 +114,8 @@ export async function replaceStoresInDb(stores: StoreRecord[]): Promise<StoreRec
               longitude = ?,
               work_hours = ?,
               is_active = ?,
-              sort_order = ?
+              sort_order = ?,
+              task_assignment_mode = ?
             WHERE id = ?
           `,
           [...values, numericId]
@@ -117,8 +125,8 @@ export async function replaceStoresInDb(stores: StoreRecord[]): Promise<StoreRec
 
       const [result] = await conn.query<ResultSetHeader>(
         `
-          INSERT INTO stores (store_code, name, region, city, address_line, phone, latitude, longitude, work_hours, is_active, sort_order)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO stores (store_code, name, region, city, address_line, phone, latitude, longitude, work_hours, is_active, sort_order, task_assignment_mode)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         values
       );
@@ -162,4 +170,49 @@ export async function replaceStoresInDb(stores: StoreRecord[]): Promise<StoreRec
   }
 
   return listStoresFromDb();
+}
+
+export async function findStoreByIdInDb(storeId: string | number): Promise<StoreRecord | null> {
+  const normalizedStoreId = Number(storeId);
+  if (!Number.isFinite(normalizedStoreId) || normalizedStoreId <= 0) return null;
+
+  const pool = getDbPool();
+  const [rows] = await pool.query<StoreRow[]>(
+    `
+      SELECT id, store_code, name, region, city, address_line, phone, latitude, longitude, work_hours, is_active, sort_order, task_assignment_mode
+      FROM stores
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [normalizedStoreId]
+  );
+
+  return rows[0] ? mapRow(rows[0]) : null;
+}
+
+export async function updateStoreTaskAssignmentModeInDb(input: {
+  storeId: string | number;
+  taskAssignmentMode: InventoryTaskAssignmentMode;
+}) {
+  const normalizedStoreId = Number(input.storeId);
+  if (!Number.isFinite(normalizedStoreId) || normalizedStoreId <= 0) {
+    throw new Error('Некоректний магазин.');
+  }
+
+  const normalizedMode =
+    input.taskAssignmentMode === 'shared' || input.taskAssignmentMode === 'hybrid'
+      ? input.taskAssignmentMode
+      : 'personal';
+
+  const pool = getDbPool();
+  await pool.query(
+    `
+      UPDATE stores
+      SET task_assignment_mode = ?
+      WHERE id = ?
+    `,
+    [normalizedMode, normalizedStoreId]
+  );
+
+  return findStoreByIdInDb(normalizedStoreId);
 }

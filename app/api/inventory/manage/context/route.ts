@@ -62,6 +62,7 @@ export async function GET(request: Request) {
       ok: true,
       user,
       store,
+      taskAssignmentMode: store?.taskAssignmentMode ?? 'personal',
       users,
       storeBatches,
       expiringBatches

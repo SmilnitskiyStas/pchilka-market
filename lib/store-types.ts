@@ -1,3 +1,7 @@
+export const inventoryTaskAssignmentModes = ['personal', 'shared', 'hybrid'] as const;
+
+export type InventoryTaskAssignmentMode = (typeof inventoryTaskAssignmentModes)[number];
+
 export type StoreRecord = {
   id: string;
   storeCode: string;
@@ -11,9 +15,15 @@ export type StoreRecord = {
   workHours: string;
   isActive: boolean;
   sortOrder: number;
+  taskAssignmentMode: InventoryTaskAssignmentMode;
 };
 
 export function normalizeStore(raw: Partial<StoreRecord>): StoreRecord {
+  const normalizedTaskAssignmentMode =
+    raw.taskAssignmentMode === 'shared' || raw.taskAssignmentMode === 'hybrid'
+      ? raw.taskAssignmentMode
+      : 'personal';
+
   return {
     id: String(raw.id ?? `store_${Date.now()}`),
     storeCode: String(raw.storeCode ?? '').trim(),
@@ -26,6 +36,7 @@ export function normalizeStore(raw: Partial<StoreRecord>): StoreRecord {
     longitude: String(raw.longitude ?? '').trim(),
     workHours: String(raw.workHours ?? '').trim(),
     isActive: raw.isActive !== false,
-    sortOrder: Number.isFinite(raw.sortOrder) ? Number(raw.sortOrder) : 0
+    sortOrder: Number.isFinite(raw.sortOrder) ? Number(raw.sortOrder) : 0,
+    taskAssignmentMode: normalizedTaskAssignmentMode
   };
 }

@@ -3,6 +3,8 @@ import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { getDbPool } from '@/lib/db';
 import { listInventoryBatchesFromDb } from '@/lib/inventory-batches-repository';
 import type { InventoryBatchRecord } from '@/lib/inventory-batch-types';
+import { listStoresFromDb } from '@/lib/stores-repository';
+import type { InventoryTaskAssignmentMode } from '@/lib/store-types';
 
 type ExpiryTaskRow = RowDataPacket & {
   id: number;
@@ -36,6 +38,8 @@ type ExpiryTaskRow = RowDataPacket & {
   batch_code?: string | null;
   store_label?: string | null;
   responsible_user_name?: string | null;
+  assigned_user_name?: string | null;
+  task_assignment_mode?: string | null;
 };
 
 export type InventoryExpiryTaskRecord = {
@@ -70,6 +74,8 @@ export type InventoryExpiryTaskRecord = {
   batchCode: string;
   storeLabel: string;
   responsibleUserName: string;
+  assignedUserName: string;
+  taskAssignmentMode: InventoryTaskAssignmentMode;
 };
 
 export type InventoryExpiryNotificationCandidate = InventoryExpiryTaskRecord & {
@@ -145,13 +151,33 @@ function mapRow(row: ExpiryTaskRow): InventoryExpiryTaskRecord {
     barcode: row.barcode ?? '',
     batchCode: row.batch_code ?? '',
     storeLabel: row.store_label ?? '',
-    responsibleUserName: row.responsible_user_name ?? ''
+    responsibleUserName: row.responsible_user_name ?? '',
+    assignedUserName: row.assigned_user_name ?? '',
+    taskAssignmentMode:
+      row.task_assignment_mode === 'shared' || row.task_assignment_mode === 'hybrid'
+        ? row.task_assignment_mode
+        : 'personal'
   };
+}
+
+function getTaskAssignmentModeForBatch(
+  storeMode: InventoryTaskAssignmentMode,
+  riskLevel: string
+) {
+  if (storeMode === 'shared') return 'shared';
+  if (storeMode === 'hybrid') {
+    return riskLevel === 'critical' || riskLevel === 'high' ? 'personal' : 'shared';
+  }
+  return 'personal';
 }
 
 export async function syncInventoryExpiryTasksInDb() {
   const pool = getDbPool();
   const batches = await listInventoryBatchesFromDb(5000);
+  const stores = await listStoresFromDb();
+  const storeTaskModes = new Map<number, InventoryTaskAssignmentMode>(
+    stores.map((store) => [Number(store.id), store.taskAssignmentMode])
+  );
   const relevantBatches = batches.filter((batch) => {
     if (batch.quantityCurrent <= 0) return false;
     const daysLeft = daysLeftUntil(batch.expiryDate);
@@ -210,6 +236,8 @@ export async function syncInventoryExpiryTasksInDb() {
 
     const daysLeft = daysLeftUntil(batch.expiryDate);
     const riskLevel = deriveRiskLevel(daysLeft);
+    const storeTaskMode = storeTaskModes.get(Number(batch.storeId)) ?? 'personal';
+    const taskAssignmentMode = getTaskAssignmentModeForBatch(storeTaskMode, riskLevel);
     const nextStatus = deriveTaskStatus(batch);
     const nextOutcome = deriveTaskOutcome(batch);
     const title = `Перевірити товар "${batch.productName}"`;
@@ -222,6 +250,8 @@ export async function syncInventoryExpiryTasksInDb() {
 
     const existingTask = latestTaskByBatch.get(batchId);
     if (!existingTask) {
+      const nextAssignedUserId =
+        taskAssignmentMode === 'shared' ? null : batch.responsibleUserId ? Number(batch.responsibleUserId) : null;
       await pool.query<ResultSetHeader>(
         `
           INSERT INTO expiry_tasks (
@@ -237,16 +267,16 @@ export async function syncInventoryExpiryTasksInDb() {
             risk_level,
             due_date,
             days_left_snapshot,
-            title,
-            note
-          ) VALUES (?, ?, ?, ?, ?, 'system', 'expiry_check', ?, ?, ?, ?, ?, ?, ?)
+          title,
+          note
+        ) VALUES (?, ?, ?, ?, ?, 'system', 'expiry_check', ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           batchId,
           Number(batch.productId),
           Number(batch.storeId),
           batch.responsibleUserId ? Number(batch.responsibleUserId) : null,
-          batch.responsibleUserId ? Number(batch.responsibleUserId) : null,
+          nextAssignedUserId,
           nextStatus,
           nextOutcome || null,
           riskLevel,
@@ -259,6 +289,15 @@ export async function syncInventoryExpiryTasksInDb() {
       created += 1;
       continue;
     }
+
+    const nextAssignedUserId =
+      taskAssignmentMode === 'shared'
+        ? existingTask.status === 'in_progress' && existingTask.assigned_user_id
+          ? existingTask.assigned_user_id
+          : null
+        : batch.responsibleUserId
+          ? Number(batch.responsibleUserId)
+          : null;
 
     await pool.query(
       `
@@ -285,9 +324,9 @@ export async function syncInventoryExpiryTasksInDb() {
           updated_at = NOW()
         WHERE id = ?
       `,
-      [
+        [
         batch.responsibleUserId ? Number(batch.responsibleUserId) : null,
-        batch.responsibleUserId ? Number(batch.responsibleUserId) : null,
+        nextAssignedUserId,
         nextStatus,
         nextStatus,
         nextOutcome || null,
@@ -361,6 +400,7 @@ export async function listInventoryExpiryNotificationCandidatesFromDb(limit = 20
         et.completed_by_user_id,
         et.created_at,
         et.updated_at,
+        st.task_assignment_mode,
         p.product_name,
         p.article,
         (
@@ -370,12 +410,15 @@ export async function listInventoryExpiryNotificationCandidatesFromDb(limit = 20
         ) AS barcode,
         b.batch_code,
         CONCAT_WS(' | ', s.store_code, s.city, s.address_line) AS store_label,
-        CONCAT_WS(' ', u.surname, u.name) AS responsible_user_name
+        CONCAT_WS(' ', u.surname, u.name) AS responsible_user_name,
+        CONCAT_WS(' ', au.surname, au.name) AS assigned_user_name
       FROM expiry_tasks et
       INNER JOIN product_batches b ON b.id = et.batch_id
       INNER JOIN products p ON p.id = et.product_id
       INNER JOIN stores s ON s.id = et.store_id
+      INNER JOIN stores st ON st.id = et.store_id
       LEFT JOIN users u ON u.id = COALESCE(et.assigned_user_id, et.responsible_user_id)
+      LEFT JOIN users au ON au.id = et.assigned_user_id
       WHERE
         et.task_type = 'expiry_check'
         AND et.status IN ('open', 'in_progress')
@@ -456,6 +499,7 @@ export async function listInventoryExpiryTasksFromDb(options?: {
         et.completed_by_user_id,
         et.created_at,
         et.updated_at,
+        st.task_assignment_mode,
         p.product_name,
         p.article,
         (
@@ -465,12 +509,15 @@ export async function listInventoryExpiryTasksFromDb(options?: {
         ) AS barcode,
         b.batch_code,
         CONCAT_WS(' | ', s.store_code, s.city, s.address_line) AS store_label,
-        CONCAT_WS(' ', u.surname, u.name) AS responsible_user_name
+        CONCAT_WS(' ', u.surname, u.name) AS responsible_user_name,
+        CONCAT_WS(' ', au.surname, au.name) AS assigned_user_name
       FROM expiry_tasks et
       INNER JOIN product_batches b ON b.id = et.batch_id
       INNER JOIN products p ON p.id = et.product_id
       INNER JOIN stores s ON s.id = et.store_id
+      INNER JOIN stores st ON st.id = et.store_id
       LEFT JOIN users u ON u.id = COALESCE(et.assigned_user_id, et.responsible_user_id)
+      LEFT JOIN users au ON au.id = et.assigned_user_id
       WHERE ${whereClauses.join(' AND ')}
       ORDER BY
         CASE
@@ -521,6 +568,42 @@ export async function markInventoryExpiryTaskStartedInDb(taskId: string | number
   );
 }
 
+export async function takeInventoryExpiryTaskInDb(input: {
+  taskId: string | number;
+  userId: string | number;
+}) {
+  const pool = getDbPool();
+  const normalizedTaskId = Number(input.taskId);
+  const normalizedUserId = Number(input.userId);
+  if (!Number.isFinite(normalizedTaskId) || normalizedTaskId <= 0) {
+    throw new Error('Некоректне завдання.');
+  }
+  if (!Number.isFinite(normalizedUserId) || normalizedUserId <= 0) {
+    throw new Error('Некоректний працівник.');
+  }
+
+  const [result] = await pool.query<ResultSetHeader>(
+    `
+      UPDATE expiry_tasks
+      SET
+        assigned_user_id = ?,
+        status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END,
+        started_at = COALESCE(started_at, NOW()),
+        updated_at = NOW()
+      WHERE id = ?
+        AND status IN ('open', 'in_progress')
+        AND (assigned_user_id IS NULL OR assigned_user_id = ?)
+    `,
+    [normalizedUserId, normalizedTaskId, normalizedUserId]
+  );
+
+  if (Number(result.affectedRows ?? 0) === 0) {
+    throw new Error('Цю задачу вже взяв у роботу інший працівник.');
+  }
+
+  return findInventoryExpiryTaskByIdInDb(normalizedTaskId);
+}
+
 export async function findInventoryExpiryTaskByIdInDb(taskId: string | number): Promise<InventoryExpiryTaskRecord | null> {
   const normalizedTaskId = Number(taskId);
   if (!Number.isFinite(normalizedTaskId) || normalizedTaskId <= 0) return null;
@@ -554,6 +637,7 @@ export async function findInventoryExpiryTaskByIdInDb(taskId: string | number): 
         et.completed_by_user_id,
         et.created_at,
         et.updated_at,
+        st.task_assignment_mode,
         p.product_name,
         p.article,
         (
@@ -563,12 +647,15 @@ export async function findInventoryExpiryTaskByIdInDb(taskId: string | number): 
         ) AS barcode,
         b.batch_code,
         CONCAT_WS(' | ', s.store_code, s.city, s.address_line) AS store_label,
-        CONCAT_WS(' ', u.surname, u.name) AS responsible_user_name
+        CONCAT_WS(' ', u.surname, u.name) AS responsible_user_name,
+        CONCAT_WS(' ', au.surname, au.name) AS assigned_user_name
       FROM expiry_tasks et
       INNER JOIN product_batches b ON b.id = et.batch_id
       INNER JOIN products p ON p.id = et.product_id
       INNER JOIN stores s ON s.id = et.store_id
+      INNER JOIN stores st ON st.id = et.store_id
       LEFT JOIN users u ON u.id = COALESCE(et.assigned_user_id, et.responsible_user_id)
+      LEFT JOIN users au ON au.id = et.assigned_user_id
       WHERE et.id = ?
       LIMIT 1
     `,
