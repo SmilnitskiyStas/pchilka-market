@@ -251,6 +251,9 @@ type InventoryNotificationLogView = {
 type InventoryNotificationLogsPayload = {
   ok?: boolean;
   logs?: InventoryNotificationLogView[];
+  totalCount?: number;
+  page?: number;
+  limit?: number;
   error?: string;
 };
 type InventoryExpiryTaskView = {
@@ -784,6 +787,9 @@ export default function AdminInventoryManager({
   const [notificationLogs, setNotificationLogs] = useState<InventoryNotificationLogView[]>([]);
   const [selectedNotificationLog, setSelectedNotificationLog] = useState<InventoryNotificationLogView | null>(null);
   const [isLoadingNotificationLogs, setIsLoadingNotificationLogs] = useState(false);
+  const [notificationLogsPage, setNotificationLogsPage] = useState(1);
+  const [notificationLogsPageSize, setNotificationLogsPageSize] = useState(50);
+  const [notificationLogsTotalCount, setNotificationLogsTotalCount] = useState(0);
   const [notificationsStoreFilter, setNotificationsStoreFilter] = useState('');
   const [notificationsDateFrom, setNotificationsDateFrom] = useState(formatDateInputValue());
   const [notificationsDateTo, setNotificationsDateTo] = useState(formatDateInputValue());
@@ -990,6 +996,8 @@ export default function AdminInventoryManager({
     storeId?: string;
     dateFrom?: string;
     dateTo?: string;
+    page?: number;
+    limit?: number;
   }) {
     setIsLoadingNotificationLogs(true);
     try {
@@ -997,7 +1005,10 @@ export default function AdminInventoryManager({
       const storeId = options?.storeId ?? notificationsStoreFilter;
       const dateFrom = options?.dateFrom ?? notificationsDateFrom;
       const dateTo = options?.dateTo ?? notificationsDateTo;
-      params.set('limit', '300');
+      const page = options?.page ?? notificationLogsPage;
+      const limit = options?.limit ?? notificationLogsPageSize;
+      params.set('limit', String(limit));
+      params.set('page', String(page));
       if (storeId.trim()) params.set('storeId', storeId.trim());
       if (dateFrom.trim()) params.set('dateFrom', dateFrom.trim());
       if (dateTo.trim()) params.set('dateTo', dateTo.trim());
@@ -1009,8 +1020,12 @@ export default function AdminInventoryManager({
       }
 
       setNotificationLogs(payload.logs);
+      setNotificationLogsTotalCount(Number(payload.totalCount ?? payload.logs.length));
+      setNotificationLogsPage(Number(payload.page ?? page));
+      setNotificationLogsPageSize(Number(payload.limit ?? limit));
     } catch (loadError) {
       setNotificationLogs([]);
+      setNotificationLogsTotalCount(0);
       setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити журнал сповіщень.');
     } finally {
       setIsLoadingNotificationLogs(false);
@@ -1035,7 +1050,7 @@ export default function AdminInventoryManager({
           fetch('/api/admin/inventory/product-change-logs?limit=40', { cache: 'no-store' }),
           fetch('/api/admin/inventory/import-review?status=pending&limit=100', { cache: 'no-store' }),
           fetch('/api/admin/inventory/products/import?latest=1', { cache: 'no-store' }),
-          fetch(`/api/admin/inventory/notifications?limit=300&dateFrom=${encodeURIComponent(notificationsDateFrom)}&dateTo=${encodeURIComponent(notificationsDateTo)}`, { cache: 'no-store' })
+          fetch(`/api/admin/inventory/notifications?limit=${notificationLogsPageSize}&page=1&dateFrom=${encodeURIComponent(notificationsDateFrom)}&dateTo=${encodeURIComponent(notificationsDateTo)}`, { cache: 'no-store' })
         ]);
 
         const p1 = (await r1.json()) as ReadinessPayload;
@@ -1074,6 +1089,9 @@ export default function AdminInventoryManager({
           setLatestImportLog(r11.ok && p11.ok ? p11.importLog ?? null : null);
           setImportSummary(r11.ok && p11.ok ? p11.importLog?.summary ?? null : null);
           setNotificationLogs(r12.ok && p12.ok && Array.isArray(p12.logs) ? p12.logs : []);
+          setNotificationLogsTotalCount(r12.ok && p12.ok ? Number(p12.totalCount ?? p12.logs?.length ?? 0) : 0);
+          setNotificationLogsPage(r12.ok && p12.ok ? Number(p12.page ?? 1) : 1);
+          setNotificationLogsPageSize(r12.ok && p12.ok ? Number(p12.limit ?? notificationLogsPageSize) : notificationLogsPageSize);
           setError('');
           setSuccess('');
           setIsApplied(false);
@@ -1097,7 +1115,7 @@ export default function AdminInventoryManager({
   useEffect(() => {
     if (activeSubsection !== 'notifications') return;
     void loadNotificationLogs();
-  }, [activeSubsection, notificationsStoreFilter, notificationsDateFrom, notificationsDateTo]);
+  }, [activeSubsection, notificationsStoreFilter, notificationsDateFrom, notificationsDateTo, notificationLogsPage, notificationLogsPageSize]);
 
   useEffect(() => {
     void loadProducts();
@@ -1149,6 +1167,10 @@ export default function AdminInventoryManager({
       hasSchemaIssues: !readiness?.allRequiredTablesPresent || (readiness?.productBatches.missingColumns?.length ?? 0) > 0
     };
   }, [batches, importReviewItems.length, inventoryUsers.length, manualProductCreations.length, productsTotalCount, readiness, stores.length]);
+  const notificationLogsTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(notificationLogsTotalCount / Math.max(notificationLogsPageSize, 1))),
+    [notificationLogsPageSize, notificationLogsTotalCount]
+  );
 
   const analyticsMetrics = useMemo(() => {
     const rangeStart = analyticsDateFrom && analyticsDateTo && analyticsDateFrom > analyticsDateTo ? analyticsDateTo : analyticsDateFrom;
@@ -3890,14 +3912,14 @@ export default function AdminInventoryManager({
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <select value={notificationsStoreFilter} onChange={(e) => setNotificationsStoreFilter(e.target.value)} className="rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand">
+              <select value={notificationsStoreFilter} onChange={(e) => { setNotificationsStoreFilter(e.target.value); setNotificationLogsPage(1); }} className="rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand">
                 <option value="">Усі магазини</option>
                 {stores.filter((store) => store.isActive).map((store) => (
                   <option key={store.id} value={store.id}>{storeLabel(store)}</option>
                 ))}
               </select>
-              <input type="date" value={notificationsDateFrom} onChange={(e) => setNotificationsDateFrom(e.target.value)} className="rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
-              <input type="date" value={notificationsDateTo} onChange={(e) => setNotificationsDateTo(e.target.value)} className="rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
+              <input type="date" value={notificationsDateFrom} onChange={(e) => { setNotificationsDateFrom(e.target.value); setNotificationLogsPage(1); }} className="rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
+              <input type="date" value={notificationsDateTo} onChange={(e) => { setNotificationsDateTo(e.target.value); setNotificationLogsPage(1); }} className="rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
             </div>
 
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
@@ -4008,6 +4030,46 @@ export default function AdminInventoryManager({
                   ))}
                 </div>
               )}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-slate-600">
+                Показано {notificationLogs.length} з {notificationLogsTotalCount}
+              </p>
+              <div className="flex items-center gap-2">
+                <select
+                  value={notificationLogsPageSize}
+                  onChange={(e) => {
+                    setNotificationLogsPageSize(Number(e.target.value || 50));
+                    setNotificationLogsPage(1);
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand"
+                >
+                  {[25, 50, 100, 200].map((size) => (
+                    <option key={size} value={size}>
+                      По {size}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setNotificationLogsPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={notificationLogsPage <= 1 || isLoadingNotificationLogs}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+                >
+                  Назад
+                </button>
+                <span className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                  {notificationLogsPage}/{notificationLogsTotalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setNotificationLogsPage((prev) => Math.min(prev + 1, notificationLogsTotalPages))}
+                  disabled={notificationLogsPage >= notificationLogsTotalPages || isLoadingNotificationLogs}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+                >
+                  Далі
+                </button>
+              </div>
             </div>
           </>
         ) : (

@@ -46,6 +46,13 @@ export type InventoryNotificationLogRecord = {
   openedByName: string;
 };
 
+export type InventoryNotificationLogsListResult = {
+  logs: InventoryNotificationLogRecord[];
+  totalCount: number;
+  page: number;
+  limit: number;
+};
+
 function toIso(value: Date | string | null | undefined): string {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
@@ -160,12 +167,15 @@ export async function listInventoryNotificationLogsFromDb(options?: {
   dateFrom?: string | null;
   dateTo?: string | null;
   limit?: number;
+  page?: number;
 }) {
   const db = getDbPool();
   const storeId = Number(options?.storeId ?? 0);
   const dateFrom = String(options?.dateFrom ?? '').trim();
   const dateTo = String(options?.dateTo ?? '').trim();
-  const limit = Math.min(Math.max(Number(options?.limit ?? 200), 1), 1000);
+  const limit = Math.min(Math.max(Number(options?.limit ?? 50), 1), 200);
+  const page = Math.max(Number(options?.page ?? 1) || 1, 1);
+  const offset = (page - 1) * limit;
 
   const whereClauses: string[] = [];
   const params: Array<string | number> = [];
@@ -183,7 +193,18 @@ export async function listInventoryNotificationLogsFromDb(options?: {
     params.push(dateTo);
   }
 
-  params.push(limit);
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+  const [countRows] = await db.query<Array<RowDataPacket & { total_count: number }>>(
+    `
+      SELECT COUNT(*) AS total_count
+      FROM notification_logs nl
+      ${whereSql}
+    `,
+    params
+  );
+
+  const totalCount = Number(countRows[0]?.total_count ?? 0);
 
   const [rows] = await db.query<NotificationLogRow[]>(
     `
@@ -212,12 +233,17 @@ export async function listInventoryNotificationLogsFromDb(options?: {
       LEFT JOIN stores s ON s.id = nl.store_id
       LEFT JOIN users ru ON ru.id = nl.user_id
       LEFT JOIN users ou ON ou.id = nl.opened_by_user_id
-      ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''}
+      ${whereSql}
       ORDER BY nl.sent_at DESC, nl.id DESC
-      LIMIT ?
+      LIMIT ? OFFSET ?
     `,
-    params
+    [...params, limit, offset]
   );
 
-  return rows.map(mapNotificationLogRow);
+  return {
+    logs: rows.map(mapNotificationLogRow),
+    totalCount,
+    page,
+    limit
+  } satisfies InventoryNotificationLogsListResult;
 }
