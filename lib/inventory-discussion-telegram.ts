@@ -84,6 +84,24 @@ async function sendDiscussionMessageToChat(input: {
   });
 }
 
+async function answerDiscussionCallbackIfNeeded(input: {
+  callbackQueryId: string;
+  text?: string;
+}) {
+  if (!input.callbackQueryId || input.callbackQueryId.startsWith('command:')) {
+    return;
+  }
+
+  const settings = await getInventoryTelegramSettingsFromDb();
+  if (!settings.enabled || !settings.botToken) return;
+
+  await answerInventoryTelegramCallback({
+    botToken: settings.botToken,
+    callbackQueryId: input.callbackQueryId,
+    text: input.text
+  });
+}
+
 export async function notifyInventoryDiscussionCreated(input: {
   taskId?: number | null;
   batchId: number;
@@ -320,6 +338,34 @@ export async function handleInventoryDiscussionCallback(input: {
   }
 
   return { handled: true, reason: 'discussion_closed' as const, threadId: closedThread.id };
+}
+
+export async function handleInventoryDiscussionCommand(input: {
+  telegramUserChatId: string;
+  text: string;
+}) {
+  const trimmed = input.text.trim();
+  const openMatch = trimmed.match(/^\/discussion_open_(\d+)$/i);
+  const closeMatch = trimmed.match(/^\/discussion_close_(\d+)$/i);
+
+  if (!openMatch && !closeMatch) {
+    return { handled: false, reason: 'unsupported_discussion_command' as const };
+  }
+
+  const fakeCallbackId = `command:${Date.now()}`;
+  const data = openMatch
+    ? `${OPEN_DISCUSSION_CALLBACK_PREFIX}${openMatch[1]}`
+    : `${CLOSE_DISCUSSION_CALLBACK_PREFIX}${closeMatch?.[1] ?? ''}`;
+
+  try {
+    return await handleInventoryDiscussionCallback({
+      callbackQueryId: fakeCallbackId,
+      data,
+      telegramUserChatId: input.telegramUserChatId
+    });
+  } catch {
+    return { handled: false, reason: 'discussion_command_failed' as const };
+  }
 }
 
 export async function handleInventoryDiscussionTextMessage(input: {

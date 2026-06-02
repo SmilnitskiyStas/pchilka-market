@@ -36,7 +36,7 @@ export async function registerInventoryTelegramWebhook() {
   await callTelegram(settings.botToken, 'setWebhook', {
     url: webhookUrl,
     secret_token: settings.webhookSecret,
-    allowed_updates: ['message']
+    allowed_updates: ['message', 'callback_query']
   });
 
   const info = await callTelegram(settings.botToken, 'getWebhookInfo');
