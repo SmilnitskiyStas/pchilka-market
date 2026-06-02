@@ -326,7 +326,7 @@ export default function InventoryBatchCheckPage() {
         {error ? <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p> : null}
         {success ? <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{success}</p> : null}
 
-        {!isLoading && !error && batch ? (
+        {!isLoading && batch ? (
           <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
             <div className="space-y-5">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
@@ -574,7 +574,7 @@ export default function InventoryBatchCheckPage() {
                       setSelectedAction('checked');
                       void handleBatchAction('checked');
                     }}
-                    disabled={isSaving || isUploadingPhoto}
+	                    disabled={isSaving || isUploadingPhoto}
                     className="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-60"
                   >
                     {isSaving ? 'Збереження...' : 'Перевірив'}
@@ -585,7 +585,7 @@ export default function InventoryBatchCheckPage() {
                       setSelectedAction('writeoff');
                       void handleBatchAction('writeoff');
                     }}
-                    disabled={isSaving || isUploadingPhoto}
+	                    disabled={isSaving || isUploadingPhoto || writeoffMissingLabels.length > 0}
                     className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition disabled:opacity-60 ${
                       shouldShowWriteoffHint
                         ? 'border-red-300 bg-red-50 text-red-800 hover:bg-red-100'
@@ -604,8 +604,14 @@ export default function InventoryBatchCheckPage() {
                     className="rounded-2xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-60"
                   >
                     {isSaving ? 'Збереження...' : 'Для обговорення'}
-                  </button>
-                </div>
+	                  </button>
+	                </div>
+	                {writeoffMissingLabels.length > 0 ? (
+	                  <p className="text-xs font-semibold text-amber-700">
+	                    {'\u0429\u043e\u0431 \u0430\u043a\u0442\u0438\u0432\u0443\u0432\u0430\u0442\u0438 \u00ab\u041d\u0430 \u0441\u043f\u0438\u0441\u0430\u043d\u043d\u0456\u00bb, \u0437\u0430\u043f\u043e\u0432\u043d\u0456\u0442\u044c: '}
+	                    {writeoffMissingLabels.join(', ')}.
+	                  </p>
+	                ) : null}
               </div>
             </div>
           </div>
