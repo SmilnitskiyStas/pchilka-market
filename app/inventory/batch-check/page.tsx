@@ -125,6 +125,16 @@ function getActionRequirements(action: BatchAction | null) {
   };
 }
 
+function getMissingFieldLabels(errors: BatchCheckFieldErrors) {
+  const labels: string[] = [];
+
+  if (errors.countedQuantity) labels.push('фактичну кількість');
+  if (errors.itemCondition) labels.push('стан товару');
+  if (errors.issueReason) labels.push('причину проблеми');
+
+  return labels;
+}
+
 export default function InventoryBatchCheckPage() {
   const [token, setToken] = useState('');
   const [batchId, setBatchId] = useState('');
@@ -299,6 +309,9 @@ export default function InventoryBatchCheckPage() {
 
   const daysLeft = batch ? daysLeftUntil(batch.expiryDate) : 0;
   const actionRequirements = getActionRequirements(selectedAction);
+  const missingFieldLabels = getMissingFieldLabels(fieldErrors);
+  const writeoffMissingLabels = getMissingFieldLabels(validateForm('writeoff'));
+  const shouldShowWriteoffHint = selectedAction === 'writeoff' && writeoffMissingLabels.length > 0;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl items-start justify-center px-4 py-8 sm:px-6 lg:px-8">
@@ -356,6 +369,18 @@ export default function InventoryBatchCheckPage() {
                   <p className="mt-1 text-sm text-slate-700">Статус партії: {batch.batchStatus || 'active'}</p>
                   {batch.actionNote ? <p className="mt-1 text-sm text-slate-700">Останній snapshot: {batch.actionNote}</p> : null}
                 </div>
+                {missingFieldLabels.length > 0 && selectedAction ? (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                    <p className="font-semibold text-red-900">{'\u0429\u043e\u0431 \u0432\u0438\u043a\u043e\u043d\u0430\u0442\u0438 \u0434\u0456\u044e, \u0437\u0430\u043f\u043e\u0432\u043d\u0456\u0442\u044c:'}</p>
+                    <p className="mt-1">{missingFieldLabels.join(', ')}.</p>
+                  </div>
+                ) : null}
+                {shouldShowWriteoffHint ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <p className="font-semibold text-amber-900">{'\u0414\u043b\u044f \u0441\u043f\u0438\u0441\u0430\u043d\u043d\u044f \u043e\u0431\u043e\u0432\u0027\u044f\u0437\u043a\u043e\u0432\u043e:'}</p>
+                    <p className="mt-1">{writeoffMissingLabels.join(', ')}.</p>
+                  </div>
+                ) : null}
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -561,7 +586,11 @@ export default function InventoryBatchCheckPage() {
                       void handleBatchAction('writeoff');
                     }}
                     disabled={isSaving || isUploadingPhoto}
-                    className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
+                    className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition disabled:opacity-60 ${
+                      shouldShowWriteoffHint
+                        ? 'border-red-300 bg-red-50 text-red-800 hover:bg-red-100'
+                        : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                    }`}
                   >
                     {isSaving ? 'Збереження...' : 'На списанні'}
                   </button>

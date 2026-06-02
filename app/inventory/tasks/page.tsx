@@ -541,7 +541,7 @@ export default function InventoryTasksPage() {
                             href={`/inventory/batch-check?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(String(task.batchId))}&taskId=${encodeURIComponent(String(task.id))}`}
                             className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
                           >
-                            Р’С–РґРєСЂРёС‚Рё РґР»СЏ СѓС‚РѕС‡РЅРµРЅРЅСЏ
+                            {'\u0412\u0456\u0434\u043a\u0440\u0438\u0442\u0438 \u0434\u043b\u044f \u0443\u0442\u043e\u0447\u043d\u0435\u043d\u043d\u044f'}
                           </a>
                         </div>
                       </article>
