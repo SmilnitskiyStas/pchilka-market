@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { createInventoryActivityLogInDb } from '@/lib/inventory-activity-logs-repository';
 import { createInventoryBatchCheckInDb } from '@/lib/inventory-batch-checks-repository';
 import { findInventoryBatchByIdInDb, updateInventoryBatchCheckActionInDb } from '@/lib/inventory-batches-repository';
+import { notifyInventoryDiscussionCreated } from '@/lib/inventory-discussion-telegram';
 import { completeInventoryExpiryTaskInDb, findInventoryExpiryTaskByIdInDb } from '@/lib/inventory-expiry-tasks-repository';
 import { parseInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
@@ -150,6 +151,20 @@ export async function POST(request: Request) {
       oldQuantity: batch.quantityCurrent,
       newQuantity: countedQuantity
     });
+
+    if (safeAction === 'discussion_required') {
+      await notifyInventoryDiscussionCreated({
+        taskId: taskId ? Number(taskId) : null,
+        batchId: Number(batch.id),
+        productId: Number(batch.productId),
+        storeId: Number(batch.storeId),
+        requesterUserId: user.id,
+        requesterRole: user.role,
+        requesterName: user.name,
+        requesterSurname: user.surname,
+        snapshotNote: snapshotNote || note || 'Потрібне обговорення по товару.'
+      });
+    }
 
     if (taskId) {
       const taskOutcome =

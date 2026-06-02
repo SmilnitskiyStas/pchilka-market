@@ -1,7 +1,7 @@
 import { listInventoryExpiryNotificationCandidatesFromDb, markInventoryExpiryTaskNotifiedInDb, syncInventoryExpiryTasksInDb, type InventoryExpiryNotificationCandidate } from '@/lib/inventory-expiry-tasks-repository';
 import { createInventoryNotificationLogInDb } from '@/lib/inventory-notification-logs-repository';
 import { createInventoryRegistrationToken } from '@/lib/inventory-registration-token';
-import { sendInventoryTelegramMessage } from '@/lib/inventory-telegram-bot';
+import { sendInventoryTelegramMessage } from '@/lib/inventory-telegram-api';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
 import { type InventoryUserRole } from '@/lib/inventory-user-roles';
 import { listInventoryUsersFromDb, type InventoryUserRecord } from '@/lib/inventory-users-repository';

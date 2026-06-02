@@ -35,7 +35,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: true, product });
     }
 
-    const products = (await listInventoryProductsFromDb(query, 30, 0)).filter((item) => item.isActive);
+    const products = (await listInventoryProductsFromDb(query, 500, 0)).filter((item) => item.isActive);
     return NextResponse.json({ ok: true, products });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не вдалося виконати пошук товару.';

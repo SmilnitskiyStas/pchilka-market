@@ -712,6 +712,100 @@ async function ensureNotificationLogsTable() {
   }
 }
 
+async function ensureInventoryDiscussionTables() {
+  const pool = getDbPool();
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_discussion_threads (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      task_id BIGINT UNSIGNED NULL,
+      batch_id BIGINT UNSIGNED NOT NULL,
+      product_id BIGINT UNSIGNED NOT NULL,
+      store_id BIGINT UNSIGNED NOT NULL,
+      requester_user_id BIGINT UNSIGNED NOT NULL,
+      manager_user_id BIGINT UNSIGNED NULL,
+      title VARCHAR(255) NOT NULL,
+      status VARCHAR(30) NOT NULL DEFAULT 'open',
+      created_from_action VARCHAR(40) NOT NULL DEFAULT 'discussion_required',
+      last_message_at DATETIME NULL,
+      closed_at DATETIME NULL,
+      closed_by_user_id BIGINT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_inventory_discussion_threads_status_store (status, store_id, updated_at),
+      KEY idx_inventory_discussion_threads_requester (requester_user_id, status),
+      KEY idx_inventory_discussion_threads_manager (manager_user_id, status),
+      KEY idx_inventory_discussion_threads_task (task_id),
+      KEY idx_inventory_discussion_threads_batch (batch_id),
+      CONSTRAINT fk_inventory_discussion_threads_task
+        FOREIGN KEY (task_id) REFERENCES expiry_tasks(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT fk_inventory_discussion_threads_batch
+        FOREIGN KEY (batch_id) REFERENCES product_batches(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_inventory_discussion_threads_product
+        FOREIGN KEY (product_id) REFERENCES products(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_inventory_discussion_threads_store
+        FOREIGN KEY (store_id) REFERENCES stores(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_inventory_discussion_threads_requester
+        FOREIGN KEY (requester_user_id) REFERENCES users(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_inventory_discussion_threads_manager
+        FOREIGN KEY (manager_user_id) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE,
+      CONSTRAINT fk_inventory_discussion_threads_closed_by
+        FOREIGN KEY (closed_by_user_id) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_discussion_messages (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      thread_id BIGINT UNSIGNED NOT NULL,
+      sender_user_id BIGINT UNSIGNED NOT NULL,
+      recipient_user_id BIGINT UNSIGNED NULL,
+      sender_role VARCHAR(30) NOT NULL,
+      channel VARCHAR(30) NOT NULL DEFAULT 'telegram',
+      message_text TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_inventory_discussion_messages_thread (thread_id, created_at),
+      KEY idx_inventory_discussion_messages_sender (sender_user_id, created_at),
+      CONSTRAINT fk_inventory_discussion_messages_thread
+        FOREIGN KEY (thread_id) REFERENCES inventory_discussion_threads(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_inventory_discussion_messages_sender
+        FOREIGN KEY (sender_user_id) REFERENCES users(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_inventory_discussion_messages_recipient
+        FOREIGN KEY (recipient_user_id) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_discussion_sessions (
+      user_id BIGINT UNSIGNED NOT NULL,
+      thread_id BIGINT UNSIGNED NOT NULL,
+      session_role VARCHAR(30) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id),
+      KEY idx_inventory_discussion_sessions_thread (thread_id),
+      CONSTRAINT fk_inventory_discussion_sessions_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_inventory_discussion_sessions_thread
+        FOREIGN KEY (thread_id) REFERENCES inventory_discussion_threads(id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
 async function ensureProductChangeLogsTable() {
   const pool = getDbPool();
   await pool.query(`
@@ -1050,6 +1144,7 @@ export async function applyInventorySchemaMigrations() {
   await ensureInventoryCountSessionsTable();
   await ensureInventoryCountItemsTable();
   await ensureInventoryAdjustmentsTable();
+  await ensureInventoryDiscussionTables();
   await ensureNotificationLogsTable();
   await ensureProductChangeLogsTable();
   await ensureProductImportReviewQueueTable();
