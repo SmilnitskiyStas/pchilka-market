@@ -54,12 +54,26 @@ function toDecimalOrNull(value: string): number | null {
   return parsed;
 }
 
+let storeTaskAssignmentModeColumnSupported: boolean | null = null;
+
+export async function hasStoreTaskAssignmentModeColumn() {
+  if (storeTaskAssignmentModeColumnSupported !== null) {
+    return storeTaskAssignmentModeColumnSupported;
+  }
+
+  const pool = getDbPool();
+  const [rows] = await pool.query<Array<RowDataPacket & { Field: string }>>('SHOW COLUMNS FROM stores');
+  storeTaskAssignmentModeColumnSupported = rows.some((row) => row.Field === 'task_assignment_mode');
+  return storeTaskAssignmentModeColumnSupported;
+}
+
 export async function listStoresFromDb(): Promise<StoreRecord[]> {
   const pool = getDbPool();
+  const supportsTaskAssignmentMode = await hasStoreTaskAssignmentModeColumn();
   const [rows] = await pool.query<StoreRow[]>(
     `
       SELECT id, store_code, name, region, city, address_line, phone, latitude, longitude, work_hours, is_active, sort_order
-        , task_assignment_mode
+        , ${supportsTaskAssignmentMode ? 'task_assignment_mode' : "'personal' AS task_assignment_mode"}
       FROM stores
       ORDER BY sort_order ASC, city ASC, id ASC
     `
@@ -177,9 +191,11 @@ export async function findStoreByIdInDb(storeId: string | number): Promise<Store
   if (!Number.isFinite(normalizedStoreId) || normalizedStoreId <= 0) return null;
 
   const pool = getDbPool();
+  const supportsTaskAssignmentMode = await hasStoreTaskAssignmentModeColumn();
   const [rows] = await pool.query<StoreRow[]>(
     `
-      SELECT id, store_code, name, region, city, address_line, phone, latitude, longitude, work_hours, is_active, sort_order, task_assignment_mode
+      SELECT id, store_code, name, region, city, address_line, phone, latitude, longitude, work_hours, is_active, sort_order,
+        ${supportsTaskAssignmentMode ? 'task_assignment_mode' : "'personal' AS task_assignment_mode"}
       FROM stores
       WHERE id = ?
       LIMIT 1

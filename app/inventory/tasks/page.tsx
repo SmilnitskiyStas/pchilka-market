@@ -536,6 +536,14 @@ export default function InventoryTasksPage() {
                           ) : null}
                           {task.resolutionNote ? <p>Коментар: <span className="text-slate-900">{task.resolutionNote}</span></p> : null}
                         </div>
+                        <div className="mt-4 flex flex-wrap gap-3">
+                          <a
+                            href={`/inventory/batch-check?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(String(task.batchId))}&taskId=${encodeURIComponent(String(task.id))}`}
+                            className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
+                          >
+                            Р’С–РґРєСЂРёС‚Рё РґР»СЏ СѓС‚РѕС‡РЅРµРЅРЅСЏ
+                          </a>
+                        </div>
                       </article>
                     ))}
                   </div>

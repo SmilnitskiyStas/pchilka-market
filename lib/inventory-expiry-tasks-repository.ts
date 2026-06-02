@@ -3,7 +3,7 @@ import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { getDbPool } from '@/lib/db';
 import { listInventoryBatchesFromDb } from '@/lib/inventory-batches-repository';
 import type { InventoryBatchRecord } from '@/lib/inventory-batch-types';
-import { listStoresFromDb } from '@/lib/stores-repository';
+import { hasStoreTaskAssignmentModeColumn, listStoresFromDb } from '@/lib/stores-repository';
 import type { InventoryTaskAssignmentMode } from '@/lib/store-types';
 
 type ExpiryTaskRow = RowDataPacket & {
@@ -169,6 +169,13 @@ function getTaskAssignmentModeForBatch(
     return riskLevel === 'critical' || riskLevel === 'high' ? 'personal' : 'shared';
   }
   return 'personal';
+}
+
+async function getTaskAssignmentModeSql(tableAlias = 's') {
+  const supportsTaskAssignmentMode = await hasStoreTaskAssignmentModeColumn();
+  return supportsTaskAssignmentMode
+    ? `${tableAlias}.task_assignment_mode`
+    : `'personal'`;
 }
 
 export async function syncInventoryExpiryTasksInDb() {
@@ -372,6 +379,7 @@ export async function syncInventoryExpiryTasksInDb() {
 
 export async function listInventoryExpiryNotificationCandidatesFromDb(limit = 200): Promise<InventoryExpiryNotificationCandidate[]> {
   const pool = getDbPool();
+  const taskAssignmentModeSql = await getTaskAssignmentModeSql('s');
   const [rows] = await pool.query<ExpiryTaskRow[]>(
     `
       SELECT
@@ -400,7 +408,7 @@ export async function listInventoryExpiryNotificationCandidatesFromDb(limit = 20
         et.completed_by_user_id,
         et.created_at,
         et.updated_at,
-        st.task_assignment_mode,
+        ${taskAssignmentModeSql} AS task_assignment_mode,
         p.product_name,
         p.article,
         (
@@ -416,7 +424,6 @@ export async function listInventoryExpiryNotificationCandidatesFromDb(limit = 20
       INNER JOIN product_batches b ON b.id = et.batch_id
       INNER JOIN products p ON p.id = et.product_id
       INNER JOIN stores s ON s.id = et.store_id
-      INNER JOIN stores st ON st.id = et.store_id
       LEFT JOIN users u ON u.id = COALESCE(et.assigned_user_id, et.responsible_user_id)
       LEFT JOIN users au ON au.id = et.assigned_user_id
       WHERE
@@ -445,6 +452,7 @@ export async function listInventoryExpiryTasksFromDb(options?: {
   limit?: number;
 }): Promise<InventoryExpiryTaskRecord[]> {
   const pool = getDbPool();
+  const taskAssignmentModeSql = await getTaskAssignmentModeSql('s');
   const statusGroup = options?.statusGroup ?? 'all';
   const limit = Math.min(Math.max(Number(options?.limit ?? 250), 1), 1000);
   const responsibleUserId = Number(options?.responsibleUserId ?? 0);
@@ -499,7 +507,7 @@ export async function listInventoryExpiryTasksFromDb(options?: {
         et.completed_by_user_id,
         et.created_at,
         et.updated_at,
-        st.task_assignment_mode,
+        ${taskAssignmentModeSql} AS task_assignment_mode,
         p.product_name,
         p.article,
         (
@@ -515,7 +523,6 @@ export async function listInventoryExpiryTasksFromDb(options?: {
       INNER JOIN product_batches b ON b.id = et.batch_id
       INNER JOIN products p ON p.id = et.product_id
       INNER JOIN stores s ON s.id = et.store_id
-      INNER JOIN stores st ON st.id = et.store_id
       LEFT JOIN users u ON u.id = COALESCE(et.assigned_user_id, et.responsible_user_id)
       LEFT JOIN users au ON au.id = et.assigned_user_id
       WHERE ${whereClauses.join(' AND ')}
@@ -609,6 +616,7 @@ export async function findInventoryExpiryTaskByIdInDb(taskId: string | number): 
   if (!Number.isFinite(normalizedTaskId) || normalizedTaskId <= 0) return null;
 
   const pool = getDbPool();
+  const taskAssignmentModeSql = await getTaskAssignmentModeSql('s');
   const [rows] = await pool.query<ExpiryTaskRow[]>(
     `
       SELECT
@@ -637,7 +645,7 @@ export async function findInventoryExpiryTaskByIdInDb(taskId: string | number): 
         et.completed_by_user_id,
         et.created_at,
         et.updated_at,
-        st.task_assignment_mode,
+        ${taskAssignmentModeSql} AS task_assignment_mode,
         p.product_name,
         p.article,
         (
@@ -653,7 +661,6 @@ export async function findInventoryExpiryTaskByIdInDb(taskId: string | number): 
       INNER JOIN product_batches b ON b.id = et.batch_id
       INNER JOIN products p ON p.id = et.product_id
       INNER JOIN stores s ON s.id = et.store_id
-      INNER JOIN stores st ON st.id = et.store_id
       LEFT JOIN users u ON u.id = COALESCE(et.assigned_user_id, et.responsible_user_id)
       LEFT JOIN users au ON au.id = et.assigned_user_id
       WHERE et.id = ?
