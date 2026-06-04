@@ -24,6 +24,25 @@ async function callTelegramApi(botToken: string, method: string, body: Record<st
   return payload;
 }
 
+async function callTelegramApiFormData(botToken: string, method: string, body: FormData) {
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+    method: 'POST',
+    body
+  });
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const description =
+      payload && typeof payload === 'object' && typeof (payload as { description?: unknown }).description === 'string'
+        ? (payload as { description: string }).description
+        : '';
+    throw new Error(`Telegram API ${method} failed with ${response.status}${description ? `: ${description}` : '.'}`);
+  }
+
+  return payload;
+}
+
 function isLikelyTelegramSafeUrl(value: string) {
   try {
     const url = new URL(value);
@@ -99,4 +118,25 @@ export async function answerInventoryTelegramCallback(input: {
     callback_query_id: input.callbackQueryId,
     text: input.text?.trim() || undefined
   });
+}
+
+export async function sendInventoryTelegramDocument(input: {
+  botToken: string;
+  chatId: string;
+  file: File | Blob;
+  fileName?: string;
+  caption?: string;
+}) {
+  const formData = new FormData();
+  formData.append('chat_id', input.chatId);
+  if (input.caption?.trim()) {
+    formData.append('caption', input.caption.trim());
+  }
+
+  const documentFileName =
+    input.fileName?.trim() ||
+    (typeof File !== 'undefined' && input.file instanceof File && input.file.name ? input.file.name : 'attachment');
+
+  formData.append('document', input.file, documentFileName);
+  return callTelegramApiFormData(input.botToken, 'sendDocument', formData);
 }

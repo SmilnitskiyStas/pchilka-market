@@ -830,6 +830,7 @@ export default function AdminInventoryManager({
   const [telegramBroadcastStoreId, setTelegramBroadcastStoreId] = useState('');
   const [telegramBroadcastTitle, setTelegramBroadcastTitle] = useState('Оновлення');
   const [telegramBroadcastMessage, setTelegramBroadcastMessage] = useState('');
+  const [telegramBroadcastFiles, setTelegramBroadcastFiles] = useState<File[]>([]);
   const [telegramBroadcastForStoreManager, setTelegramBroadcastForStoreManager] = useState(true);
   const [telegramBroadcastForManager, setTelegramBroadcastForManager] = useState(true);
   const [isCreatingIntake, setIsCreatingIntake] = useState(false);
@@ -1832,15 +1833,18 @@ export default function AdminInventoryManager({
     setError('');
     setSuccess('');
     try {
+      const formData = new FormData();
+      formData.set('storeId', telegramBroadcastStoreId);
+      formData.set('title', telegramBroadcastTitle);
+      formData.set('messageText', telegramBroadcastMessage);
+      formData.set('recipientRoles', JSON.stringify(recipientRoles));
+      for (const file of telegramBroadcastFiles) {
+        formData.append('files', file);
+      }
+
       const response = await fetch('/api/admin/inventory/telegram-broadcast', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          storeId: telegramBroadcastStoreId,
-          title: telegramBroadcastTitle,
-          messageText: telegramBroadcastMessage,
-          recipientRoles
-        })
+        body: formData
       });
       const payload = (await response.json()) as TelegramBroadcastPayload;
       if (!response.ok || !payload.ok) {
@@ -1854,6 +1858,7 @@ export default function AdminInventoryManager({
           : `Повідомлення надіслано ${payload.sentCount ?? 0} отримувачам.`
       );
       setTelegramBroadcastMessage('');
+      setTelegramBroadcastFiles([]);
       await loadManualBroadcastLogs();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не вдалося надіслати Telegram-повідомлення.');
@@ -4319,6 +4324,25 @@ export default function AdminInventoryManager({
               placeholder="Опишіть оновлення або службове повідомлення для працівників."
               className="mt-3 w-full rounded-2xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
             />
+            <div className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+              <label className="block text-sm font-semibold text-slate-900">Файли для Telegram</label>
+              <input
+                type="file"
+                multiple
+                onChange={(e) => setTelegramBroadcastFiles(Array.from(e.target.files ?? []))}
+                className="mt-2 block w-full text-sm text-slate-700"
+              />
+              <p className="mt-2 text-xs text-slate-500">До 5 файлів, максимум 10MB на файл.</p>
+              {telegramBroadcastFiles.length > 0 ? (
+                <div className="mt-3 space-y-1 text-xs text-slate-600">
+                  {telegramBroadcastFiles.map((file) => (
+                    <p key={`${file.name}-${file.size}-${file.lastModified}`}>
+                      {file.name} ({Math.max(1, Math.round(file.size / 1024))} KB)
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-slate-500">
                 Повідомлення підуть лише активним користувачам, у яких заповнений Telegram chat id.

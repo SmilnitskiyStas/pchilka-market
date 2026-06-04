@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server';
 
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import { createInventoryNotificationLogInDb } from '@/lib/inventory-notification-logs-repository';
+import {
+  sendInventoryTelegramDocument,
+  sendInventoryTelegramMessage
+} from '@/lib/inventory-telegram-api';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
-import { sendInventoryTelegramMessage } from '@/lib/inventory-telegram-api';
 import { listInventoryUsersFromDb } from '@/lib/inventory-users-repository';
 import type { InventoryUserRole } from '@/lib/inventory-user-roles';
 
@@ -11,12 +14,8 @@ export const runtime = 'nodejs';
 
 type BroadcastRole = Extract<InventoryUserRole, 'store_manager' | 'manager'>;
 
-type BroadcastRequestBody = {
-  storeId?: string | number | null;
-  title?: string;
-  messageText?: string;
-  recipientRoles?: BroadcastRole[];
-};
+const MAX_BROADCAST_FILES = 5;
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 function isBroadcastRole(value: unknown): value is BroadcastRole {
   return value === 'store_manager' || value === 'manager';
@@ -45,19 +44,59 @@ function buildBroadcastText(input: {
     .join('\n');
 }
 
+function buildLogText(messageText: string, fileNames: string[]) {
+  if (fileNames.length === 0) return messageText;
+  return `${messageText}\n\n[files] ${fileNames.join(', ')}`;
+}
+
+function parseRecipientRoles(raw: FormDataEntryValue | null): BroadcastRole[] {
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return ['store_manager', 'manager'];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return ['store_manager', 'manager'];
+    const roles = parsed.filter(isBroadcastRole);
+    return roles.length > 0 ? Array.from(new Set(roles)) : ['store_manager', 'manager'];
+  } catch {
+    return ['store_manager', 'manager'];
+  }
+}
+
+function normalizeFiles(entries: FormDataEntryValue[]) {
+  const files = entries.filter((item): item is File => item instanceof File && item.size > 0);
+  if (files.length > MAX_BROADCAST_FILES) {
+    throw new Error(`Можна додати не більше ${MAX_BROADCAST_FILES} файлів за раз.`);
+  }
+
+  for (const file of files) {
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      throw new Error(`Файл ${file.name} завеликий. Максимум 10MB на файл.`);
+    }
+  }
+
+  return files;
+}
+
 export async function POST(request: Request) {
   if (!isAdminRequestAuthorized(request)) {
     return unauthorizedAdminResponse();
   }
 
   try {
-    const body = (await request.json()) as BroadcastRequestBody;
-    const normalizedStoreId = body.storeId == null || body.storeId === '' ? null : Number(body.storeId);
-    const title = String(body.title ?? '').trim() || 'Оновлення';
-    const messageText = String(body.messageText ?? '').trim();
-    const requestedRoles = Array.isArray(body.recipientRoles) ? body.recipientRoles.filter(isBroadcastRole) : [];
-    const recipientRoles: BroadcastRole[] =
-      requestedRoles.length > 0 ? Array.from(new Set(requestedRoles)) : ['store_manager', 'manager'];
+    const formData = await request.formData();
+    const storeIdRaw = formData.get('storeId');
+    const titleRaw = formData.get('title');
+    const messageTextRaw = formData.get('messageText');
+    const recipientRolesRaw = formData.get('recipientRoles');
+    const files = normalizeFiles(formData.getAll('files'));
+
+    const normalizedStoreId =
+      typeof storeIdRaw === 'string' && storeIdRaw.trim() ? Number(storeIdRaw) : null;
+    const title = typeof titleRaw === 'string' && titleRaw.trim() ? titleRaw.trim() : 'Оновлення';
+    const messageText = typeof messageTextRaw === 'string' ? messageTextRaw.trim() : '';
+    const recipientRoles = parseRecipientRoles(recipientRolesRaw);
 
     if (!messageText) {
       return NextResponse.json({ ok: false, error: 'Введіть текст повідомлення.' }, { status: 400 });
@@ -97,6 +136,7 @@ export async function POST(request: Request) {
       (recipient, index, items) => items.findIndex((item) => item.id === recipient.id) === index
     );
 
+    const fileNames = files.map((file) => file.name);
     let sentCount = 0;
     const failedRecipients: Array<{ userId: number; name: string; error: string }> = [];
 
@@ -115,11 +155,21 @@ export async function POST(request: Request) {
           text
         });
 
+        for (const file of files) {
+          await sendInventoryTelegramDocument({
+            botToken: settings.botToken,
+            chatId: recipient.userChatId,
+            file,
+            fileName: file.name,
+            caption: `Вкладення: ${file.name}`
+          });
+        }
+
         await createInventoryNotificationLogInDb({
           storeId: recipient.storeId,
           userId: recipient.id,
           notificationType: 'inventory_manual_broadcast',
-          messageText: text
+          messageText: buildLogText(text, fileNames)
         });
 
         sentCount += 1;
@@ -147,6 +197,7 @@ export async function POST(request: Request) {
       ok: true,
       sentCount,
       failedCount: failedRecipients.length,
+      attachedFiles: fileNames,
       recipients: uniqueRecipients.map((recipient) => ({
         id: recipient.id,
         name: [recipient.surname, recipient.name].filter(Boolean).join(' ').trim(),
