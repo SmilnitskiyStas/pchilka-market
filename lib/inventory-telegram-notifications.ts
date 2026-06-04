@@ -1,5 +1,8 @@
 import { listInventoryExpiryNotificationCandidatesFromDb, markInventoryExpiryTaskNotifiedInDb, syncInventoryExpiryTasksInDb, type InventoryExpiryNotificationCandidate } from '@/lib/inventory-expiry-tasks-repository';
-import { createInventoryNotificationLogInDb } from '@/lib/inventory-notification-logs-repository';
+import {
+  createInventoryNotificationLogInDb,
+  createInventoryNotificationLogTaskLinksInDb
+} from '@/lib/inventory-notification-logs-repository';
 import { createInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { sendInventoryTelegramMessage } from '@/lib/inventory-telegram-api';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
@@ -204,6 +207,10 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
         notificationType: repeat > 0 ? 'inventory_tasks_digest_repeat' : 'inventory_tasks_digest',
         messageText: text
       });
+      await createInventoryNotificationLogTaskLinksInDb({
+        notificationLogId: notificationId,
+        taskIds: tasks.map((task) => task.id)
+      });
       const tasksUrl = buildInventoryTasksUrl(settings.publicBaseUrl, token, notificationId);
       await sendInventoryTelegramMessage({
         botToken: settings.botToken,
@@ -238,7 +245,7 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown Telegram send error';
 
-      await createInventoryNotificationLogInDb({
+      const failedNotificationId = await createInventoryNotificationLogInDb({
         taskId: null,
         batchId: null,
         productId: null,
@@ -246,6 +253,10 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
         userId: digest.recipient.id,
         notificationType: repeat > 0 ? 'inventory_tasks_digest_repeat_failed' : 'inventory_tasks_digest_failed',
         messageText: `${text}\n\nSEND_ERROR: ${errorMessage}\nCHAT_ID: ${digest.recipient.userChatId}`
+      });
+      await createInventoryNotificationLogTaskLinksInDb({
+        notificationLogId: failedNotificationId,
+        taskIds: tasks.map((task) => task.id)
       });
 
       debug.push({

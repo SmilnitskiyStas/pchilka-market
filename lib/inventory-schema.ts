@@ -15,6 +15,7 @@ export const INVENTORY_REQUIRED_TABLES = [
   'inventory_discussion_sessions',
   'activity_logs',
   'notification_logs',
+  'notification_log_tasks',
   'product_change_logs',
   'product_import_review_queue'
 ] as const;

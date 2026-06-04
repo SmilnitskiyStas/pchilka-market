@@ -25,6 +25,18 @@ type NotificationLogRow = RowDataPacket & {
   opened_by_name?: string | null;
 };
 
+type NotificationLogTaskLinkRow = RowDataPacket & {
+  notification_log_id: number;
+  task_id: number;
+  batch_id: number | null;
+  product_name?: string | null;
+  batch_code?: string | null;
+  task_status?: string | null;
+  task_type?: string | null;
+  assigned_user_id?: number | null;
+  assigned_user_name?: string | null;
+};
+
 export type InventoryNotificationLogRecord = {
   id: number;
   taskId: number | null;
@@ -44,6 +56,20 @@ export type InventoryNotificationLogRecord = {
   storeLabel: string;
   recipientName: string;
   openedByName: string;
+  linkedTasksCount: number;
+  takenTasksCount: number;
+  completedTasksCount: number;
+  assignedUsersSummary: string;
+  linkedTasks: Array<{
+    taskId: number;
+    batchId: number | null;
+    productName: string;
+    batchCode: string;
+    taskStatus: string;
+    taskType: string;
+    assignedUserId: number | null;
+    assignedUserName: string;
+  }>;
 };
 
 export type InventoryNotificationLogsListResult = {
@@ -78,7 +104,12 @@ function mapNotificationLogRow(row: NotificationLogRow): InventoryNotificationLo
     batchCode: String(row.batch_code ?? ''),
     storeLabel: String(row.store_label ?? ''),
     recipientName: String(row.recipient_name ?? ''),
-    openedByName: String(row.opened_by_name ?? '')
+    openedByName: String(row.opened_by_name ?? ''),
+    linkedTasksCount: 0,
+    takenTasksCount: 0,
+    completedTasksCount: 0,
+    assignedUsersSummary: '',
+    linkedTasks: []
   };
 }
 
@@ -119,6 +150,38 @@ export async function createInventoryNotificationLogInDb(
   );
 
   return Number((result as { insertId?: number }).insertId ?? 0);
+}
+
+export async function createInventoryNotificationLogTaskLinksInDb(input: {
+  notificationLogId: string | number;
+  taskIds: Array<string | number>;
+}) {
+  const db = getDbPool();
+  const notificationLogId = Number(input.notificationLogId);
+  const taskIds = Array.from(
+    new Set(
+      input.taskIds
+        .map((taskId) => Number(taskId))
+        .filter((taskId) => Number.isFinite(taskId) && taskId > 0)
+    )
+  );
+
+  if (!Number.isFinite(notificationLogId) || notificationLogId <= 0 || taskIds.length === 0) {
+    return;
+  }
+
+  const placeholders = taskIds.map(() => '(?, ?)').join(', ');
+  const values = taskIds.flatMap((taskId) => [notificationLogId, taskId]);
+
+  await db.query(
+    `
+      INSERT IGNORE INTO notification_log_tasks (
+        notification_log_id,
+        task_id
+      ) VALUES ${placeholders}
+    `,
+    values
+  );
 }
 
 export async function markInventoryNotificationOpenedInDb(input: {
@@ -246,8 +309,76 @@ export async function listInventoryNotificationLogsFromDb(options?: {
     [...params, limit, offset]
   );
 
+  const logs = rows.map(mapNotificationLogRow);
+  if (logs.length === 0) {
+    return {
+      logs,
+      totalCount,
+      page,
+      limit
+    } satisfies InventoryNotificationLogsListResult;
+  }
+
+  const logIds = logs.map((log) => log.id);
+  const linkPlaceholders = logIds.map(() => '?').join(', ');
+  const [linkRows] = await db.query<NotificationLogTaskLinkRow[]>(
+    `
+      SELECT
+        nlt.notification_log_id,
+        et.id AS task_id,
+        et.batch_id,
+        et.status AS task_status,
+        et.task_type,
+        et.assigned_user_id,
+        CONCAT_WS(' ', au.surname, au.name) AS assigned_user_name,
+        p.product_name,
+        pb.batch_code
+      FROM notification_log_tasks nlt
+      INNER JOIN expiry_tasks et ON et.id = nlt.task_id
+      LEFT JOIN product_batches pb ON pb.id = et.batch_id
+      LEFT JOIN products p ON p.id = et.product_id
+      LEFT JOIN users au ON au.id = et.assigned_user_id
+      WHERE nlt.notification_log_id IN (${linkPlaceholders})
+      ORDER BY et.updated_at DESC, et.id DESC
+    `,
+    logIds
+  );
+
+  const linksByLogId = new Map<number, NotificationLogTaskLinkRow[]>();
+  for (const row of linkRows) {
+    const items = linksByLogId.get(Number(row.notification_log_id)) ?? [];
+    items.push(row);
+    linksByLogId.set(Number(row.notification_log_id), items);
+  }
+
+  for (const log of logs) {
+    const linkedRows = linksByLogId.get(log.id) ?? [];
+    const assignedUsers = new Set<string>();
+
+    log.linkedTasks = linkedRows.map((row) => {
+      const assignedUserName = String(row.assigned_user_name ?? '').trim();
+      if (assignedUserName) assignedUsers.add(assignedUserName);
+
+      return {
+        taskId: Number(row.task_id),
+        batchId: row.batch_id == null ? null : Number(row.batch_id),
+        productName: String(row.product_name ?? ''),
+        batchCode: String(row.batch_code ?? ''),
+        taskStatus: String(row.task_status ?? ''),
+        taskType: String(row.task_type ?? ''),
+        assignedUserId: row.assigned_user_id == null ? null : Number(row.assigned_user_id),
+        assignedUserName
+      };
+    });
+
+    log.linkedTasksCount = log.linkedTasks.length;
+    log.takenTasksCount = log.linkedTasks.filter((task) => Boolean(task.assignedUserId)).length;
+    log.completedTasksCount = log.linkedTasks.filter((task) => task.taskStatus === 'completed').length;
+    log.assignedUsersSummary = Array.from(assignedUsers).join(', ');
+  }
+
   return {
-    logs: rows.map(mapNotificationLogRow),
+    logs,
     totalCount,
     page,
     limit

@@ -712,6 +712,25 @@ async function ensureNotificationLogsTable() {
   }
 }
 
+async function ensureNotificationLogTasksTable() {
+  const pool = getDbPool();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notification_log_tasks (
+      notification_log_id BIGINT UNSIGNED NOT NULL,
+      task_id BIGINT UNSIGNED NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (notification_log_id, task_id),
+      KEY idx_notification_log_tasks_task (task_id),
+      CONSTRAINT fk_notification_log_tasks_log
+        FOREIGN KEY (notification_log_id) REFERENCES notification_logs(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_notification_log_tasks_task
+        FOREIGN KEY (task_id) REFERENCES expiry_tasks(id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
 async function ensureInventoryDiscussionTables() {
   const pool = getDbPool();
 
@@ -1146,6 +1165,7 @@ export async function applyInventorySchemaMigrations() {
   await ensureInventoryAdjustmentsTable();
   await ensureInventoryDiscussionTables();
   await ensureNotificationLogsTable();
+  await ensureNotificationLogTasksTable();
   await ensureProductChangeLogsTable();
   await ensureProductImportReviewQueueTable();
 

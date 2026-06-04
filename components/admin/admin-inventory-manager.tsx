@@ -254,6 +254,20 @@ type InventoryNotificationLogView = {
   storeLabel: string;
   recipientName: string;
   openedByName: string;
+  linkedTasksCount: number;
+  takenTasksCount: number;
+  completedTasksCount: number;
+  assignedUsersSummary: string;
+  linkedTasks: Array<{
+    taskId: number;
+    batchId: number | null;
+    productName: string;
+    batchCode: string;
+    taskStatus: string;
+    taskType: string;
+    assignedUserId: number | null;
+    assignedUserName: string;
+  }>;
 };
 type InventoryNotificationLogsPayload = {
   ok?: boolean;
@@ -524,6 +538,8 @@ function formatExpiryTaskStatus(status: string) {
   switch (status) {
     case 'open':
       return 'Активна';
+    case 'in_progress':
+      return 'В роботі';
     case 'escalated':
       return 'Потребує рішення';
     case 'writeoff_pending':
@@ -596,12 +612,20 @@ function formatNotificationLogStatus(status: string) {
 
 function formatNotificationLogType(type: string) {
   switch (type) {
+    case 'inventory_tasks_digest':
     case 'inventory_task_digest':
       return 'Зведене сповіщення по задачах';
+    case 'inventory_tasks_digest_repeat':
     case 'inventory_task_repeat':
       return 'Повторне нагадування';
+    case 'inventory_tasks_digest_failed':
+      return 'Помилка відправки зведеного сповіщення';
+    case 'inventory_tasks_digest_repeat_failed':
+      return 'Помилка повторного нагадування';
     case 'inventory_expiry':
       return 'Сповіщення про термін';
+    case 'inventory_manual_broadcast':
+      return 'Ручна Telegram-розсилка';
     default:
       return type || '—';
   }
@@ -4099,6 +4123,12 @@ export default function AdminInventoryManager({
                       <div>
                         <p className="font-semibold text-slate-900">{log.storeLabel || '—'}</p>
                         <p className="mt-1 text-xs text-slate-500">{log.recipientName || 'Отримувача не визначено'}</p>
+                        {log.linkedTasksCount > 0 ? (
+                          <p className="mt-2 text-xs text-slate-600">
+                            В роботі: {log.takenTasksCount}/{log.linkedTasksCount}
+                            {log.completedTasksCount > 0 ? ` • Завершено: ${log.completedTasksCount}` : ''}
+                          </p>
+                        ) : null}
                       </div>
                       <div>
                         <p className="font-semibold text-slate-900">{log.productName || 'Без прив’язки до товару'}</p>
@@ -4108,6 +4138,13 @@ export default function AdminInventoryManager({
                           {log.batchCode ? ` • партія ${log.batchCode}` : ''}
                         </p>
                         <p className="mt-2 line-clamp-3 text-xs text-slate-600">{log.messageText}</p>
+                        {log.assignedUsersSummary ? (
+                          <p className="mt-2 text-xs font-semibold text-emerald-700">
+                            Взяли в роботу: {log.assignedUsersSummary}
+                          </p>
+                        ) : log.linkedTasksCount > 0 ? (
+                          <p className="mt-2 text-xs text-slate-500">Ще ніхто не взяв у роботу</p>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => setSelectedNotificationLog(log)}
@@ -4433,6 +4470,14 @@ export default function AdminInventoryManager({
               <p className="mt-1"><span className="font-semibold text-slate-900">Статус:</span> {formatNotificationLogStatus(selectedNotificationLog.status)}</p>
               <p className="mt-1"><span className="font-semibold text-slate-900">Відкрито:</span> {selectedNotificationLog.openedAt ? formatDate(selectedNotificationLog.openedAt) : 'Не відкрито'}</p>
               <p className="mt-1"><span className="font-semibold text-slate-900">Хто відкрив:</span> {selectedNotificationLog.openedByName || '—'}</p>
+              {selectedNotificationLog.linkedTasksCount > 0 ? (
+                <>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">Задач у повідомленні:</span> {selectedNotificationLog.linkedTasksCount}</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">Взято в роботу:</span> {selectedNotificationLog.takenTasksCount}</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">Завершено:</span> {selectedNotificationLog.completedTasksCount}</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">Хто взяв:</span> {selectedNotificationLog.assignedUsersSummary || 'Ще ніхто не взяв у роботу'}</p>
+                </>
+              ) : null}
               {selectedNotificationLog.article ? <p className="mt-1"><span className="font-semibold text-slate-900">Артикул:</span> {selectedNotificationLog.article}</p> : null}
               {selectedNotificationLog.batchCode ? <p className="mt-1"><span className="font-semibold text-slate-900">Партія:</span> {selectedNotificationLog.batchCode}</p> : null}
             </div>
@@ -4443,6 +4488,32 @@ export default function AdminInventoryManager({
               </pre>
             </div>
           </div>
+          {selectedNotificationLog.linkedTasks.length > 0 ? (
+            <div className="border-t border-slate-200 px-5 py-5">
+              <p className="text-sm font-semibold text-slate-900">Задачі з цього повідомлення</p>
+              <div className="mt-3 space-y-3">
+                {selectedNotificationLog.linkedTasks.map((task) => (
+                  <div key={`${selectedNotificationLog.id}-${task.taskId}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{task.productName || 'Товар без назви'}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Задача #{task.taskId}
+                          {task.batchCode ? ` • партія ${task.batchCode}` : ''}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                        {formatExpiryTaskStatus(task.taskStatus)}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-600">
+                      Виконавець: {task.assignedUserName || 'Ще не призначено'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
       ) : null}
