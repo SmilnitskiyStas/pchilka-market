@@ -16,6 +16,7 @@ export async function GET(request: Request) {
       storeId: url.searchParams.get('storeId'),
       dateFrom: url.searchParams.get('dateFrom'),
       dateTo: url.searchParams.get('dateTo'),
+      notificationType: url.searchParams.get('type'),
       limit: Number(url.searchParams.get('limit') ?? 50),
       page: Number(url.searchParams.get('page') ?? 1)
     });

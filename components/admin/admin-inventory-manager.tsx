@@ -228,6 +228,13 @@ type NotificationsRunPayload = {
   };
   error?: string;
 };
+type TelegramBroadcastPayload = {
+  ok?: boolean;
+  sentCount?: number;
+  failedCount?: number;
+  failedRecipients?: Array<{ userId: number; name: string; error: string }>;
+  error?: string;
+};
 type InventoryNotificationLogView = {
   id: number;
   taskId: number | null;
@@ -782,17 +789,25 @@ export default function AdminInventoryManager({
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isRegisteringWebhook, setIsRegisteringWebhook] = useState(false);
   const [isRunningNotifications, setIsRunningNotifications] = useState(false);
+  const [isSendingTelegramBroadcast, setIsSendingTelegramBroadcast] = useState(false);
   const [isLoadingInventoryTasks, setIsLoadingInventoryTasks] = useState(false);
   const [notificationsDebug, setNotificationsDebug] = useState<InventoryNotificationDebugItem[]>([]);
   const [notificationLogs, setNotificationLogs] = useState<InventoryNotificationLogView[]>([]);
+  const [manualBroadcastLogs, setManualBroadcastLogs] = useState<InventoryNotificationLogView[]>([]);
   const [selectedNotificationLog, setSelectedNotificationLog] = useState<InventoryNotificationLogView | null>(null);
   const [isLoadingNotificationLogs, setIsLoadingNotificationLogs] = useState(false);
+  const [isLoadingManualBroadcastLogs, setIsLoadingManualBroadcastLogs] = useState(false);
   const [notificationLogsPage, setNotificationLogsPage] = useState(1);
   const [notificationLogsPageSize, setNotificationLogsPageSize] = useState(50);
   const [notificationLogsTotalCount, setNotificationLogsTotalCount] = useState(0);
   const [notificationsStoreFilter, setNotificationsStoreFilter] = useState('');
   const [notificationsDateFrom, setNotificationsDateFrom] = useState(formatDateInputValue());
   const [notificationsDateTo, setNotificationsDateTo] = useState(formatDateInputValue());
+  const [telegramBroadcastStoreId, setTelegramBroadcastStoreId] = useState('');
+  const [telegramBroadcastTitle, setTelegramBroadcastTitle] = useState('Оновлення');
+  const [telegramBroadcastMessage, setTelegramBroadcastMessage] = useState('');
+  const [telegramBroadcastForStoreManager, setTelegramBroadcastForStoreManager] = useState(true);
+  const [telegramBroadcastForManager, setTelegramBroadcastForManager] = useState(true);
   const [isCreatingIntake, setIsCreatingIntake] = useState(false);
   const [assigningBatchId, setAssigningBatchId] = useState('');
   const [savingInventoryUserId, setSavingInventoryUserId] = useState<number | null>(null);
@@ -1032,13 +1047,33 @@ export default function AdminInventoryManager({
     }
   }
 
+  async function loadManualBroadcastLogs() {
+    setIsLoadingManualBroadcastLogs(true);
+    try {
+      const response = await fetch('/api/admin/inventory/notifications?type=inventory_manual_broadcast&limit=100&page=1', {
+        cache: 'no-store'
+      });
+      const payload = (await response.json()) as InventoryNotificationLogsPayload;
+      if (!response.ok || !payload.ok || !Array.isArray(payload.logs)) {
+        throw new Error(payload.error || 'Не вдалося завантажити історію ручних розсилок.');
+      }
+
+      setManualBroadcastLogs(payload.logs);
+    } catch (loadError) {
+      setManualBroadcastLogs([]);
+      setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити історію ручних розсилок.');
+    } finally {
+      setIsLoadingManualBroadcastLogs(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       setIsLoading(true);
       try {
-        const [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12] = await Promise.all([
+        const [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13] = await Promise.all([
           fetch('/api/admin/inventory/readiness', { cache: 'no-store' }),
           fetch('/api/admin/inventory/settings', { cache: 'no-store' }),
           fetch('/api/admin/inventory/products', { cache: 'no-store' }),
@@ -1050,7 +1085,8 @@ export default function AdminInventoryManager({
           fetch('/api/admin/inventory/product-change-logs?limit=40', { cache: 'no-store' }),
           fetch('/api/admin/inventory/import-review?status=pending&limit=100', { cache: 'no-store' }),
           fetch('/api/admin/inventory/products/import?latest=1', { cache: 'no-store' }),
-          fetch(`/api/admin/inventory/notifications?limit=${notificationLogsPageSize}&page=1&dateFrom=${encodeURIComponent(notificationsDateFrom)}&dateTo=${encodeURIComponent(notificationsDateTo)}`, { cache: 'no-store' })
+          fetch(`/api/admin/inventory/notifications?limit=${notificationLogsPageSize}&page=1&dateFrom=${encodeURIComponent(notificationsDateFrom)}&dateTo=${encodeURIComponent(notificationsDateTo)}`, { cache: 'no-store' }),
+          fetch('/api/admin/inventory/notifications?type=inventory_manual_broadcast&limit=100&page=1', { cache: 'no-store' })
         ]);
 
         const p1 = (await r1.json()) as ReadinessPayload;
@@ -1065,6 +1101,7 @@ export default function AdminInventoryManager({
         const p10 = (await r10.json()) as ImportReviewPayload;
         const p11 = (await r11.json()) as ProductImportPayload;
         const p12 = (await r12.json()) as InventoryNotificationLogsPayload;
+        const p13 = (await r13.json()) as InventoryNotificationLogsPayload;
 
         if (!r1.ok || !p1.ok || !p1.readiness) throw new Error(p1.error || 'Не вдалося перевірити готовність inventory-модуля.');
         if (!r2.ok || !p2.ok) throw new Error(p2.error || 'Не вдалося завантажити Telegram-налаштування.');
@@ -1089,6 +1126,7 @@ export default function AdminInventoryManager({
           setLatestImportLog(r11.ok && p11.ok ? p11.importLog ?? null : null);
           setImportSummary(r11.ok && p11.ok ? p11.importLog?.summary ?? null : null);
           setNotificationLogs(r12.ok && p12.ok && Array.isArray(p12.logs) ? p12.logs : []);
+          setManualBroadcastLogs(r13.ok && p13.ok && Array.isArray(p13.logs) ? p13.logs : []);
           setNotificationLogsTotalCount(r12.ok && p12.ok ? Number(p12.totalCount ?? p12.logs?.length ?? 0) : 0);
           setNotificationLogsPage(r12.ok && p12.ok ? Number(p12.page ?? 1) : 1);
           setNotificationLogsPageSize(r12.ok && p12.ok ? Number(p12.limit ?? notificationLogsPageSize) : notificationLogsPageSize);
@@ -1317,6 +1355,20 @@ export default function AdminInventoryManager({
     () => (!selectedStoreId ? inventoryUsers : inventoryUsers.filter((user) => String(user.storeId ?? '') === selectedStoreId)),
     [inventoryUsers, selectedStoreId]
   );
+  const telegramBroadcastRecipientsCount = useMemo(() => {
+    return inventoryUsers.filter((user) => {
+      if (!user.isActive || !user.userChatId) return false;
+      if (telegramBroadcastStoreId && String(user.storeId ?? '') !== telegramBroadcastStoreId) return false;
+      if (user.role === 'store_manager' && telegramBroadcastForStoreManager) return true;
+      if (user.role === 'manager' && telegramBroadcastForManager) return true;
+      return false;
+    }).length;
+  }, [
+    inventoryUsers,
+    telegramBroadcastForManager,
+    telegramBroadcastForStoreManager,
+    telegramBroadcastStoreId
+  ]);
   const [selectedInventoryUserId, setSelectedInventoryUserId] = useState<number | null>(null);
   const batchViewMeta = batchViewLabels[initialBatchView];
   const filteredBatches = useMemo(() => {
@@ -1732,6 +1784,57 @@ export default function AdminInventoryManager({
       setError(e instanceof Error ? e.message : 'Не вдалося запустити Telegram-сповіщення.');
     } finally {
       setIsRunningNotifications(false);
+    }
+  }
+
+  async function handleSendTelegramBroadcast() {
+    const recipientRoles = [
+      telegramBroadcastForStoreManager ? 'store_manager' : null,
+      telegramBroadcastForManager ? 'manager' : null
+    ].filter((value): value is 'store_manager' | 'manager' => value != null);
+
+    if (!telegramBroadcastMessage.trim()) {
+      setError('Введіть текст повідомлення для Telegram-розсилки.');
+      setSuccess('');
+      return;
+    }
+    if (recipientRoles.length === 0) {
+      setError('Оберіть хоча б одну роль отримувача для Telegram-розсилки.');
+      setSuccess('');
+      return;
+    }
+
+    setIsSendingTelegramBroadcast(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await fetch('/api/admin/inventory/telegram-broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storeId: telegramBroadcastStoreId,
+          title: telegramBroadcastTitle,
+          messageText: telegramBroadcastMessage,
+          recipientRoles
+        })
+      });
+      const payload = (await response.json()) as TelegramBroadcastPayload;
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Не вдалося надіслати Telegram-повідомлення.');
+      }
+
+      const failedCount = Number(payload.failedCount ?? 0);
+      setSuccess(
+        failedCount > 0
+          ? `Повідомлення надіслано ${payload.sentCount ?? 0} отримувачам. Не доставлено: ${failedCount}.`
+          : `Повідомлення надіслано ${payload.sentCount ?? 0} отримувачам.`
+      );
+      setTelegramBroadcastMessage('');
+      await loadManualBroadcastLogs();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не вдалося надіслати Telegram-повідомлення.');
+    } finally {
+      setIsSendingTelegramBroadcast(false);
     }
   }
 
@@ -4115,6 +4218,134 @@ export default function AdminInventoryManager({
               <span className="font-mono"> x-inventory-notify-secret</span> = webhook secret.
             </p>
             <p className="mt-1">Кнопка нижче запускає перевірку вручну з адмінки.</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Ручне повідомлення в Telegram</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Можна надіслати оновлення керівнику магазину та менеджеру по одному магазину або всім магазинам.
+                </p>
+              </div>
+              <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                Отримувачів: {telegramBroadcastRecipientsCount}
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <select
+                value={telegramBroadcastStoreId}
+                onChange={(e) => setTelegramBroadcastStoreId(e.target.value)}
+                className="rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+              >
+                <option value="">Усі магазини</option>
+                {stores
+                  .filter((store) => store.isActive)
+                  .map((store) => (
+                    <option key={store.id} value={store.id}>
+                      {store.storeCode ? `${store.storeCode} • ` : ''}
+                      {store.city || store.name || 'Магазин'}
+                      {store.addressLine ? ` • ${store.addressLine}` : ''}
+                    </option>
+                  ))}
+              </select>
+              <input
+                value={telegramBroadcastTitle}
+                onChange={(e) => setTelegramBroadcastTitle(e.target.value)}
+                placeholder="Заголовок повідомлення"
+                className="rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-800">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={telegramBroadcastForStoreManager}
+                  onChange={(e) => setTelegramBroadcastForStoreManager(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                Керівник магазину
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={telegramBroadcastForManager}
+                  onChange={(e) => setTelegramBroadcastForManager(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                Менеджер
+              </label>
+            </div>
+            <textarea
+              value={telegramBroadcastMessage}
+              onChange={(e) => setTelegramBroadcastMessage(e.target.value)}
+              rows={5}
+              placeholder="Опишіть оновлення або службове повідомлення для працівників."
+              className="mt-3 w-full rounded-2xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
+            />
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                Повідомлення підуть лише активним користувачам, у яких заповнений Telegram chat id.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSendTelegramBroadcast();
+                }}
+                disabled={
+                  isSendingTelegramBroadcast ||
+                  !telegramBroadcastMessage.trim() ||
+                  (!telegramBroadcastForStoreManager && !telegramBroadcastForManager) ||
+                  telegramBroadcastRecipientsCount === 0
+                }
+                className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {isSendingTelegramBroadcast ? 'Надсилання...' : 'Надіслати повідомлення'}
+              </button>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Історія ручних розсилок</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Тут видно останні службові повідомлення, які ви відправляли через web-інтерфейс.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void loadManualBroadcastLogs();
+                }}
+                disabled={isLoadingManualBroadcastLogs}
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+              >
+                {isLoadingManualBroadcastLogs ? 'Оновлення...' : 'Оновити історію'}
+              </button>
+            </div>
+            {manualBroadcastLogs.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {manualBroadcastLogs.map((log) => (
+                  <div key={log.id} className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{log.recipientName || 'Отримувача не визначено'}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {log.storeLabel || 'Усі магазини'} • {formatInventoryUserRole(log.recipientName ? (inventoryUsers.find((user) => user.id === log.userId)?.role ?? 'staff') : 'staff')}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                        {formatDate(log.sentAt)}
+                      </span>
+                    </div>
+                    <p className="mt-3 whitespace-pre-wrap text-slate-800">{log.messageText || 'Текст повідомлення відсутній.'}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-500">
+                {isLoadingManualBroadcastLogs ? 'Завантаження історії...' : 'Ще немає жодної ручної Telegram-розсилки.'}
+              </p>
+            )}
           </div>
           {notificationsDebug.length > 0 ? (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">

@@ -166,6 +166,7 @@ export async function listInventoryNotificationLogsFromDb(options?: {
   storeId?: string | number | null;
   dateFrom?: string | null;
   dateTo?: string | null;
+  notificationType?: string | null;
   limit?: number;
   page?: number;
 }) {
@@ -173,6 +174,7 @@ export async function listInventoryNotificationLogsFromDb(options?: {
   const storeId = Number(options?.storeId ?? 0);
   const dateFrom = String(options?.dateFrom ?? '').trim();
   const dateTo = String(options?.dateTo ?? '').trim();
+  const notificationType = String(options?.notificationType ?? '').trim();
   const limit = Math.min(Math.max(Number(options?.limit ?? 50), 1), 200);
   const page = Math.max(Number(options?.page ?? 1) || 1, 1);
   const offset = (page - 1) * limit;
@@ -191,6 +193,10 @@ export async function listInventoryNotificationLogsFromDb(options?: {
   if (dateTo) {
     whereClauses.push('DATE(nl.sent_at) <= ?');
     params.push(dateTo);
+  }
+  if (notificationType) {
+    whereClauses.push('nl.notification_type = ?');
+    params.push(notificationType);
   }
 
   const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
