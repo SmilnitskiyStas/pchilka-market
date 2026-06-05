@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 import {
@@ -275,6 +276,11 @@ type InventoryNotificationLogsPayload = {
   totalCount?: number;
   page?: number;
   limit?: number;
+  error?: string;
+};
+type InventoryNotificationLogDetailPayload = {
+  ok?: boolean;
+  log?: InventoryNotificationLogView | null;
   error?: string;
 };
 type InventoryExpiryTaskView = {
@@ -771,13 +777,15 @@ function getBatchUrgencyMeta(batch: InventoryBatchRecord) {
 type AdminInventoryManagerProps = {
   initialSubsection?: InventorySubsectionId;
   initialBatchView?: InventoryBatchView;
+  initialNotificationLogId?: number | null;
 };
 
 type BatchesSortMode = 'date-desc' | 'date-asc' | 'alpha-asc' | 'alpha-desc';
 
 export default function AdminInventoryManager({
   initialSubsection = 'overview',
-  initialBatchView = 'all'
+  initialBatchView = 'all',
+  initialNotificationLogId = null
 }: AdminInventoryManagerProps) {
   const [readiness, setReadiness] = useState<InventoryReadiness | null>(null);
   const [telegramSettings, setTelegramSettings] = useState<InventoryTelegramSettings>(defaultInventoryTelegramSettings);
@@ -819,6 +827,7 @@ export default function AdminInventoryManager({
   const [notificationLogs, setNotificationLogs] = useState<InventoryNotificationLogView[]>([]);
   const [manualBroadcastLogs, setManualBroadcastLogs] = useState<InventoryNotificationLogView[]>([]);
   const [selectedNotificationLog, setSelectedNotificationLog] = useState<InventoryNotificationLogView | null>(null);
+  const [isLoadingSelectedNotificationLog, setIsLoadingSelectedNotificationLog] = useState(false);
   const [isLoadingNotificationLogs, setIsLoadingNotificationLogs] = useState(false);
   const [isLoadingManualBroadcastLogs, setIsLoadingManualBroadcastLogs] = useState(false);
   const [notificationLogsPage, setNotificationLogsPage] = useState(1);
@@ -1092,6 +1101,29 @@ export default function AdminInventoryManager({
     }
   }
 
+  async function loadSelectedNotificationLog(notificationLogId: number) {
+    if (!Number.isFinite(notificationLogId) || notificationLogId <= 0) {
+      setSelectedNotificationLog(null);
+      return;
+    }
+
+    setIsLoadingSelectedNotificationLog(true);
+    try {
+      const response = await fetch(`/api/admin/inventory/notifications/${notificationLogId}`, { cache: 'no-store' });
+      const payload = (await response.json()) as InventoryNotificationLogDetailPayload;
+      if (!response.ok || !payload.ok || !payload.log) {
+        throw new Error(payload.error || 'Не вдалося завантажити повідомлення.');
+      }
+
+      setSelectedNotificationLog(payload.log);
+    } catch (loadError) {
+      setSelectedNotificationLog(null);
+      setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити повідомлення.');
+    } finally {
+      setIsLoadingSelectedNotificationLog(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -1179,6 +1211,16 @@ export default function AdminInventoryManager({
     if (activeSubsection !== 'notifications') return;
     void loadNotificationLogs();
   }, [activeSubsection, notificationsStoreFilter, notificationsDateFrom, notificationsDateTo, notificationLogsPage, notificationLogsPageSize]);
+
+  useEffect(() => {
+    if (activeSubsection !== 'notifications') return;
+    if (!initialNotificationLogId) {
+      setSelectedNotificationLog(null);
+      return;
+    }
+
+    void loadSelectedNotificationLog(initialNotificationLogId);
+  }, [activeSubsection, initialNotificationLogId]);
 
   useEffect(() => {
     void loadProducts();
@@ -4150,13 +4192,12 @@ export default function AdminInventoryManager({
                         ) : log.linkedTasksCount > 0 ? (
                           <p className="mt-2 text-xs text-slate-500">Ще ніхто не взяв у роботу</p>
                         ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setSelectedNotificationLog(log)}
-                          className="mt-2 text-xs font-semibold text-brand transition hover:opacity-80"
+                        <Link
+                          href={`/admin/inventory/notifications/${log.id}`}
+                          className="mt-2 inline-flex text-xs font-semibold text-brand transition hover:opacity-80"
                         >
                           Переглянути повний текст
-                        </button>
+                        </Link>
                       </div>
                       <div>
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
@@ -4466,80 +4507,89 @@ export default function AdminInventoryManager({
         )}
       </section>
       ) : null}
-      {selectedNotificationLog ? (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 px-4 py-6">
-        <div className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white shadow-2xl">
-          <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
+      {initialNotificationLogId ? (
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Повідомлення</p>
+            <h2 className="mt-1 text-xl font-semibold text-slate-900">Деталі Telegram-сповіщення</h2>
+            <p className="mt-1 text-sm text-slate-600">Тут можна спокійно переглянути весь текст, список задач і виконавців.</p>
+          </div>
+          <Link
+            href="/admin/inventory/notifications"
+            className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Повернутися до списку
+          </Link>
+        </div>
+        {isLoadingSelectedNotificationLog ? (
+          <div className="py-8 text-sm text-slate-600">Завантаження повідомлення...</div>
+        ) : selectedNotificationLog ? (
+          <div className="space-y-6 py-5">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Повідомлення</p>
-              <h3 className="mt-1 text-lg font-semibold text-slate-900">
+              <h3 className="text-lg font-semibold text-slate-900">
                 {selectedNotificationLog.productName || 'Службове сповіщення'}
               </h3>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-sm text-slate-500">
                 {selectedNotificationLog.storeLabel || '—'} • {selectedNotificationLog.recipientName || 'Отримувача не визначено'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setSelectedNotificationLog(null)}
-              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              Закрити
-            </button>
-          </div>
-          <div className="grid gap-4 px-5 py-5 md:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-              <p><span className="font-semibold text-slate-900">Тип:</span> {formatNotificationLogType(selectedNotificationLog.notificationType)}</p>
-              <p className="mt-1"><span className="font-semibold text-slate-900">Надіслано:</span> {formatDate(selectedNotificationLog.sentAt)}</p>
-              <p className="mt-1"><span className="font-semibold text-slate-900">Статус:</span> {formatNotificationLogStatus(selectedNotificationLog.status)}</p>
-              <p className="mt-1"><span className="font-semibold text-slate-900">Відкрито:</span> {selectedNotificationLog.openedAt ? formatDate(selectedNotificationLog.openedAt) : 'Не відкрито'}</p>
-              <p className="mt-1"><span className="font-semibold text-slate-900">Хто відкрив:</span> {selectedNotificationLog.openedByName || '—'}</p>
-              {selectedNotificationLog.linkedTasksCount > 0 ? (
-                <>
-                  <p className="mt-1"><span className="font-semibold text-slate-900">Задач у повідомленні:</span> {selectedNotificationLog.linkedTasksCount}</p>
-                  <p className="mt-1"><span className="font-semibold text-slate-900">Взято в роботу:</span> {selectedNotificationLog.takenTasksCount}</p>
-                  <p className="mt-1"><span className="font-semibold text-slate-900">Завершено:</span> {selectedNotificationLog.completedTasksCount}</p>
-                  <p className="mt-1"><span className="font-semibold text-slate-900">Хто взяв:</span> {selectedNotificationLog.assignedUsersSummary || 'Ще ніхто не взяв у роботу'}</p>
-                </>
-              ) : null}
-              {selectedNotificationLog.article ? <p className="mt-1"><span className="font-semibold text-slate-900">Артикул:</span> {selectedNotificationLog.article}</p> : null}
-              {selectedNotificationLog.batchCode ? <p className="mt-1"><span className="font-semibold text-slate-900">Партія:</span> {selectedNotificationLog.batchCode}</p> : null}
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="text-sm font-semibold text-slate-900">Повний текст повідомлення</p>
-              <pre className="mt-3 whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
-                {selectedNotificationLog.messageText}
-              </pre>
-            </div>
-          </div>
-          {selectedNotificationLog.linkedTasks.length > 0 ? (
-            <div className="border-t border-slate-200 px-5 py-5">
-              <p className="text-sm font-semibold text-slate-900">Задачі з цього повідомлення</p>
-              <div className="mt-3 space-y-3">
-                {selectedNotificationLog.linkedTasks.map((task) => (
-                  <div key={`${selectedNotificationLog.id}-${task.taskId}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-slate-900">{task.productName || 'Товар без назви'}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          Задача #{task.taskId}
-                          {task.batchCode ? ` • партія ${task.batchCode}` : ''}
-                        </p>
-                      </div>
-                      <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                        {formatExpiryTaskStatus(task.taskStatus)}
-                      </span>
-                    </div>
-                    <p className="mt-3 text-xs text-slate-600">
-                      Виконавець: {task.assignedUserName || 'Ще не призначено'}
-                    </p>
-                  </div>
-                ))}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                <p><span className="font-semibold text-slate-900">Тип:</span> {formatNotificationLogType(selectedNotificationLog.notificationType)}</p>
+                <p className="mt-1"><span className="font-semibold text-slate-900">Надіслано:</span> {formatDate(selectedNotificationLog.sentAt)}</p>
+                <p className="mt-1"><span className="font-semibold text-slate-900">Статус:</span> {formatNotificationLogStatus(selectedNotificationLog.status)}</p>
+                <p className="mt-1"><span className="font-semibold text-slate-900">Відкрито:</span> {selectedNotificationLog.openedAt ? formatDate(selectedNotificationLog.openedAt) : 'Не відкрито'}</p>
+                <p className="mt-1"><span className="font-semibold text-slate-900">Хто відкрив:</span> {selectedNotificationLog.openedByName || '—'}</p>
+                {selectedNotificationLog.linkedTasksCount > 0 ? (
+                  <>
+                    <p className="mt-1"><span className="font-semibold text-slate-900">Задач у повідомленні:</span> {selectedNotificationLog.linkedTasksCount}</p>
+                    <p className="mt-1"><span className="font-semibold text-slate-900">Взято в роботу:</span> {selectedNotificationLog.takenTasksCount}</p>
+                    <p className="mt-1"><span className="font-semibold text-slate-900">Завершено:</span> {selectedNotificationLog.completedTasksCount}</p>
+                    <p className="mt-1"><span className="font-semibold text-slate-900">Хто взяв:</span> {selectedNotificationLog.assignedUsersSummary || 'Ще ніхто не взяв у роботу'}</p>
+                  </>
+                ) : null}
+                {selectedNotificationLog.article ? <p className="mt-1"><span className="font-semibold text-slate-900">Артикул:</span> {selectedNotificationLog.article}</p> : null}
+                {selectedNotificationLog.batchCode ? <p className="mt-1"><span className="font-semibold text-slate-900">Партія:</span> {selectedNotificationLog.batchCode}</p> : null}
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-sm font-semibold text-slate-900">Повний текст повідомлення</p>
+                <pre className="mt-3 whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
+                  {selectedNotificationLog.messageText}
+                </pre>
               </div>
             </div>
-          ) : null}
-        </div>
-      </div>
+            {selectedNotificationLog.linkedTasks.length > 0 ? (
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Задачі з цього повідомлення</p>
+                <div className="mt-3 space-y-3">
+                  {selectedNotificationLog.linkedTasks.map((task) => (
+                    <div key={`${selectedNotificationLog.id}-${task.taskId}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-900">{task.productName || 'Товар без назви'}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Задача #{task.taskId}
+                            {task.batchCode ? ` • партія ${task.batchCode}` : ''}
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                          {formatExpiryTaskStatus(task.taskStatus)}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-xs text-slate-600">
+                        Виконавець: {task.assignedUserName || 'Ще не призначено'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="py-8 text-sm text-slate-600">Повідомлення не знайдено або вже недоступне.</div>
+        )}
+      </section>
       ) : null}
       {intakeDuplicateBatch ? (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 px-4">
