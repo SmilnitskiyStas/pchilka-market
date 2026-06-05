@@ -39,6 +39,7 @@ export const INVENTORY_REQUIRED_PRODUCT_BATCH_COLUMNS = [
   'checked_at',
   'action_taken',
   'action_note',
+  'checked_followup_action',
   'responsible_user_id',
   'discussion_required',
   'discussion_note',

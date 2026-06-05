@@ -17,6 +17,7 @@ export type InventoryBatchRecord = {
   checkStatus: string;
   actionTaken: string;
   actionNote: string;
+  checkedFollowupAction: string;
   responsibleUserId: string;
   responsibleUserName: string;
   createdByUserId: string;

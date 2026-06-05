@@ -24,7 +24,7 @@ function signPayload(payload: string, secret: string): string {
 export function createInventoryRegistrationToken(
   payloadInput: Omit<InventoryRegistrationTokenPayload, 'issuedAt' | 'expiresAt'>,
   secret: string,
-  ttlMs = 1000 * 60 * 30
+  ttlMs = 1000 * 60 * 60 * 24 * 7
 ): string {
   const payload: InventoryRegistrationTokenPayload = {
     ...payloadInput,

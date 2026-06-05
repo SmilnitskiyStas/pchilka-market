@@ -90,6 +90,9 @@ async function ensureProductBatchesWorkflowColumns() {
   if (!columns.has('discussion_required')) {
     statements.push('ALTER TABLE product_batches ADD COLUMN discussion_required TINYINT(1) NOT NULL DEFAULT 0 AFTER action_note');
   }
+  if (!columns.has('checked_followup_action')) {
+    statements.push('ALTER TABLE product_batches ADD COLUMN checked_followup_action VARCHAR(40) NULL AFTER action_note');
+  }
   if (!columns.has('responsible_user_id')) {
     statements.push('ALTER TABLE product_batches ADD COLUMN responsible_user_id BIGINT UNSIGNED NULL AFTER action_note');
   }
@@ -183,6 +186,11 @@ async function ensureProductBatchesWorkflowColumns() {
       'ALTER TABLE product_batches ADD KEY idx_product_batches_admin_decision_by_user (admin_decision_by_user_id)'
     );
   }
+  if (!refreshedIndexes.has('idx_product_batches_checked_followup_action')) {
+    await pool.query(
+      'ALTER TABLE product_batches ADD KEY idx_product_batches_checked_followup_action (checked_followup_action)'
+    );
+  }
 
   if (!refreshedConstraints.has('fk_product_batches_discussion_requested_by_user')) {
     await pool.query(
@@ -265,6 +273,7 @@ async function ensureBatchChecksTable() {
       item_condition VARCHAR(50) NULL,
       issue_reason VARCHAR(80) NULL,
       note TEXT NULL,
+      checked_followup_action VARCHAR(40) NULL,
       photo_url VARCHAR(500) NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -295,6 +304,9 @@ async function ensureBatchChecksTable() {
   const columns = await listTableColumns('batch_checks');
   if (!columns.has('task_id')) {
     await pool.query('ALTER TABLE batch_checks ADD COLUMN task_id BIGINT UNSIGNED NULL AFTER batch_id');
+  }
+  if (!columns.has('checked_followup_action')) {
+    await pool.query('ALTER TABLE batch_checks ADD COLUMN checked_followup_action VARCHAR(40) NULL AFTER note');
   }
 
   const indexes = await listTableIndexes('batch_checks');

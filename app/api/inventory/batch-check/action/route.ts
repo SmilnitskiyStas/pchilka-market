@@ -11,6 +11,8 @@ import { findInventoryUserByChatId } from '@/lib/inventory-users-repository';
 
 export const runtime = 'nodejs';
 
+type CheckedFollowupAction = 'left_on_shelf' | 'removed_from_shelf' | 'other';
+
 type ActionPayload = {
   token?: string;
   batchId?: string;
@@ -20,20 +22,47 @@ type ActionPayload = {
   itemCondition?: string;
   issueReason?: string;
   note?: string;
+  checkedFollowupAction?: CheckedFollowupAction;
   photoUrl?: string;
 };
 
 const ALLOWED_ACTIONS = new Set<ActionPayload['action']>(['checked', 'writeoff', 'discussion_required']);
+const ALLOWED_FOLLOWUP_ACTIONS = new Set<CheckedFollowupAction>(['left_on_shelf', 'removed_from_shelf', 'other']);
+
+function normalizeCheckedFollowupAction(value: string): CheckedFollowupAction | null {
+  if (!ALLOWED_FOLLOWUP_ACTIONS.has(value as CheckedFollowupAction)) {
+    return null;
+  }
+
+  return value as CheckedFollowupAction;
+}
+
+function formatCheckedFollowupAction(value: CheckedFollowupAction | null) {
+  switch (value) {
+    case 'left_on_shelf':
+      return 'залишив на полиці';
+    case 'removed_from_shelf':
+      return 'прибрав з полиці';
+    case 'other':
+      return 'інша дія';
+    default:
+      return '';
+  }
+}
 
 function buildSnapshotNote(input: {
   countedQuantity?: number | null;
   itemCondition?: string;
   issueReason?: string;
   note?: string;
+  checkedFollowupAction?: CheckedFollowupAction | null;
 }) {
   const segments = [
     input.countedQuantity != null ? `Факт. кількість: ${input.countedQuantity}` : '',
     input.itemCondition ? `Стан: ${input.itemCondition}` : '',
+    input.checkedFollowupAction
+      ? `Дія після перевірки: ${formatCheckedFollowupAction(input.checkedFollowupAction)}`
+      : '',
     input.issueReason ? `Причина: ${input.issueReason}` : '',
     input.note ? `Коментар: ${input.note}` : ''
   ].filter(Boolean);
@@ -46,12 +75,20 @@ function validatePayload(input: {
   countedQuantity: number | null;
   itemCondition: string;
   issueReason: string;
+  checkedFollowupAction: CheckedFollowupAction | null;
+  note: string;
 }) {
   if (input.countedQuantity == null || !Number.isFinite(input.countedQuantity) || input.countedQuantity < 0) {
     throw new Error('Вкажіть фактичну кількість товару.');
   }
   if (!input.itemCondition) {
     throw new Error('Вкажіть стан товару.');
+  }
+  if (input.action === 'checked' && !input.checkedFollowupAction) {
+    throw new Error('Оберіть, що ви зробили з товаром після перевірки.');
+  }
+  if (input.action === 'checked' && input.checkedFollowupAction === 'other' && !input.note) {
+    throw new Error('Для варіанту "Інша дія" додайте коментар.');
   }
   if ((input.action === 'writeoff' || input.action === 'discussion_required') && !input.issueReason) {
     throw new Error('Для цієї дії потрібно вказати причину проблеми.');
@@ -69,6 +106,7 @@ export async function POST(request: Request) {
     const itemCondition = String(body.itemCondition ?? '').trim();
     const issueReason = String(body.issueReason ?? '').trim();
     const photoUrl = String(body.photoUrl ?? '').trim();
+    const checkedFollowupAction = normalizeCheckedFollowupAction(String(body.checkedFollowupAction ?? '').trim());
     const countedQuantityRaw = body.countedQuantity;
     const countedQuantity =
       countedQuantityRaw == null
@@ -78,12 +116,15 @@ export async function POST(request: Request) {
     if (!ALLOWED_ACTIONS.has(action)) {
       return NextResponse.json({ ok: false, error: 'Некоректна дія для партії.' }, { status: 400 });
     }
+
     const safeAction = action as 'checked' | 'writeoff' | 'discussion_required';
     validatePayload({
       action: safeAction,
       countedQuantity,
       itemCondition,
-      issueReason
+      issueReason,
+      checkedFollowupAction,
+      note
     });
 
     const settings = await getInventoryTelegramSettingsFromDb();
@@ -116,7 +157,8 @@ export async function POST(request: Request) {
       countedQuantity,
       itemCondition,
       issueReason,
-      note
+      note,
+      checkedFollowupAction
     });
 
     const batch = await updateInventoryBatchCheckActionInDb({
@@ -124,7 +166,8 @@ export async function POST(request: Request) {
       userId: user.id,
       storeId: user.storeId,
       action: safeAction,
-      note: snapshotNote
+      note: snapshotNote,
+      checkedFollowupAction
     });
 
     await createInventoryBatchCheckInDb({
@@ -138,6 +181,7 @@ export async function POST(request: Request) {
       itemCondition,
       issueReason,
       note,
+      checkedFollowupAction,
       photoUrl
     });
 
@@ -166,7 +210,7 @@ export async function POST(request: Request) {
       });
     }
 
-    if (taskId) {
+    if (taskId && (safeAction !== 'checked' || checkedFollowupAction === 'removed_from_shelf')) {
       const taskOutcome =
         safeAction === 'writeoff'
           ? 'writeoff_required'

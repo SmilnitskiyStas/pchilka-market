@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { type InventoryUserRole } from '@/lib/inventory-user-roles';
 
@@ -25,6 +25,7 @@ type BatchView = {
   checkStatus: string;
   actionTaken: string;
   actionNote: string;
+  checkedFollowupAction: string;
   discussionRequired?: boolean;
 };
 
@@ -36,6 +37,7 @@ type BatchCheckView = {
   itemCondition: string;
   issueReason: string;
   note: string;
+  checkedFollowupAction: string;
   photoUrl: string;
   createdAt: string;
 };
@@ -49,10 +51,14 @@ type Payload = {
 };
 
 type BatchAction = 'checked' | 'writeoff' | 'discussion_required';
+type CheckedFollowupAction = 'left_on_shelf' | 'removed_from_shelf' | 'other';
+
 type BatchCheckFieldErrors = {
   countedQuantity?: string;
   itemCondition?: string;
   issueReason?: string;
+  checkedFollowupAction?: string;
+  note?: string;
 };
 
 const ITEM_CONDITIONS = [
@@ -70,6 +76,12 @@ const ISSUE_REASONS = [
   { value: 'pricing_issue', label: 'Проблема з ціною' },
   { value: 'other', label: 'Інше' }
 ];
+
+const CHECKED_FOLLOWUP_ACTIONS = [
+  { value: 'left_on_shelf', label: 'Залишив на полиці' },
+  { value: 'removed_from_shelf', label: 'Прибрав з полиці' },
+  { value: 'other', label: 'Інша дія' }
+] as const satisfies ReadonlyArray<{ value: CheckedFollowupAction; label: string }>;
 
 function daysLeftUntil(value: string) {
   const target = new Date(`${value}T00:00:00`);
@@ -117,11 +129,17 @@ function getIssueReasonLabel(value: string) {
   return ISSUE_REASONS.find((item) => item.value === value)?.label || value || '—';
 }
 
+function getCheckedFollowupActionLabel(value: string) {
+  return CHECKED_FOLLOWUP_ACTIONS.find((item) => item.value === value)?.label || value || '—';
+}
+
 function getActionRequirements(action: BatchAction | null) {
   return {
     requiresCountedQuantity: action != null,
     requiresItemCondition: action != null,
-    requiresIssueReason: action === 'writeoff' || action === 'discussion_required'
+    requiresIssueReason: action === 'writeoff' || action === 'discussion_required',
+    requiresCheckedFollowupAction: action === 'checked',
+    requiresNote: action === 'checked'
   };
 }
 
@@ -131,6 +149,8 @@ function getMissingFieldLabels(errors: BatchCheckFieldErrors) {
   if (errors.countedQuantity) labels.push('фактичну кількість');
   if (errors.itemCondition) labels.push('стан товару');
   if (errors.issueReason) labels.push('причину проблеми');
+  if (errors.checkedFollowupAction) labels.push('дію після перевірки');
+  if (errors.note) labels.push('коментар');
 
   return labels;
 }
@@ -145,6 +165,7 @@ export default function InventoryBatchCheckPage() {
   const [countedQuantity, setCountedQuantity] = useState('');
   const [itemCondition, setItemCondition] = useState('ok');
   const [issueReason, setIssueReason] = useState('');
+  const [checkedFollowupAction, setCheckedFollowupAction] = useState<CheckedFollowupAction | ''>('');
   const [actionNote, setActionNote] = useState('');
   const [selectedAction, setSelectedAction] = useState<BatchAction | null>(null);
   const [fieldErrors, setFieldErrors] = useState<BatchCheckFieldErrors>({});
@@ -156,6 +177,37 @@ export default function InventoryBatchCheckPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  async function loadBatchContext(nextToken: string, nextBatchId: string, nextTaskId: string) {
+    setIsLoading(true);
+    try {
+      const response = await fetch(
+        `/api/inventory/batch-check/context?token=${encodeURIComponent(nextToken)}&batchId=${encodeURIComponent(nextBatchId)}&taskId=${encodeURIComponent(nextTaskId)}`,
+        { cache: 'no-store' }
+      );
+      const payload = (await response.json()) as Payload;
+      if (!response.ok || !payload.ok || !payload.batch || !payload.user) {
+        throw new Error(payload.error || 'Не вдалося завантажити партію для перевірки.');
+      }
+
+      setRole(payload.user.role);
+      setBatch(payload.batch);
+      setChecks(Array.isArray(payload.checks) ? payload.checks : []);
+      setCountedQuantity(String(payload.batch.quantityCurrent ?? payload.batch.quantity ?? ''));
+      setCheckedFollowupAction(
+        payload.batch.checkedFollowupAction === 'left_on_shelf' ||
+          payload.batch.checkedFollowupAction === 'removed_from_shelf' ||
+          payload.batch.checkedFollowupAction === 'other'
+          ? payload.batch.checkedFollowupAction
+          : ''
+      );
+      setError('');
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити партію для перевірки.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   useEffect(() => {
     const url = new URL(window.location.href);
     const nextToken = url.searchParams.get('token') ?? '';
@@ -165,31 +217,7 @@ export default function InventoryBatchCheckPage() {
     setBatchId(nextBatchId);
     setTaskId(nextTaskId);
 
-    async function load() {
-      setIsLoading(true);
-      try {
-        const response = await fetch(
-          `/api/inventory/batch-check/context?token=${encodeURIComponent(nextToken)}&batchId=${encodeURIComponent(nextBatchId)}&taskId=${encodeURIComponent(nextTaskId)}`,
-          { cache: 'no-store' }
-        );
-        const payload = (await response.json()) as Payload;
-        if (!response.ok || !payload.ok || !payload.batch || !payload.user) {
-          throw new Error(payload.error || 'Не вдалося завантажити партію для перевірки.');
-        }
-
-        setRole(payload.user.role);
-        setBatch(payload.batch);
-        setChecks(Array.isArray(payload.checks) ? payload.checks : []);
-        setCountedQuantity(String(payload.batch.quantityCurrent ?? payload.batch.quantity ?? ''));
-        setError('');
-      } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити партію для перевірки.');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    void load();
+    void loadBatchContext(nextToken, nextBatchId, nextTaskId);
   }, []);
 
   async function uploadPhotoIfNeeded() {
@@ -226,22 +254,30 @@ export default function InventoryBatchCheckPage() {
 
   function validateForm(action: BatchAction): BatchCheckFieldErrors {
     const nextErrors: BatchCheckFieldErrors = {};
-    const { requiresCountedQuantity, requiresItemCondition, requiresIssueReason } = getActionRequirements(action);
+    const requirements = getActionRequirements(action);
     const parsedCountedQuantity = countedQuantity.trim() === '' ? null : Number(countedQuantity);
 
     if (
-      requiresCountedQuantity &&
+      requirements.requiresCountedQuantity &&
       (parsedCountedQuantity == null || !Number.isFinite(parsedCountedQuantity) || parsedCountedQuantity < 0)
     ) {
       nextErrors.countedQuantity = 'Вкажіть фактичну кількість товару.';
     }
 
-    if (requiresItemCondition && !itemCondition.trim()) {
+    if (requirements.requiresItemCondition && !itemCondition.trim()) {
       nextErrors.itemCondition = 'Вкажіть стан товару.';
     }
 
-    if (requiresIssueReason && !issueReason.trim()) {
+    if (requirements.requiresIssueReason && !issueReason.trim()) {
       nextErrors.issueReason = 'Для цієї дії потрібно вказати причину проблеми.';
+    }
+
+    if (requirements.requiresCheckedFollowupAction && !checkedFollowupAction) {
+      nextErrors.checkedFollowupAction = 'Оберіть, що ви зробили з товаром після перевірки.';
+    }
+
+    if (requirements.requiresNote && checkedFollowupAction === 'other' && !actionNote.trim()) {
+      nextErrors.note = 'Для варіанту "Інша дія" додайте коментар.';
     }
 
     return nextErrors;
@@ -253,6 +289,7 @@ export default function InventoryBatchCheckPage() {
     setSelectedAction(action);
     const nextErrors = validateForm(action);
     setFieldErrors(nextErrors);
+
     if (Object.keys(nextErrors).length > 0) {
       setError('Заповніть обов’язкові поля, які підсвічені нижче.');
       setSuccess('');
@@ -262,6 +299,7 @@ export default function InventoryBatchCheckPage() {
     setIsSaving(true);
     setError('');
     setSuccess('');
+
     try {
       const uploadedPhotoUrl = await uploadPhotoIfNeeded();
       const parsedCountedQuantity = countedQuantity.trim() === '' ? null : Number(countedQuantity);
@@ -277,10 +315,12 @@ export default function InventoryBatchCheckPage() {
           countedQuantity: parsedCountedQuantity,
           itemCondition,
           issueReason,
+          checkedFollowupAction: action === 'checked' ? checkedFollowupAction : undefined,
           note: actionNote,
           photoUrl: uploadedPhotoUrl
         })
       });
+
       const payload = (await response.json()) as Payload;
       if (!response.ok || !payload.ok || !payload.batch) {
         throw new Error(payload.error || 'Не вдалося зберегти перевірку партії.');
@@ -290,16 +330,8 @@ export default function InventoryBatchCheckPage() {
       setSuccess(`Перевірку збережено: ${getActionLabel(action)}.`);
       setFieldErrors({});
       setPhotoFile(null);
-      setActionNote('');
 
-      const refreshResponse = await fetch(
-        `/api/inventory/batch-check/context?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(batchId)}&taskId=${encodeURIComponent(taskId)}`,
-        { cache: 'no-store' }
-      );
-      const refreshPayload = (await refreshResponse.json()) as Payload;
-      if (refreshResponse.ok && refreshPayload.ok) {
-        setChecks(Array.isArray(refreshPayload.checks) ? refreshPayload.checks : []);
-      }
+      await loadBatchContext(token, batchId, taskId);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Не вдалося зберегти перевірку партії.');
     } finally {
@@ -310,8 +342,13 @@ export default function InventoryBatchCheckPage() {
   const daysLeft = batch ? daysLeftUntil(batch.expiryDate) : 0;
   const actionRequirements = getActionRequirements(selectedAction);
   const missingFieldLabels = getMissingFieldLabels(fieldErrors);
-  const writeoffMissingLabels = getMissingFieldLabels(validateForm('writeoff'));
-  const shouldShowWriteoffHint = selectedAction === 'writeoff' && writeoffMissingLabels.length > 0;
+  const writeoffErrors = useMemo(() => validateForm('writeoff'), [countedQuantity, itemCondition, issueReason]);
+  const writeoffMissingLabels = getMissingFieldLabels(writeoffErrors);
+  const checkedErrors = useMemo(
+    () => validateForm('checked'),
+    [countedQuantity, itemCondition, checkedFollowupAction, actionNote]
+  );
+  const checkedMissingLabels = getMissingFieldLabels(checkedErrors);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl items-start justify-center px-4 py-8 sm:px-6 lg:px-8">
@@ -319,12 +356,21 @@ export default function InventoryBatchCheckPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Batch Check</p>
         <h1 className="mt-2 text-2xl font-bold text-slate-900">Перевірка конкретної партії товару</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Працівник фіксує фактичну кількість, стан товару, причину проблеми, коментар і фото. Історія перевірок зберігається окремо, а у партії лишається поточний статус.
+          Працівник фіксує фактичну кількість, стан товару, дію після перевірки, причину проблеми,
+          коментар і за потреби фото.
         </p>
 
         {isLoading ? <p className="mt-4 text-sm text-slate-600">Завантаження...</p> : null}
-        {error ? <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p> : null}
-        {success ? <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{success}</p> : null}
+        {error ? (
+          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+            {error}
+          </p>
+        ) : null}
+        {success ? (
+          <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
+            {success}
+          </p>
+        ) : null}
 
         {!isLoading && batch ? (
           <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
@@ -366,19 +412,19 @@ export default function InventoryBatchCheckPage() {
                   <p className="mt-2 text-sm text-slate-700">Відповідальний: {batch.responsibleUserName || 'не призначено'}</p>
                   <p className="mt-1 text-sm text-slate-700">Статус перевірки: {getStatusLabel(batch.checkStatus || 'new')}</p>
                   <p className="mt-1 text-sm text-slate-700">Остання дія: {getStatusLabel(batch.actionTaken || batch.checkStatus || 'new')}</p>
+                  {batch.checkedFollowupAction ? (
+                    <p className="mt-1 text-sm text-slate-700">
+                      Дія після перевірки: {getCheckedFollowupActionLabel(batch.checkedFollowupAction)}
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-sm text-slate-700">Статус партії: {batch.batchStatus || 'active'}</p>
                   {batch.actionNote ? <p className="mt-1 text-sm text-slate-700">Останній snapshot: {batch.actionNote}</p> : null}
                 </div>
+
                 {missingFieldLabels.length > 0 && selectedAction ? (
                   <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                    <p className="font-semibold text-red-900">{'\u0429\u043e\u0431 \u0432\u0438\u043a\u043e\u043d\u0430\u0442\u0438 \u0434\u0456\u044e, \u0437\u0430\u043f\u043e\u0432\u043d\u0456\u0442\u044c:'}</p>
+                    <p className="font-semibold text-red-900">Щоб виконати дію, заповніть:</p>
                     <p className="mt-1">{missingFieldLabels.join(', ')}.</p>
-                  </div>
-                ) : null}
-                {shouldShowWriteoffHint ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                    <p className="font-semibold text-amber-900">{'\u0414\u043b\u044f \u0441\u043f\u0438\u0441\u0430\u043d\u043d\u044f \u043e\u0431\u043e\u0432\u0027\u044f\u0437\u043a\u043e\u0432\u043e:'}</p>
-                    <p className="mt-1">{writeoffMissingLabels.join(', ')}.</p>
                   </div>
                 ) : null}
               </div>
@@ -407,12 +453,29 @@ export default function InventoryBatchCheckPage() {
                           </span>
                         </div>
                         <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                          <p>Стан: <span className="font-semibold text-slate-900">{getConditionLabel(check.itemCondition)}</span></p>
-                          <p>Причина: <span className="font-semibold text-slate-900">{getIssueReasonLabel(check.issueReason)}</span></p>
+                          <p>
+                            Стан: <span className="font-semibold text-slate-900">{getConditionLabel(check.itemCondition)}</span>
+                          </p>
+                          <p>
+                            Причина: <span className="font-semibold text-slate-900">{getIssueReasonLabel(check.issueReason)}</span>
+                          </p>
+                          {check.checkedFollowupAction ? (
+                            <p className="sm:col-span-2">
+                              Дія після перевірки:{' '}
+                              <span className="font-semibold text-slate-900">
+                                {getCheckedFollowupActionLabel(check.checkedFollowupAction)}
+                              </span>
+                            </p>
+                          ) : null}
                         </div>
-                        {check.note ? <p className="mt-3 text-sm whitespace-pre-wrap text-slate-700">{check.note}</p> : null}
+                        {check.note ? <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{check.note}</p> : null}
                         {check.photoUrl ? (
-                          <a href={check.photoUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex rounded-full border border-brand px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/5">
+                          <a
+                            href={check.photoUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-3 inline-flex rounded-full border border-brand px-3 py-1.5 text-xs font-semibold text-brand hover:bg-brand/5"
+                          >
                             Відкрити фото
                           </a>
                         ) : null}
@@ -426,7 +489,8 @@ export default function InventoryBatchCheckPage() {
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <h2 className="text-lg font-semibold text-slate-900">Зафіксувати перевірку</h2>
               <p className="mt-1 text-sm text-slate-600">
-                Працівник вказує фактичну кількість, стан товару, причину проблеми, коментар і за потреби фото.
+                Для дії “Перевірив” обов’язково вкажіть, що зробили з товаром після перевірки.
+                Якщо товар залишили на полиці, система нагадає про нього повторно.
               </p>
 
               {selectedAction ? (
@@ -437,7 +501,9 @@ export default function InventoryBatchCheckPage() {
                     {[
                       actionRequirements.requiresCountedQuantity ? 'фактичну кількість' : '',
                       actionRequirements.requiresItemCondition ? 'стан товару' : '',
-                      actionRequirements.requiresIssueReason ? 'причину проблеми' : ''
+                      actionRequirements.requiresCheckedFollowupAction ? 'дію після перевірки' : '',
+                      actionRequirements.requiresIssueReason ? 'причину проблеми' : '',
+                      actionRequirements.requiresNote && checkedFollowupAction === 'other' ? 'коментар' : ''
                     ]
                       .filter(Boolean)
                       .join(', ')}
@@ -506,8 +572,42 @@ export default function InventoryBatchCheckPage() {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-semibold text-slate-900" htmlFor="checked-followup-action">
+                    Дія після перевірки
+                    {actionRequirements.requiresCheckedFollowupAction ? <span className="ml-1 text-red-600">*</span> : null}
+                  </label>
+                  <select
+                    id="checked-followup-action"
+                    value={checkedFollowupAction}
+                    onChange={(event) => {
+                      const value = event.target.value as CheckedFollowupAction | '';
+                      setCheckedFollowupAction(value);
+                      setFieldErrors((prev) => ({
+                        ...prev,
+                        checkedFollowupAction: undefined,
+                        note: value === 'other' ? prev.note : undefined
+                      }));
+                    }}
+                    className={`mt-1.5 w-full rounded-2xl border p-3 text-sm outline-none transition focus:border-brand ${
+                      fieldErrors.checkedFollowupAction ? 'border-red-300 bg-red-50' : 'border-slate-300'
+                    }`}
+                  >
+                    <option value="">Оберіть дію</option>
+                    {CHECKED_FOLLOWUP_ACTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {fieldErrors.checkedFollowupAction ? (
+                    <p className="mt-1.5 text-xs font-semibold text-red-700">{fieldErrors.checkedFollowupAction}</p>
+                  ) : null}
+                </div>
+
+                <div>
                   <label className="block text-sm font-semibold text-slate-900" htmlFor="issue-reason">
                     Причина проблеми
+                    {actionRequirements.requiresIssueReason ? <span className="ml-1 text-red-600">*</span> : null}
                   </label>
                   <select
                     id="issue-reason"
@@ -537,15 +637,26 @@ export default function InventoryBatchCheckPage() {
                 <div>
                   <label className="block text-sm font-semibold text-slate-900" htmlFor="batch-action-note">
                     Коментар
+                    {actionRequirements.requiresNote && checkedFollowupAction === 'other' ? (
+                      <span className="ml-1 text-red-600">*</span>
+                    ) : null}
                   </label>
                   <textarea
                     id="batch-action-note"
                     value={actionNote}
-                    onChange={(event) => setActionNote(event.target.value)}
+                    onChange={(event) => {
+                      setActionNote(event.target.value);
+                      if (fieldErrors.note) {
+                        setFieldErrors((prev) => ({ ...prev, note: undefined }));
+                      }
+                    }}
                     rows={4}
                     placeholder="Опишіть результат перевірки, якщо є деталі."
-                    className="mt-1.5 w-full rounded-2xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
+                    className={`mt-1.5 w-full rounded-2xl border p-3 text-sm outline-none transition focus:border-brand ${
+                      fieldErrors.note ? 'border-red-300 bg-red-50' : 'border-slate-300'
+                    }`}
                   />
+                  {fieldErrors.note ? <p className="mt-1.5 text-xs font-semibold text-red-700">{fieldErrors.note}</p> : null}
                 </div>
 
                 <div>
@@ -574,26 +685,34 @@ export default function InventoryBatchCheckPage() {
                       setSelectedAction('checked');
                       void handleBatchAction('checked');
                     }}
-	                    disabled={isSaving || isUploadingPhoto}
+                    disabled={isSaving || isUploadingPhoto || checkedMissingLabels.length > 0}
                     className="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:opacity-60"
                   >
                     {isSaving ? 'Збереження...' : 'Перевірив'}
                   </button>
+                  {checkedMissingLabels.length > 0 ? (
+                    <p className="text-xs font-semibold text-emerald-800">
+                      Щоб активувати «Перевірив», заповніть: {checkedMissingLabels.join(', ')}.
+                    </p>
+                  ) : null}
+
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedAction('writeoff');
                       void handleBatchAction('writeoff');
                     }}
-	                    disabled={isSaving || isUploadingPhoto || writeoffMissingLabels.length > 0}
-                    className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition disabled:opacity-60 ${
-                      shouldShowWriteoffHint
-                        ? 'border-red-300 bg-red-50 text-red-800 hover:bg-red-100'
-                        : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                    }`}
+                    disabled={isSaving || isUploadingPhoto || writeoffMissingLabels.length > 0}
+                    className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-60"
                   >
                     {isSaving ? 'Збереження...' : 'На списанні'}
                   </button>
+                  {writeoffMissingLabels.length > 0 ? (
+                    <p className="text-xs font-semibold text-amber-700">
+                      Щоб активувати «На списанні», заповніть: {writeoffMissingLabels.join(', ')}.
+                    </p>
+                  ) : null}
+
                   <button
                     type="button"
                     onClick={() => {
@@ -604,14 +723,8 @@ export default function InventoryBatchCheckPage() {
                     className="rounded-2xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-60"
                   >
                     {isSaving ? 'Збереження...' : 'Для обговорення'}
-	                  </button>
-	                </div>
-	                {writeoffMissingLabels.length > 0 ? (
-	                  <p className="text-xs font-semibold text-amber-700">
-	                    {'\u0429\u043e\u0431 \u0430\u043a\u0442\u0438\u0432\u0443\u0432\u0430\u0442\u0438 \u00ab\u041d\u0430 \u0441\u043f\u0438\u0441\u0430\u043d\u043d\u0456\u00bb, \u0437\u0430\u043f\u043e\u0432\u043d\u0456\u0442\u044c: '}
-	                    {writeoffMissingLabels.join(', ')}.
-	                  </p>
-	                ) : null}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

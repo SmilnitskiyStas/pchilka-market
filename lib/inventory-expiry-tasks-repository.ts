@@ -104,8 +104,16 @@ function deriveRiskLevel(daysLeft: number) {
   return 'low';
 }
 
+function shouldKeepExpiryTaskActive(batch: InventoryBatchRecord) {
+  return (
+    batch.checkStatus === 'checked' &&
+    (batch.checkedFollowupAction === 'left_on_shelf' || batch.checkedFollowupAction === 'other')
+  );
+}
+
 function deriveTaskStatus(batch: InventoryBatchRecord) {
   if (batch.quantityCurrent <= 0 || batch.batchStatus === 'closed') return 'cancelled';
+  if (shouldKeepExpiryTaskActive(batch)) return 'open';
   if (batch.checkStatus === 'writeoff' || batch.checkStatus === 'discussion_required' || batch.checkStatus === 'checked') {
     return 'completed';
   }
@@ -115,6 +123,8 @@ function deriveTaskStatus(batch: InventoryBatchRecord) {
 function deriveTaskOutcome(batch: InventoryBatchRecord) {
   if (batch.checkStatus === 'writeoff' || batch.batchStatus === 'writeoff_pending') return 'writeoff_required';
   if (batch.checkStatus === 'discussion_required' || batch.batchStatus === 'hold') return 'manager_review';
+  if (batch.checkStatus === 'checked' && batch.checkedFollowupAction === 'left_on_shelf') return 'left_on_shelf';
+  if (batch.checkStatus === 'checked' && batch.checkedFollowupAction === 'other') return 'followup_needed';
   if (batch.checkStatus === 'checked') return 'checked_ok';
   return '';
 }
@@ -328,6 +338,10 @@ export async function syncInventoryExpiryTasksInDb() {
             WHEN ? IN ('completed', 'cancelled') THEN COALESCE(completed_at, NOW())
             ELSE NULL
           END,
+          completed_by_user_id = CASE
+            WHEN ? IN ('completed', 'cancelled') THEN completed_by_user_id
+            ELSE NULL
+          END,
           updated_at = NOW()
         WHERE id = ?
       `,
@@ -343,6 +357,7 @@ export async function syncInventoryExpiryTasksInDb() {
         daysLeft,
         title,
         note,
+        nextStatus,
         nextStatus,
         existingTask.id
       ]

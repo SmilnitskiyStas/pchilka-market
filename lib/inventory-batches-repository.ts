@@ -31,6 +31,7 @@ type BatchRow = RowDataPacket & {
   checked_at: Date | string | null;
   action_taken: string | null;
   action_note: string | null;
+  checked_followup_action: string | null;
   responsible_user_id: number | null;
   responsible_user_name: string | null;
   responsible_user_surname: string | null;
@@ -91,6 +92,7 @@ function mapRow(row: BatchRow): InventoryBatchRecord {
     checkStatus: row.check_status,
     actionTaken: row.action_taken ?? '',
     actionNote: row.action_note ?? '',
+    checkedFollowupAction: row.checked_followup_action ?? '',
     responsibleUserId: row.responsible_user_id == null ? '' : String(row.responsible_user_id),
     responsibleUserName: [row.responsible_user_name, row.responsible_user_surname].filter(Boolean).join(' '),
     createdByUserId: row.created_by_user_id == null ? '' : String(row.created_by_user_id),
@@ -135,6 +137,7 @@ function buildBatchSelectSql(whereSql: string) {
         pb.check_status,
         pb.action_taken,
         pb.action_note,
+        pb.checked_followup_action,
         pb.responsible_user_id,
         ru.name AS responsible_user_name,
         ru.surname AS responsible_user_surname,
@@ -174,6 +177,7 @@ function buildBatchSelectSql(whereSql: string) {
         pb.check_status,
         pb.action_taken,
         pb.action_note,
+        pb.checked_followup_action,
         pb.responsible_user_id,
         ru.name,
         ru.surname,
@@ -765,12 +769,14 @@ export async function updateInventoryBatchCheckActionInDb(input: {
   storeId: string | number;
   action: 'checked' | 'writeoff' | 'discussion_required';
   note?: string | null;
+  checkedFollowupAction?: 'left_on_shelf' | 'removed_from_shelf' | 'other' | null;
 }): Promise<InventoryBatchRecord> {
   const pool = getDbPool();
   const batchId = Number(input.batchId);
   const userId = Number(input.userId);
   const storeId = Number(input.storeId);
   const note = String(input.note ?? '').trim();
+  const checkedFollowupAction = String(input.checkedFollowupAction ?? '').trim();
 
   if (!Number.isFinite(batchId) || batchId <= 0) {
     throw new Error('Некоректний batchId.');
@@ -801,6 +807,7 @@ export async function updateInventoryBatchCheckActionInDb(input: {
 
   const nextCheckStatus = input.action;
   const nextActionTaken = input.action;
+  const nextCheckedFollowupAction = input.action === 'checked' ? checkedFollowupAction || null : null;
   const discussionRequired = input.action === 'discussion_required' ? 1 : 0;
   const discussionNote = input.action === 'discussion_required' ? note || null : null;
   const discussionRequestedByUserId = input.action === 'discussion_required' ? userId : null;
@@ -814,9 +821,11 @@ export async function updateInventoryBatchCheckActionInDb(input: {
         checked_at = NOW(),
         action_taken = ?,
         action_note = ?,
+        checked_followup_action = ?,
         batch_status = CASE
           WHEN ? = 'writeoff' THEN 'writeoff_pending'
           WHEN ? = 'discussion_required' THEN 'hold'
+          WHEN ? = 'checked' AND ? = 'removed_from_shelf' THEN 'closed'
           WHEN quantity_current <= 0 THEN 'closed'
           ELSE 'active'
         END,
@@ -832,8 +841,11 @@ export async function updateInventoryBatchCheckActionInDb(input: {
       userId,
       nextActionTaken,
       note || null,
+      nextCheckedFollowupAction,
       input.action,
       input.action,
+      input.action,
+      nextCheckedFollowupAction,
       discussionRequired,
       discussionNote,
       discussionRequestedByUserId,

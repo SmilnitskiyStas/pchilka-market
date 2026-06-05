@@ -16,6 +16,7 @@ type BatchCheckRow = RowDataPacket & {
   item_condition: string | null;
   issue_reason: string | null;
   note: string | null;
+  checked_followup_action: string | null;
   photo_url: string | null;
   created_at: Date | string;
   user_name: string | null;
@@ -35,6 +36,7 @@ export type InventoryBatchCheckRecord = {
   itemCondition: string;
   issueReason: string;
   note: string;
+  checkedFollowupAction: string;
   photoUrl: string;
   createdAt: string;
 };
@@ -59,6 +61,7 @@ function mapRow(row: BatchCheckRow): InventoryBatchCheckRecord {
     itemCondition: row.item_condition ?? '',
     issueReason: row.issue_reason ?? '',
     note: row.note ?? '',
+    checkedFollowupAction: row.checked_followup_action ?? '',
     photoUrl: row.photo_url ?? '',
     createdAt: toIso(row.created_at)
   };
@@ -76,6 +79,7 @@ export async function createInventoryBatchCheckInDb(
     itemCondition?: string | null;
     issueReason?: string | null;
     note?: string | null;
+    checkedFollowupAction?: string | null;
     photoUrl?: string | null;
   },
   executor?: InventoryDbExecutor
@@ -97,8 +101,9 @@ export async function createInventoryBatchCheckInDb(
         item_condition,
         issue_reason,
         note,
+        checked_followup_action,
         photo_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       input.batchId,
@@ -111,6 +116,7 @@ export async function createInventoryBatchCheckInDb(
       input.itemCondition?.trim() || null,
       input.issueReason?.trim() || null,
       input.note?.trim() || null,
+      input.checkedFollowupAction?.trim() || null,
       input.photoUrl?.trim() || null
     ]
   );
@@ -142,6 +148,7 @@ export async function listInventoryBatchChecksForBatchInDb(
         bc.item_condition,
         bc.issue_reason,
         bc.note,
+        bc.checked_followup_action,
         bc.photo_url,
         bc.created_at,
         u.name AS user_name,
