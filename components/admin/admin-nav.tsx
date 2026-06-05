@@ -119,7 +119,7 @@ export default function AdminNav() {
           },
           { href: '/admin/inventory/tasks', label: 'Завдання' },
           { href: '/admin/inventory/employees', label: 'Працівники' },
-          { label: 'Дії працівників' },
+          { href: '/admin/inventory/actions', label: 'Дії працівників' },
           { href: '/admin/inventory/notifications', label: 'Сповіщення' },
           { href: '/admin/network', label: 'Магазини' },
           { href: '/admin/inventory/analytics', label: 'Аналітика' }
@@ -244,7 +244,7 @@ export default function AdminNav() {
                   }`}
                 >
                   <span>{item.label}</span>
-                  <span className="text-xs text-slate-500">{expanded ? '−' : '+'}</span>
+                  <span className="text-xs text-slate-500">{expanded ? '-' : '+'}</span>
                 </button>
               ) : (
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-400">
