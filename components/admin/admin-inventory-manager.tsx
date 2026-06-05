@@ -2237,6 +2237,98 @@ export default function AdminInventoryManager({
     return () => window.removeEventListener('hashchange', syncFromHash);
   }, [initialSubsection]);
 
+  if (initialNotificationLogId) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Admin / Інвентар / Сповіщення</p>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Деталі повідомлення</h1>
+            <Link
+              href="/admin/inventory/notifications"
+              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Повернутися до списку
+            </Link>
+          </div>
+          <p className="mt-3 text-sm text-slate-700">
+            Окремий екран для повного перегляду Telegram-сповіщення, списку задач і виконавців без обмежень модального вікна.
+          </p>
+        </div>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+          {isLoadingSelectedNotificationLog ? (
+            <div className="py-8 text-sm text-slate-600">Завантаження повідомлення...</div>
+          ) : selectedNotificationLog ? (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900">
+                  {selectedNotificationLog.productName || 'Службове сповіщення'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  {selectedNotificationLog.storeLabel || '—'} • {selectedNotificationLog.recipientName || 'Отримувача не визначено'}
+                </p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                  <p><span className="font-semibold text-slate-900">Тип:</span> {formatNotificationLogType(selectedNotificationLog.notificationType)}</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">Надіслано:</span> {formatDate(selectedNotificationLog.sentAt)}</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">Статус:</span> {formatNotificationLogStatus(selectedNotificationLog.status)}</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">Відкрито:</span> {selectedNotificationLog.openedAt ? formatDate(selectedNotificationLog.openedAt) : 'Не відкрито'}</p>
+                  <p className="mt-1"><span className="font-semibold text-slate-900">Хто відкрив:</span> {selectedNotificationLog.openedByName || '—'}</p>
+                  {selectedNotificationLog.linkedTasksCount > 0 ? (
+                    <>
+                      <p className="mt-1"><span className="font-semibold text-slate-900">Задач у повідомленні:</span> {selectedNotificationLog.linkedTasksCount}</p>
+                      <p className="mt-1"><span className="font-semibold text-slate-900">Взято в роботу:</span> {selectedNotificationLog.takenTasksCount}</p>
+                      <p className="mt-1"><span className="font-semibold text-slate-900">Завершено:</span> {selectedNotificationLog.completedTasksCount}</p>
+                      <p className="mt-1"><span className="font-semibold text-slate-900">Хто взяв:</span> {selectedNotificationLog.assignedUsersSummary || 'Ще ніхто не взяв у роботу'}</p>
+                    </>
+                  ) : null}
+                  {selectedNotificationLog.article ? <p className="mt-1"><span className="font-semibold text-slate-900">Артикул:</span> {selectedNotificationLog.article}</p> : null}
+                  {selectedNotificationLog.batchCode ? <p className="mt-1"><span className="font-semibold text-slate-900">Партія:</span> {selectedNotificationLog.batchCode}</p> : null}
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-sm font-semibold text-slate-900">Повний текст повідомлення</p>
+                  <pre className="mt-3 whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
+                    {selectedNotificationLog.messageText}
+                  </pre>
+                </div>
+              </div>
+              {selectedNotificationLog.linkedTasks.length > 0 ? (
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Задачі з цього повідомлення</p>
+                  <div className="mt-3 space-y-3">
+                    {selectedNotificationLog.linkedTasks.map((task) => (
+                      <div key={`${selectedNotificationLog.id}-${task.taskId}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-900">{task.productName || 'Товар без назви'}</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Задача #{task.taskId}
+                              {task.batchCode ? ` • партія ${task.batchCode}` : ''}
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                            {formatExpiryTaskStatus(task.taskStatus)}
+                          </span>
+                        </div>
+                        <p className="mt-3 text-xs text-slate-600">
+                          Виконавець: {task.assignedUserName || 'Ще не призначено'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="py-8 text-sm text-slate-600">Повідомлення не знайдено або вже недоступне.</div>
+          )}
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <div>
