@@ -7,11 +7,28 @@ import path from 'path';
 import { ConfirmDirectionsLink } from '@/components/confirm-directions-link';
 import PizzaMenuGrid, { type PizzaItem } from '@/components/pizza-menu-grid';
 import { getOwnBrandItemBySlug, ownBrandItems } from '@/content/own-brand';
+import { listOwnBrandPizzas } from '@/lib/own-brand-pizzas';
 
 type OwnBrandItemPageProps = {
   params: Promise<{
     slug: string;
   }>;
+};
+
+type OwnBrandContent = {
+  title: string;
+  paragraphs: string[];
+  videoEmbedUrl: string | null;
+};
+
+type PizzaStoreGroup = {
+  city: string;
+  addresses: string[];
+};
+
+type PizzaStoreContent = {
+  title: string;
+  groups: PizzaStoreGroup[];
 };
 
 export async function generateStaticParams() {
@@ -33,22 +50,6 @@ export async function generateMetadata({ params }: OwnBrandItemPageProps): Promi
     description: item.description
   };
 }
-
-type OwnBrandContent = {
-  title: string;
-  paragraphs: string[];
-  videoEmbedUrl: string | null;
-};
-
-type PizzaStoreGroup = {
-  city: string;
-  addresses: string[];
-};
-
-type PizzaStoreContent = {
-  title: string;
-  groups: PizzaStoreGroup[];
-};
 
 function toYouTubeEmbedUrl(value: string) {
   const embedMatch = value.match(/https?:\/\/(?:www\.)?youtube\.com\/embed\/[A-Za-z0-9_-]+(?:\?[^"' \n\r<]*)?/i);
@@ -89,20 +90,6 @@ async function readOwnBrandContent(fileName: string): Promise<OwnBrandContent | 
   }
 }
 
-function stripHtml(input: string) {
-  return input
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function toAbsoluteWordPressUrl(src: string) {
-  if (!src) return null;
-  if (/^https?:\/\//i.test(src)) return src;
-  if (src.startsWith('/')) return `https://pchilka-market.ua${src}`;
-  return `https://pchilka-market.ua/${src}`;
-}
-
 async function readPizzaStoreContent(): Promise<PizzaStoreContent | null> {
   const filePath = path.join(process.cwd(), 'public', 'img', 'own_brand', 'pizza_and_coffee', 'pizza_store.txt');
 
@@ -135,43 +122,18 @@ async function readPizzaStoreContent(): Promise<PizzaStoreContent | null> {
 }
 
 async function readPizzaList(): Promise<PizzaItem[]> {
-  const filePath = path.join(process.cwd(), 'public', 'img', 'own_brand', 'pizza_and_coffee', 'pizza_list.txt');
+  const pizzas = await listOwnBrandPizzas();
 
-  try {
-    const raw = await fs.readFile(filePath, 'utf8');
-    const chunks = raw.split('<div class="single_pizza">').slice(1);
-
-    const items = chunks
-      .map((chunk): PizzaItem | null => {
-        const imageMatch = chunk.match(/<img[^>]*src="([^"]+)"/i);
-        const h3Match = chunk.match(/<h3>([\s\S]*?)<\/h3>/i);
-        const pMatch = chunk.match(/<p>([\s\S]*?)<\/p>/i);
-
-        const h3Raw = h3Match ? h3Match[1] : '';
-        const weightMatch = h3Raw.match(/<span>([\s\S]*?)<\/span>/i);
-        const weight = weightMatch ? stripHtml(weightMatch[1]) : '';
-        const name = stripHtml(h3Raw.replace(/<span>[\s\S]*?<\/span>/i, ''));
-
-        const description = stripHtml(pMatch ? pMatch[1] : '').replace(/^Склад:\s*/i, '').trim();
-        const imageUrl = toAbsoluteWordPressUrl(imageMatch ? imageMatch[1].trim() : '');
-
-        if (!name) return null;
-
-        return {
-          name,
-          weight,
-          ingredients: description,
-          imageUrl,
-          bju: null,
-          calories: null
-        };
-      })
-      .filter((item): item is PizzaItem => item !== null);
-
-    return items;
-  } catch {
-    return [];
-  }
+  return pizzas
+    .filter((item) => item.isActive)
+    .map((item) => ({
+      name: item.name,
+      weight: item.weight,
+      ingredients: item.ingredients,
+      imageUrl: item.imageUrl || null,
+      bju: item.bju || null,
+      calories: item.calories || null
+    }));
 }
 
 function createGoogleDirectionsLink(address: string) {
