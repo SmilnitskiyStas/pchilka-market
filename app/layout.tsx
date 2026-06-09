@@ -9,7 +9,12 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Pchilka Market',
-  description: 'MVP вебзастосунку Pchilka Market'
+  description: 'MVP вебзастосунку Pchilka Market',
+  icons: {
+    icon: '/icon.png',
+    shortcut: '/icon.png',
+    apple: '/icon.png'
+  }
 };
 
 export default function RootLayout({
