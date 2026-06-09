@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 
 export type PizzaItem = {
@@ -42,12 +43,14 @@ export default function PizzaMenuGrid({ items }: PizzaMenuGridProps) {
               className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white text-left transition duration-200 hover:-translate-y-0.5 hover:scale-[1.02] hover:border-brand"
             >
               {pizza.imageUrl ? (
-                <div className="flex h-36 items-center justify-center bg-slate-50 p-2">
-                  <img
+                <div className="relative h-36 overflow-hidden bg-slate-50">
+                  <Image
                     src={pizza.imageUrl}
                     alt={`${pizza.name} ${pizza.weight}`.trim()}
-                    loading="lazy"
-                    className="h-full w-full object-contain"
+                    fill
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                    quality={60}
+                    className="object-contain p-2"
                   />
                 </div>
               ) : null}
@@ -85,11 +88,15 @@ export default function PizzaMenuGrid({ items }: PizzaMenuGridProps) {
             </div>
 
             {selected.imageUrl ? (
-              <div className="mt-4 flex h-56 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <img
+              <div className="relative mt-4 h-56 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-72">
+                <Image
                   src={selected.imageUrl}
                   alt={`${selected.name} ${selected.weight}`.trim()}
-                  className="h-full w-full object-contain"
+                  fill
+                  sizes="(max-width: 640px) 100vw, 768px"
+                  quality={70}
+                  priority
+                  className="object-contain p-3"
                 />
               </div>
             ) : null}
