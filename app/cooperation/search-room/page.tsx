@@ -86,7 +86,7 @@ export default async function SearchRoomPage() {
   const contactLines = baseLines.slice(5);
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <main className="mx-auto min-h-screen max-w-6xl px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <section className="rounded-3xl border border-brand/25 bg-white/95 p-5 shadow-sm sm:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Співпраця</p>
         <h1 className="mt-2 text-3xl font-bold text-slate-900 sm:text-4xl">Шукаємо приміщення</h1>

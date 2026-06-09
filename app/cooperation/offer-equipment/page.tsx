@@ -88,7 +88,7 @@ export default async function OfferEquipmentPage() {
   const contactLines = contactStartIndex >= 0 ? baseLines.slice(contactStartIndex) : [];
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <main className="mx-auto min-h-screen max-w-6xl px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <section className="rounded-3xl border border-brand/25 bg-white/95 p-5 shadow-sm sm:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Співпраця</p>
 
