@@ -122,14 +122,7 @@ export default function AdminNav() {
           { href: '/admin/inventory/actions', label: 'Дії працівників' },
           { href: '/admin/inventory/notifications', label: 'Сповіщення' },
           { href: '/admin/network', label: 'Магазини' },
-          { href: '/admin/inventory/analytics', label: 'Аналітика' },
-          {
-            label: 'Налаштування',
-            children: [
-              { href: '/admin/inventory/settings/schema', label: 'Схема' },
-              { href: '/admin/inventory/settings/telegram', label: 'Telegram' }
-            ]
-          }
+          { href: '/admin/inventory/analytics', label: 'Аналітика' }
         ]
       },
       {
@@ -143,6 +136,10 @@ export default function AdminNav() {
       {
         label: 'Контент',
         children: [{ href: '/admin/content', label: 'Статті' }]
+      },
+      {
+        href: '/admin/own-brand',
+        label: 'Власне класне'
       },
       {
         href: '/admin/messages',
