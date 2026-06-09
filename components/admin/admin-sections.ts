@@ -56,6 +56,16 @@ export const adminSections: AdminSection[] = [
     description: 'Облік партій, Telegram workflow, перевірки термінів і аналітика по магазинах.'
   },
   {
+    href: '/admin/inventory/settings/schema',
+    title: 'Налаштування схеми',
+    description: 'Параметри inventory-схеми, готовності модуля та службових конфігурацій.'
+  },
+  {
+    href: '/admin/inventory/settings/telegram',
+    title: 'Налаштування Telegram',
+    description: 'Webhook, бот, розсилка та інші параметри Telegram-інтеграції inventory.'
+  },
+  {
     href: '/admin/users',
     title: 'Користувачі',
     description: 'Керування користувачами, ролями та доступами до адмін-панелі.'
