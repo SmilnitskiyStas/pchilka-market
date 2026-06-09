@@ -48,6 +48,7 @@ export default function PizzaMenuGrid({ items }: PizzaMenuGridProps) {
                     src={pizza.imageUrl}
                     alt={`${pizza.name} ${pizza.weight}`.trim()}
                     fill
+                    unoptimized
                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                     quality={60}
                     className="object-contain p-2"
@@ -93,6 +94,7 @@ export default function PizzaMenuGrid({ items }: PizzaMenuGridProps) {
                   src={selected.imageUrl}
                   alt={`${selected.name} ${selected.weight}`.trim()}
                   fill
+                  unoptimized
                   sizes="(max-width: 640px) 100vw, 768px"
                   quality={70}
                   priority
