@@ -36,14 +36,14 @@ export default async function CharityPostPage({ params }: CharityPostPageProps) 
 
   if (!post) {
     return (
-      <main className="mx-auto min-h-screen max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+      <main className="mx-auto min-h-screen max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
         <AdminContentPostPage slug={slug} contentType="charity" listHref="/about/charity" engagementSlugPrefix="charity_" />
       </main>
     );
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+    <main className="mx-auto min-h-screen max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
       <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="relative h-64 w-full sm:h-80">
           <Image src={post.coverImage} alt={post.title} fill className="object-cover" />
