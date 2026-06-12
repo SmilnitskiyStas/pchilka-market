@@ -97,7 +97,16 @@ function toNullablePositiveNumber(value: number | string | null | undefined) {
 }
 
 function daysLeftUntil(value: string) {
-  const target = new Date(`${value}T00:00:00`);
+  const normalizedValue = String(value ?? '').trim();
+  if (!normalizedValue || normalizedValue === '0000-00-00') {
+    return null;
+  }
+
+  const target = new Date(`${normalizedValue}T00:00:00`);
+  if (Number.isNaN(target.getTime())) {
+    return null;
+  }
+
   const today = new Date();
   const current = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   return Math.floor((target.getTime() - current.getTime()) / (1000 * 60 * 60 * 24));
@@ -272,6 +281,7 @@ export async function syncInventoryExpiryTasksInDb() {
       if (batch.quantityCurrent <= 0) continue;
 
       const daysLeft = daysLeftUntil(batch.expiryDate);
+      if (daysLeft == null) continue;
       if (daysLeft > Number(batch.notifiedDays || 7)) continue;
 
       const batchId = toNullablePositiveNumber(batch.id);
