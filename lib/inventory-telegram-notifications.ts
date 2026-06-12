@@ -22,6 +22,12 @@ function rolePriority(role: InventoryUserRole) {
   return role === 'admin' || role === 'store_manager' || role === 'manager' ? 0 : 1;
 }
 
+function normalizePositiveNumber(value: number | string | null | undefined) {
+  if (value == null || value === '') return null;
+  const normalized = Number(value);
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : null;
+}
+
 function normalizeRecipients(users: InventoryUserRecord[]) {
   const seen = new Set<number>();
   return [...users]
@@ -215,7 +221,7 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
         taskId: null,
         batchId: null,
         productId: null,
-        storeId: digest.recipient.storeId ? Number(digest.recipient.storeId) : tasks[0]?.storeId ?? null,
+        storeId: normalizePositiveNumber(digest.recipient.storeId) ?? normalizePositiveNumber(tasks[0]?.storeId),
         userId: digest.recipient.id,
         notificationType: repeat > 0 ? 'inventory_tasks_digest_repeat' : 'inventory_tasks_digest',
         messageText: text
@@ -262,7 +268,7 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
         taskId: null,
         batchId: null,
         productId: null,
-        storeId: digest.recipient.storeId ? Number(digest.recipient.storeId) : tasks[0]?.storeId ?? null,
+        storeId: normalizePositiveNumber(digest.recipient.storeId) ?? normalizePositiveNumber(tasks[0]?.storeId),
         userId: digest.recipient.id,
         notificationType: repeat > 0 ? 'inventory_tasks_digest_repeat_failed' : 'inventory_tasks_digest_failed',
         messageText: `${text}\n\nSEND_ERROR: ${errorMessage}\nCHAT_ID: ${digest.recipient.userChatId}`

@@ -85,6 +85,12 @@ function toIso(value: Date | string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString();
 }
 
+function toNullablePositiveNumber(value: number | string | null | undefined) {
+  if (value == null || value === '') return null;
+  const normalized = Number(value);
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : null;
+}
+
 function mapNotificationLogRow(row: NotificationLogRow): InventoryNotificationLogRecord {
   return {
     id: row.id,
@@ -190,6 +196,11 @@ export async function createInventoryNotificationLogInDb(
   executor?: InventoryDbExecutor
 ) {
   const db = executor ?? getDbPool();
+  const taskId = toNullablePositiveNumber(input.taskId);
+  const batchId = toNullablePositiveNumber(input.batchId);
+  const productId = toNullablePositiveNumber(input.productId);
+  const storeId = toNullablePositiveNumber(input.storeId);
+  const userId = toNullablePositiveNumber(input.userId);
   const [result] = await db.query(
     `
       INSERT INTO notification_logs (
@@ -203,11 +214,11 @@ export async function createInventoryNotificationLogInDb(
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `,
     [
-      input.taskId ?? null,
-      input.batchId ?? null,
-      input.productId ?? null,
-      input.storeId ?? null,
-      input.userId ?? null,
+      taskId,
+      batchId,
+      productId,
+      storeId,
+      userId,
       input.notificationType,
       input.messageText
     ]
