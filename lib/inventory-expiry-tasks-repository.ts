@@ -90,6 +90,12 @@ function toIso(value: Date | string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString();
 }
 
+function toNullablePositiveNumber(value: number | string | null | undefined) {
+  if (value == null || value === '') return null;
+  const normalized = Number(value);
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : null;
+}
+
 function daysLeftUntil(value: string) {
   const target = new Date(`${value}T00:00:00`);
   const today = new Date();
@@ -258,20 +264,27 @@ export async function syncInventoryExpiryTasksInDb() {
     scannedBatches += batches.length;
 
     for (const batch of batches) {
-      cursorBatchId = Number(batch.id);
+      const batchCursorId = toNullablePositiveNumber(batch.id);
+      if (batchCursorId != null) {
+        cursorBatchId = batchCursorId;
+      }
 
       if (batch.quantityCurrent <= 0) continue;
 
       const daysLeft = daysLeftUntil(batch.expiryDate);
       if (daysLeft > Number(batch.notifiedDays || 7)) continue;
 
+      const batchId = toNullablePositiveNumber(batch.id);
+      const productId = toNullablePositiveNumber(batch.productId);
+      const storeId = toNullablePositiveNumber(batch.storeId);
+      if (batchId == null || productId == null || storeId == null) continue;
+
       relevantBatches += 1;
 
-      const batchId = Number(batch.id);
       relevantBatchIds.add(batchId);
 
       const riskLevel = deriveRiskLevel(daysLeft);
-      const storeTaskMode = storeTaskModes.get(Number(batch.storeId)) ?? 'personal';
+      const storeTaskMode = storeTaskModes.get(storeId) ?? 'personal';
       const taskAssignmentMode = getTaskAssignmentModeForBatch(storeTaskMode, riskLevel);
       const nextStatus = deriveTaskStatus(batch);
       const nextOutcome = deriveTaskOutcome(batch);
@@ -285,8 +298,8 @@ export async function syncInventoryExpiryTasksInDb() {
 
       const existingTask = latestTaskByBatch.get(batchId);
       if (!existingTask) {
-        const nextAssignedUserId =
-          taskAssignmentMode === 'shared' ? null : batch.responsibleUserId ? Number(batch.responsibleUserId) : null;
+        const responsibleUserId = toNullablePositiveNumber(batch.responsibleUserId);
+        const nextAssignedUserId = taskAssignmentMode === 'shared' ? null : responsibleUserId;
         await pool.query<ResultSetHeader>(
           `
             INSERT INTO expiry_tasks (
@@ -308,9 +321,9 @@ export async function syncInventoryExpiryTasksInDb() {
           `,
           [
             batchId,
-            Number(batch.productId),
-            Number(batch.storeId),
-            batch.responsibleUserId ? Number(batch.responsibleUserId) : null,
+            productId,
+            storeId,
+            responsibleUserId,
             nextAssignedUserId,
             nextStatus,
             nextOutcome || null,
@@ -330,9 +343,7 @@ export async function syncInventoryExpiryTasksInDb() {
           ? existingTask.status === 'in_progress' && existingTask.assigned_user_id
             ? existingTask.assigned_user_id
             : null
-          : batch.responsibleUserId
-            ? Number(batch.responsibleUserId)
-            : null;
+          : toNullablePositiveNumber(batch.responsibleUserId);
 
       await pool.query(
         `
@@ -364,7 +375,7 @@ export async function syncInventoryExpiryTasksInDb() {
           WHERE id = ?
         `,
         [
-          batch.responsibleUserId ? Number(batch.responsibleUserId) : null,
+          toNullablePositiveNumber(batch.responsibleUserId),
           nextAssignedUserId,
           nextStatus,
           nextStatus,
