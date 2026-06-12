@@ -92,7 +92,7 @@ export async function POST(request: Request) {
 
     // Auto-login only when registration is performed without existing admin session.
     if (!isAuthorizedAdmin) {
-      applyAdminSessionCookie(response, { username: user.login, sub: `admin_user:${user.id}` });
+      applyAdminSessionCookie(response, { username: user.login, sub: `admin_user:${user.id}` }, request);
     }
 
     return response;

@@ -34,6 +34,22 @@ function getSessionSecret(): string {
   return getEnv('ADMIN_SESSION_SECRET') || 'pchilka-dev-admin-secret';
 }
 
+function shouldUseSecureAdminCookie(request?: Request): boolean {
+  if (process.env.NODE_ENV !== 'production') return false;
+  if (!request) return true;
+
+  try {
+    const url = new URL(request.url);
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+      return false;
+    }
+  } catch {
+    return true;
+  }
+
+  return true;
+}
+
 function toBase64Url(value: string): string {
   return Buffer.from(value, 'utf8').toString('base64url');
 }
@@ -113,11 +129,15 @@ export function verifyAdminSessionToken(token: string | undefined): boolean {
   return parseAdminSessionToken(token) !== null;
 }
 
-export function applyAdminSessionCookie(response: NextResponse, session: { username: string; sub: string }) {
+export function applyAdminSessionCookie(
+  response: NextResponse,
+  session: { username: string; sub: string },
+  request?: Request
+) {
   response.cookies.set(SESSION_COOKIE_NAME, createAdminSessionToken(session), {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: shouldUseSecureAdminCookie(request),
     path: '/',
     maxAge: SESSION_TTL_SECONDS
   });

@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { defaultHomeBanners, type HomeBanner } from '@/content/home-banners';
 import { mainMenu } from '@/content/menu';
-import { parseBannerDateTimeMs } from '@/lib/banner-datetime';
+import { doesBannerMatchDate, getBannerPublicationState } from '@/lib/banner-datetime';
 
 type BannerLinkOption = {
   label: string;
@@ -25,6 +25,25 @@ function isValidImagePath(value: string) {
 
 function shouldUseNativeImage(src: string): boolean {
   return src.startsWith('/media/') || src.startsWith('http://') || src.startsWith('https://');
+}
+
+function encodeImageRef(src: string): string {
+  const bytes = new TextEncoder().encode(src);
+  let binary = '';
+
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function getBannerPreviewSrc(src: string, cacheKey: string): string {
+  if (!src.startsWith('/media/') && !src.startsWith('/img/') && !src.startsWith('http')) {
+    return src;
+  }
+
+  return `/api/site-image?ref=${encodeURIComponent(encodeImageRef(src))}&v=${encodeURIComponent(cacheKey)}`;
 }
 
 function normalizeImagePathInput(value: string): string {
@@ -209,32 +228,11 @@ export default function AdminBannersManager() {
   const isEditing = editingBannerId !== null;
 
   function getPublicationState(banner: HomeBanner) {
-    const now = Date.now();
-    const fromMs = parseBannerDateTimeMs(banner.publishFrom);
-    const toMs = parseBannerDateTimeMs(banner.publishTo);
-
-    if (!banner.publishFrom && !banner.publishTo) return 'no_period';
-    if (fromMs !== null && !Number.isNaN(fromMs) && now < fromMs) return 'scheduled';
-    if (toMs !== null && !Number.isNaN(toMs) && now > toMs) return 'expired';
-    return 'live';
+    return getBannerPublicationState(banner.publishFrom, banner.publishTo);
   }
 
   function matchesDateFilter(banner: HomeBanner, targetDate: string) {
-    if (!targetDate) return true;
-
-    const targetStart = new Date(`${targetDate}T00:00:00`).getTime();
-    const targetEnd = new Date(`${targetDate}T23:59:59`).getTime();
-    if (Number.isNaN(targetStart) || Number.isNaN(targetEnd)) return true;
-
-    const fromMs = parseBannerDateTimeMs(banner.publishFrom);
-    const toMs = parseBannerDateTimeMs(banner.publishTo);
-
-    if (fromMs === null && toMs === null) return false;
-
-    const startsBeforeOrOnDay = fromMs === null || fromMs <= targetEnd;
-    const endsAfterOrOnDay = toMs === null || toMs >= targetStart;
-
-    return startsBeforeOrOnDay && endsAfterOrOnDay;
+    return doesBannerMatchDate(banner.publishFrom, banner.publishTo, targetDate);
   }
 
   const filteredBanners = useMemo(() => {
@@ -551,6 +549,7 @@ export default function AdminBannersManager() {
           const canMoveUp = orderIndex > 0;
           const canMoveDown = orderIndex >= 0 && orderIndex < banners.length - 1;
           const useNativeImage = shouldUseNativeImage(banner.src);
+          const previewSrc = getBannerPreviewSrc(banner.src, banner.id);
 
           return (
           <li key={banner.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -561,9 +560,9 @@ export default function AdminBannersManager() {
             ) : (
               <div className="relative h-44 w-full bg-slate-50">
                 {useNativeImage ? (
-                  <img src={banner.src} alt={banner.alt} className="h-full w-full object-contain" loading="lazy" />
+                  <img src={previewSrc} alt={banner.alt} className="h-full w-full object-contain" loading="lazy" />
                 ) : (
-                  <Image src={banner.src} alt={banner.alt} fill className="object-contain" />
+                  <Image src={previewSrc} alt={banner.alt} fill className="object-contain" />
                 )}
               </div>
             )}

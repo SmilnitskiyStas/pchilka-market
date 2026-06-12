@@ -4,10 +4,12 @@ import Link from 'next/link';
 import BannerCarousel from '@/components/banner-carousel';
 import { latestBlogPosts } from '@/content/blog';
 import { defaultHomeBanners } from '@/content/home-banners';
-import { parseBannerDateTimeMs } from '@/lib/banner-datetime';
+import { isBannerInPublishRange } from '@/lib/banner-datetime';
 import { listBannersFromDb } from '@/lib/banners-repository';
 import { listPublishedEntriesByType } from '@/lib/public-content-repository';
 import { listStoresFromDb } from '@/lib/stores-repository';
+
+export const dynamic = 'force-dynamic';
 
 const promoCards = [
   {
@@ -55,16 +57,6 @@ type NetworkStats = {
   totalStores: number;
   totalCities: number;
 };
-
-function isBannerInPublishRange(publishFrom?: string, publishTo?: string): boolean {
-  const now = Date.now();
-  const fromTs = parseBannerDateTimeMs(publishFrom);
-  const toTs = parseBannerDateTimeMs(publishTo);
-
-  if (fromTs !== null && !Number.isNaN(fromTs) && now < fromTs) return false;
-  if (toTs !== null && !Number.isNaN(toTs) && now > toTs) return false;
-  return true;
-}
 
 function parseNetworkStatsFromStores(raw: string): NetworkStats {
   const lines = raw
@@ -132,7 +124,7 @@ export default async function HomePage() {
 
   const bannerSlides = activeBanners
     .filter((banner) => banner.isActive && isBannerInPublishRange(banner.publishFrom, banner.publishTo))
-    .map(({ src, alt, href }) => ({ src, alt, href }));
+    .map(({ id, src, alt, href }) => ({ id, src, alt, href }));
   const networkStats = await readNetworkStats();
   let latestPosts = latestBlogPosts;
   try {
@@ -143,8 +135,8 @@ export default async function HomePage() {
         title: entry.title,
         excerpt: entry.excerpt,
         publishedAt: new Date(entry.updatedAt).toLocaleDateString('uk-UA'),
-        thumbnailImage: entry.coverImage || '/img/logo.png',
-        coverImage: entry.coverImage || '/img/logo.png',
+        thumbnailImage: entry.coverImage || '/logo.png',
+        coverImage: entry.coverImage || '/logo.png',
         content: []
       }));
     }

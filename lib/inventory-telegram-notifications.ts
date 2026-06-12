@@ -131,7 +131,20 @@ export async function runInventoryExpiryNotifications(): Promise<InventoryNotifi
   }
 
   await syncInventoryExpiryTasksInDb();
-  const candidates = await listInventoryExpiryNotificationCandidatesFromDb(200);
+  const candidates: InventoryExpiryNotificationCandidate[] = [];
+  const pageSize = 500;
+  let offset = 0;
+
+  while (true) {
+    const page = await listInventoryExpiryNotificationCandidatesFromDb(pageSize, offset);
+    if (page.length === 0) break;
+
+    candidates.push(...page);
+    offset += page.length;
+
+    if (page.length < pageSize) break;
+  }
+
   let notificationsSent = 0;
   const notifiedTaskIds = new Set<number>();
   const debug: InventoryNotificationDebugItem[] = [];

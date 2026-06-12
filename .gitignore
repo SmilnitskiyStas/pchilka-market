@@ -5,6 +5,7 @@ out
 .env
 .env.production
 .env.local
+.env.docker
 .env.development.local
 .env.test.local
 .env.production.local

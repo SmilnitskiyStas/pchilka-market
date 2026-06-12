@@ -219,6 +219,44 @@ export async function listInventoryBatchesFromDb(limit = 200, storeId?: string |
   return rows.map(mapRow);
 }
 
+export async function listInventoryBatchesPageFromDb(input?: {
+  limit?: number;
+  storeId?: string | number | null;
+  cursorBatchId?: string | number | null;
+}): Promise<InventoryBatchRecord[]> {
+  const pool = getDbPool();
+  const normalizedStoreId = Number(input?.storeId);
+  const normalizedCursorBatchId = Number(input?.cursorBatchId);
+  const limit = Math.min(Math.max(Number(input?.limit ?? 500), 1), 1000);
+  const whereClauses: string[] = [];
+  const values: number[] = [];
+
+  if (Number.isFinite(normalizedStoreId) && normalizedStoreId > 0) {
+    whereClauses.push('pb.store_id = ?');
+    values.push(normalizedStoreId);
+  }
+
+  if (Number.isFinite(normalizedCursorBatchId) && normalizedCursorBatchId > 0) {
+    whereClauses.push('pb.id < ?');
+    values.push(normalizedCursorBatchId);
+  }
+
+  values.push(limit);
+
+  const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+  const [rows] = await pool.query<BatchRow[]>(
+    `
+      ${buildBatchSelectSql(whereSql)}
+      ORDER BY pb.id DESC
+      LIMIT ?
+    `,
+    values
+  );
+
+  return rows.map(mapRow);
+}
+
 export async function findInventoryBatchByIdInDb(batchId: string | number): Promise<InventoryBatchRecord | null> {
   const pool = getDbPool();
   const normalizedBatchId = Number(batchId);

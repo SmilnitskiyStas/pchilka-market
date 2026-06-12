@@ -12,6 +12,21 @@ function parseMultiline(value: string): string[] {
     .filter(Boolean);
 }
 
+async function uploadLogoAsset(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('folder', 'branding/logo');
+
+  const response = await fetch('/api/admin/assets', { method: 'POST', body: formData });
+  const payload = (await response.json()) as { ok?: boolean; path?: string; error?: string };
+
+  if (!response.ok || !payload.ok || !payload.path) {
+    throw new Error(payload.error || 'Не вдалося завантажити логотип.');
+  }
+
+  return payload.path;
+}
+
 export default function AdminNetworkManager() {
   const [settings, setSettings] = useState<SiteProfileSettings>(normalizeSiteProfileSettings(undefined));
   const [stores, setStores] = useState<StoreRecord[]>([]);
@@ -20,6 +35,7 @@ export default function AdminNetworkManager() {
   const [collapsedCityGroups, setCollapsedCityGroups] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [error, setError] = useState('');
   const [isSaved, setIsSaved] = useState(false);
 
@@ -260,6 +276,22 @@ export default function AdminNetworkManager() {
     }
   }
 
+  async function handleLogoUpload(file: File | null) {
+    if (!file) return;
+
+    setError('');
+    setIsSaved(false);
+    setIsUploadingLogo(true);
+    try {
+      const logoUrl = await uploadLogoAsset(file);
+      setSettings((prev) => ({ ...prev, logoUrl }));
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Не вдалося завантажити логотип.');
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  }
+
   return (
     <div>
       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Admin / Мережа</p>
@@ -295,6 +327,38 @@ export default function AdminNetworkManager() {
                 }}
                 className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-900">Логотип сайту</label>
+              <input
+                value={settings.logoUrl}
+                onChange={(event) => {
+                  setSettings((prev) => ({ ...prev, logoUrl: event.target.value }));
+                  setIsSaved(false);
+                }}
+                placeholder="/media/branding/logo/... або /img/logo.png"
+                className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <label className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-brand hover:text-brand">
+                  <input
+                    type="file"
+                    accept="image/*,.svg"
+                    className="hidden"
+                    onChange={(event) => {
+                      void handleLogoUpload(event.target.files?.[0] ?? null);
+                      event.currentTarget.value = '';
+                    }}
+                  />
+                  {isUploadingLogo ? 'Завантаження логотипу...' : 'Завантажити логотип'}
+                </label>
+                {settings.logoUrl ? (
+                  <img src={settings.logoUrl} alt="Поточний логотип" className="h-12 w-auto rounded-lg border border-slate-200 bg-white p-2" />
+                ) : null}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Рекомендована папка для логотипів: <span className="font-semibold">/media/branding/logo/...</span>
+              </p>
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-900">Email</label>

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 type BannerSlide = {
+  id?: string;
   src: string;
   alt: string;
   href?: string;
@@ -17,6 +18,25 @@ type BannerCarouselProps = {
 
 function shouldUseNativeImage(src: string): boolean {
   return src.startsWith('/media/') || src.startsWith('http://') || src.startsWith('https://');
+}
+
+function encodeImageRef(src: string): string {
+  const bytes = new TextEncoder().encode(src);
+  let binary = '';
+
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function getBannerImageSrc(src: string, cacheKey?: string): string {
+  if (!cacheKey || (!src.startsWith('/media/') && !src.startsWith('/img/') && !src.startsWith('http'))) {
+    return src;
+  }
+
+  return `/api/site-image?ref=${encodeURIComponent(encodeImageRef(src))}&v=${encodeURIComponent(cacheKey)}`;
 }
 
 export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCarouselProps) {
@@ -40,6 +60,7 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
         {slides.map((slide, index) => {
           const isActive = index === activeIndex;
           const useNativeImage = shouldUseNativeImage(slide.src);
+          const imageSrc = getBannerImageSrc(slide.src, slide.id);
 
           return (
             <div
@@ -52,14 +73,14 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
                 <Link href={slide.href} aria-label={slide.alt} className="absolute inset-0 block">
                   {useNativeImage ? (
                     <img
-                      src={slide.src}
+                      src={imageSrc}
                       alt={slide.alt}
                       loading={index === 0 ? 'eager' : 'lazy'}
                       className="h-full w-full object-contain transition-opacity duration-700 ease-in-out"
                     />
                   ) : (
                     <Image
-                      src={slide.src}
+                      src={imageSrc}
                       alt={slide.alt}
                       fill
                       priority={index === 0}
@@ -71,14 +92,14 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
                 <>
                   {useNativeImage ? (
                     <img
-                      src={slide.src}
+                      src={imageSrc}
                       alt={slide.alt}
                       loading={index === 0 ? 'eager' : 'lazy'}
                       className="h-full w-full object-contain transition-opacity duration-700 ease-in-out"
                     />
                   ) : (
                     <Image
-                      src={slide.src}
+                      src={imageSrc}
                       alt={slide.alt}
                       fill
                       priority={index === 0}

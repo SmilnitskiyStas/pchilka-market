@@ -1,6 +1,10 @@
-﻿import type { Metadata } from 'next';
+import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
+
+import { getSiteLogoUrl } from '@/lib/site-branding';
+import { getSiteProfileFromDb } from '@/lib/site-profile-repository';
+import { defaultSiteProfileSettings } from '@/lib/site-profile-settings';
 
 export const metadata: Metadata = {
   title: 'Завантажити застосунок | Pchilka Market',
@@ -16,12 +20,15 @@ const PLAY_BADGE_URL =
   'https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png';
 const APPLE_BADGE_URL = 'https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg';
 
-export default function LoyaltyDownloadPage() {
+export default async function LoyaltyDownloadPage() {
+  const profile = await getSiteProfileFromDb().catch(() => defaultSiteProfileSettings);
+  const logoUrl = getSiteLogoUrl(profile);
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center px-4 py-8 sm:px-6 sm:py-10">
       <section className="w-full rounded-3xl border border-brand/25 bg-white/95 p-5 shadow-sm sm:p-8">
         <div className="mx-auto flex max-w-lg flex-col items-center text-center">
-          <Image src="/img/logo.png" alt="Pchilka Market" width={190} height={62} priority className="h-12 w-auto sm:h-14" />
+          <Image src={logoUrl} alt="Pchilka Market" width={190} height={62} priority className="h-12 w-auto sm:h-14" />
 
           <h1 className="mt-4 text-2xl font-bold text-slate-900 sm:text-3xl">Завантажити мобільний застосунок</h1>
           <p className="mt-2 text-sm text-slate-600 sm:text-base">

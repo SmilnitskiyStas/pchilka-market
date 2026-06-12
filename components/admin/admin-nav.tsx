@@ -66,6 +66,7 @@ export default function AdminNav() {
           messagesResponse.ok && Number.isFinite(messagesPayload.unprocessedCount)
             ? Number(messagesPayload.unprocessedCount)
             : 0;
+
         setCurrentLogin(login);
         setCurrentRole(role);
         setUnprocessedCount(nextUnprocessedCount);
@@ -130,6 +131,7 @@ export default function AdminNav() {
         children: [
           { href: '/admin/promotions', label: 'Акції' },
           { href: '/admin/banners', label: 'Банери' },
+          { href: '/admin/media', label: 'Медіафайли' },
           { href: '/admin/seo', label: 'SEO' }
         ]
       },

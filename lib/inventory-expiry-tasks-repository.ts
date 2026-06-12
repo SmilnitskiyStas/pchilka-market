@@ -1,7 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 
 import { getDbPool } from '@/lib/db';
-import { listInventoryBatchesFromDb } from '@/lib/inventory-batches-repository';
+import { listInventoryBatchesPageFromDb } from '@/lib/inventory-batches-repository';
 import type { InventoryBatchRecord } from '@/lib/inventory-batch-types';
 import { hasStoreTaskAssignmentModeColumn, listStoresFromDb } from '@/lib/stores-repository';
 import type { InventoryTaskAssignmentMode } from '@/lib/store-types';
@@ -190,16 +190,10 @@ async function getTaskAssignmentModeSql(tableAlias = 's') {
 
 export async function syncInventoryExpiryTasksInDb() {
   const pool = getDbPool();
-  const batches = await listInventoryBatchesFromDb(5000);
   const stores = await listStoresFromDb();
   const storeTaskModes = new Map<number, InventoryTaskAssignmentMode>(
     stores.map((store) => [Number(store.id), store.taskAssignmentMode])
   );
-  const relevantBatches = batches.filter((batch) => {
-    if (batch.quantityCurrent <= 0) return false;
-    const daysLeft = daysLeftUntil(batch.expiryDate);
-    return daysLeft <= Number(batch.notifiedDays || 7);
-  });
 
   const [existingRows] = await pool.query<ExpiryTaskRow[]>(
     `
@@ -246,123 +240,152 @@ export async function syncInventoryExpiryTasksInDb() {
   let created = 0;
   let updated = 0;
   let cancelled = 0;
+  let scannedBatches = 0;
+  let relevantBatches = 0;
+  let cursorBatchId: number | null = null;
+  const pageSize = 500;
 
-  for (const batch of relevantBatches) {
-    const batchId = Number(batch.id);
-    relevantBatchIds.add(batchId);
+  while (true) {
+    const batches = await listInventoryBatchesPageFromDb({
+      limit: pageSize,
+      cursorBatchId
+    });
 
-    const daysLeft = daysLeftUntil(batch.expiryDate);
-    const riskLevel = deriveRiskLevel(daysLeft);
-    const storeTaskMode = storeTaskModes.get(Number(batch.storeId)) ?? 'personal';
-    const taskAssignmentMode = getTaskAssignmentModeForBatch(storeTaskMode, riskLevel);
-    const nextStatus = deriveTaskStatus(batch);
-    const nextOutcome = deriveTaskOutcome(batch);
-    const title = `Перевірити товар "${batch.productName}"`;
-    const note = [
-      `Партія #${batch.id}`,
-      batch.batchCode ? `код ${batch.batchCode}` : '',
-      `залишок ${batch.quantityCurrent}`,
-      `строк ${batch.expiryDate}`
-    ].filter(Boolean).join(' | ');
+    if (batches.length === 0) {
+      break;
+    }
 
-    const existingTask = latestTaskByBatch.get(batchId);
-    if (!existingTask) {
+    scannedBatches += batches.length;
+
+    for (const batch of batches) {
+      cursorBatchId = Number(batch.id);
+
+      if (batch.quantityCurrent <= 0) continue;
+
+      const daysLeft = daysLeftUntil(batch.expiryDate);
+      if (daysLeft > Number(batch.notifiedDays || 7)) continue;
+
+      relevantBatches += 1;
+
+      const batchId = Number(batch.id);
+      relevantBatchIds.add(batchId);
+
+      const riskLevel = deriveRiskLevel(daysLeft);
+      const storeTaskMode = storeTaskModes.get(Number(batch.storeId)) ?? 'personal';
+      const taskAssignmentMode = getTaskAssignmentModeForBatch(storeTaskMode, riskLevel);
+      const nextStatus = deriveTaskStatus(batch);
+      const nextOutcome = deriveTaskOutcome(batch);
+      const title = `РџРµСЂРµРІС–СЂРёС‚Рё С‚РѕРІР°СЂ "${batch.productName}"`;
+      const note = [
+        `РџР°СЂС‚С–СЏ #${batch.id}`,
+        batch.batchCode ? `РєРѕРґ ${batch.batchCode}` : '',
+        `Р·Р°Р»РёС€РѕРє ${batch.quantityCurrent}`,
+        `СЃС‚СЂРѕРє ${batch.expiryDate}`
+      ].filter(Boolean).join(' | ');
+
+      const existingTask = latestTaskByBatch.get(batchId);
+      if (!existingTask) {
+        const nextAssignedUserId =
+          taskAssignmentMode === 'shared' ? null : batch.responsibleUserId ? Number(batch.responsibleUserId) : null;
+        await pool.query<ResultSetHeader>(
+          `
+            INSERT INTO expiry_tasks (
+              batch_id,
+              product_id,
+              store_id,
+              responsible_user_id,
+              assigned_user_id,
+              source_type,
+              task_type,
+              status,
+              outcome,
+              risk_level,
+              due_date,
+              days_left_snapshot,
+              title,
+              note
+            ) VALUES (?, ?, ?, ?, ?, 'system', 'expiry_check', ?, ?, ?, ?, ?, ?, ?)
+          `,
+          [
+            batchId,
+            Number(batch.productId),
+            Number(batch.storeId),
+            batch.responsibleUserId ? Number(batch.responsibleUserId) : null,
+            nextAssignedUserId,
+            nextStatus,
+            nextOutcome || null,
+            riskLevel,
+            batch.expiryDate,
+            daysLeft,
+            title,
+            note
+          ]
+        );
+        created += 1;
+        continue;
+      }
+
       const nextAssignedUserId =
-        taskAssignmentMode === 'shared' ? null : batch.responsibleUserId ? Number(batch.responsibleUserId) : null;
-      await pool.query<ResultSetHeader>(
+        taskAssignmentMode === 'shared'
+          ? existingTask.status === 'in_progress' && existingTask.assigned_user_id
+            ? existingTask.assigned_user_id
+            : null
+          : batch.responsibleUserId
+            ? Number(batch.responsibleUserId)
+            : null;
+
+      await pool.query(
         `
-          INSERT INTO expiry_tasks (
-            batch_id,
-            product_id,
-            store_id,
-            responsible_user_id,
-            assigned_user_id,
-            source_type,
-            task_type,
-            status,
-            outcome,
-            risk_level,
-            due_date,
-            days_left_snapshot,
-          title,
-          note
-        ) VALUES (?, ?, ?, ?, ?, 'system', 'expiry_check', ?, ?, ?, ?, ?, ?, ?)
+          UPDATE expiry_tasks
+          SET
+            responsible_user_id = ?,
+            assigned_user_id = ?,
+            status = ?,
+            outcome = CASE
+              WHEN ? = 'completed' THEN ?
+              WHEN ? = 'cancelled' THEN outcome
+              ELSE ''
+            END,
+            risk_level = ?,
+            due_date = ?,
+            days_left_snapshot = ?,
+            title = ?,
+            note = ?,
+            last_detected_at = NOW(),
+            completed_at = CASE
+              WHEN ? IN ('completed', 'cancelled') THEN COALESCE(completed_at, NOW())
+              ELSE NULL
+            END,
+            completed_by_user_id = CASE
+              WHEN ? IN ('completed', 'cancelled') THEN completed_by_user_id
+              ELSE NULL
+            END,
+            updated_at = NOW()
+          WHERE id = ?
         `,
         [
-          batchId,
-          Number(batch.productId),
-          Number(batch.storeId),
           batch.responsibleUserId ? Number(batch.responsibleUserId) : null,
           nextAssignedUserId,
           nextStatus,
+          nextStatus,
           nextOutcome || null,
+          nextStatus,
           riskLevel,
           batch.expiryDate,
           daysLeft,
           title,
-          note
+          note,
+          nextStatus,
+          nextStatus,
+          existingTask.id
         ]
       );
-      created += 1;
-      continue;
+      updated += 1;
     }
 
-    const nextAssignedUserId =
-      taskAssignmentMode === 'shared'
-        ? existingTask.status === 'in_progress' && existingTask.assigned_user_id
-          ? existingTask.assigned_user_id
-          : null
-        : batch.responsibleUserId
-          ? Number(batch.responsibleUserId)
-          : null;
-
-    await pool.query(
-      `
-        UPDATE expiry_tasks
-        SET
-          responsible_user_id = ?,
-          assigned_user_id = ?,
-          status = ?,
-          outcome = CASE
-            WHEN ? = 'completed' THEN ?
-            WHEN ? = 'cancelled' THEN outcome
-            ELSE ''
-          END,
-          risk_level = ?,
-          due_date = ?,
-          days_left_snapshot = ?,
-          title = ?,
-          note = ?,
-          last_detected_at = NOW(),
-          completed_at = CASE
-            WHEN ? IN ('completed', 'cancelled') THEN COALESCE(completed_at, NOW())
-            ELSE NULL
-          END,
-          completed_by_user_id = CASE
-            WHEN ? IN ('completed', 'cancelled') THEN completed_by_user_id
-            ELSE NULL
-          END,
-          updated_at = NOW()
-        WHERE id = ?
-      `,
-        [
-        batch.responsibleUserId ? Number(batch.responsibleUserId) : null,
-        nextAssignedUserId,
-        nextStatus,
-        nextStatus,
-        nextOutcome || null,
-        nextStatus,
-        riskLevel,
-        batch.expiryDate,
-        daysLeft,
-        title,
-        note,
-        nextStatus,
-        nextStatus,
-        existingTask.id
-      ]
-    );
-    updated += 1;
+    if (batches.length < pageSize) {
+      break;
+    }
   }
 
   for (const row of existingRows) {
@@ -384,15 +407,18 @@ export async function syncInventoryExpiryTasksInDb() {
   }
 
   return {
-    scannedBatches: batches.length,
-    relevantBatches: relevantBatches.length,
+    scannedBatches,
+    relevantBatches,
     created,
     updated,
     cancelled
   };
 }
 
-export async function listInventoryExpiryNotificationCandidatesFromDb(limit = 200): Promise<InventoryExpiryNotificationCandidate[]> {
+export async function listInventoryExpiryNotificationCandidatesFromDb(
+  limit = 200,
+  offset = 0
+): Promise<InventoryExpiryNotificationCandidate[]> {
   const pool = getDbPool();
   const taskAssignmentModeSql = await getTaskAssignmentModeSql('s');
   const [rows] = await pool.query<ExpiryTaskRow[]>(
@@ -450,8 +476,9 @@ export async function listInventoryExpiryNotificationCandidatesFromDb(limit = 20
         )
       ORDER BY et.due_date ASC, et.risk_level DESC, et.id ASC
       LIMIT ?
+      OFFSET ?
     `,
-    [Math.min(Math.max(limit, 1), 500)]
+    [Math.min(Math.max(limit, 1), 500), Math.max(Number(offset || 0), 0)]
   );
 
   return rows.map((row) => ({
@@ -598,10 +625,10 @@ export async function takeInventoryExpiryTaskInDb(input: {
   const normalizedTaskId = Number(input.taskId);
   const normalizedUserId = Number(input.userId);
   if (!Number.isFinite(normalizedTaskId) || normalizedTaskId <= 0) {
-    throw new Error('Некоректне завдання.');
+    throw new Error('РќРµРєРѕСЂРµРєС‚РЅРµ Р·Р°РІРґР°РЅРЅСЏ.');
   }
   if (!Number.isFinite(normalizedUserId) || normalizedUserId <= 0) {
-    throw new Error('Некоректний працівник.');
+    throw new Error('РќРµРєРѕСЂРµРєС‚РЅРёР№ РїСЂР°С†С–РІРЅРёРє.');
   }
 
   const [result] = await pool.query<ResultSetHeader>(
@@ -620,7 +647,7 @@ export async function takeInventoryExpiryTaskInDb(input: {
   );
 
   if (Number(result.affectedRows ?? 0) === 0) {
-    throw new Error('Цю задачу вже взяв у роботу інший працівник.');
+    throw new Error('Р¦СЋ Р·Р°РґР°С‡Сѓ РІР¶Рµ РІР·СЏРІ Сѓ СЂРѕР±РѕС‚Сѓ С–РЅС€РёР№ РїСЂР°С†С–РІРЅРёРє.');
   }
 
   return findInventoryExpiryTaskByIdInDb(normalizedTaskId);

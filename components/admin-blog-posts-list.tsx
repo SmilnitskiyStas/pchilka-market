@@ -70,7 +70,7 @@ export default function AdminBlogPostsList({ staticSlugs }: AdminBlogPostsListPr
       <div className="grid gap-4 sm:gap-5 md:grid-cols-2 lg:grid-cols-3">
         {adminBlogEntries.map((entry) => {
           const categoryNames = entry.categoryIds.map((id) => categoryMap.get(id)).filter(Boolean) as string[];
-          const cover = entry.coverImage || '/img/logo.png';
+          const cover = entry.coverImage || '/logo.png';
 
           return (
             <article

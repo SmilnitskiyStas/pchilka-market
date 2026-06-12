@@ -1,3 +1,5 @@
+import { buildSiteImageProxyUrl } from '@/lib/site-image-proxy';
+
 export type BlogPost = {
   slug: string;
   title: string;
@@ -14,9 +16,8 @@ export const blogPosts: BlogPost[] = [
     title: 'Як обрати корисні перекуси для всієї родини',
     excerpt: 'Поради щодо швидких та поживних перекусів із доступних продуктів.',
     publishedAt: '2026-02-15',
-    thumbnailImage: '/img/baners/%D0%B1%D0%B0%D0%BD%D0%BD%D0%B5%D1%80%20Milka%20%D0%BD%D0%B0%20%D1%81%D0%B0%D0%B9%D1%82.jpg',
-    coverImage:
-      '/img/baners/%D0%B1%D0%B0%D0%BD%D0%BD%D0%B5%D1%80%20Milka%20%D0%BD%D0%B0%20%D1%81%D0%B0%D0%B9%D1%82.jpg',
+    thumbnailImage: buildSiteImageProxyUrl('/img/baners/%D0%B1%D0%B0%D0%BD%D0%BD%D0%B5%D1%80%20Milka%20%D0%BD%D0%B0%20%D1%81%D0%B0%D0%B9%D1%82.jpg', 'blog-milka-1'),
+    coverImage: buildSiteImageProxyUrl('/img/baners/%D0%B1%D0%B0%D0%BD%D0%BD%D0%B5%D1%80%20Milka%20%D0%BD%D0%B0%20%D1%81%D0%B0%D0%B9%D1%82.jpg', 'blog-milka-1'),
     content: [
       'Корисний перекус має бути простим, доступним і збалансованим. Обирайте поєднання продуктів із білками, клітковиною та повільними вуглеводами.',
       'Для швидкого варіанту підійдуть натуральний йогурт, горіхи, сухофрукти або цільнозернові хлібці. Важливо контролювати порцію, щоб перекус залишався легким.',
@@ -28,10 +29,14 @@ export const blogPosts: BlogPost[] = [
     title: 'Що вигідніше купувати за акцією цього тижня',
     excerpt: 'Огляд категорій товарів, які зараз найкраще купувати за акційними цінами.',
     publishedAt: '2026-02-14',
-    thumbnailImage:
+    thumbnailImage: buildSiteImageProxyUrl(
       '/img/baners/%D0%B1%D0%B0%D0%BD%D0%BD%D0%B5%D1%80%20%D0%91%D0%BE%D0%B9%D0%BE%D0%B2%D0%B0%20%D0%BF%D1%87%D1%96%D0%BB%D0%BA%D0%B0%20%D0%BD%D0%B0%20%D1%81%D0%B0%D0%B9%D1%82.jpg',
-    coverImage:
+      'blog-combat-1'
+    ),
+    coverImage: buildSiteImageProxyUrl(
       '/img/baners/%D0%B1%D0%B0%D0%BD%D0%BD%D0%B5%D1%80%20%D0%91%D0%BE%D0%B9%D0%BE%D0%B2%D0%B0%20%D0%BF%D1%87%D1%96%D0%BB%D0%BA%D0%B0%20%D0%BD%D0%B0%20%D1%81%D0%B0%D0%B9%D1%82.jpg',
+      'blog-combat-1'
+    ),
     content: [
       'Найвигідніше купувати акційні товари щоденного попиту: бакалію, побутову хімію та продукти з довшим терміном зберігання.',
       'Перед покупкою перевіряйте ціну за одиницю (кг/л/шт), а не лише відсоток знижки. Так легше порівняти реальну вигоду між брендами.',
@@ -43,9 +48,8 @@ export const blogPosts: BlogPost[] = [
     title: 'Програма лояльності: як отримати більше кешбеку',
     excerpt: 'Пояснюємо, як правильно використовувати бонуси в мобільному застосунку.',
     publishedAt: '2026-02-13',
-    thumbnailImage: '/img/baners/%D0%B1%D0%B0%D0%BD%D0%BD%D0%B5%D1%80%20Milka%20%D0%BD%D0%B0%20%D1%81%D0%B0%D0%B9%D1%82.jpg',
-    coverImage:
-      '/img/baners/%D0%B1%D0%B0%D0%BD%D0%BD%D0%B5%D1%80%20Milka%20%D0%BD%D0%B0%20%D1%81%D0%B0%D0%B9%D1%82.jpg',
+    thumbnailImage: buildSiteImageProxyUrl('/img/baners/%D0%B1%D0%B0%D0%BD%D0%BD%D0%B5%D1%80%20Milka%20%D0%BD%D0%B0%20%D1%81%D0%B0%D0%B9%D1%82.jpg', 'blog-milka-2'),
+    coverImage: buildSiteImageProxyUrl('/img/baners/%D0%B1%D0%B0%D0%BD%D0%BD%D0%B5%D1%80%20Milka%20%D0%BD%D0%B0%20%D1%81%D0%B0%D0%B9%D1%82.jpg', 'blog-milka-2'),
     content: [
       'Щоб отримувати більше кешбеку, перевіряйте персональні пропозиції в застосунку перед покупкою. Часто саме там доступні підвищені бонуси.',
       'Скануйте карту лояльності в кожному чеку й активуйте цільові акції заздалегідь. Частина бонусів нараховується лише при виконанні умов акції.',

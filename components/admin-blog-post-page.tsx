@@ -293,7 +293,7 @@ export default function AdminBlogPostPage({ slug }: AdminBlogPostPageProps) {
     <>
       <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         <div className="h-64 w-full bg-slate-100 sm:h-80">
-          <img src={entry.coverImage || '/img/logo.png'} alt={entry.title} className="h-full w-full object-cover" />
+          <img src={entry.coverImage || '/logo.png'} alt={entry.title} className="h-full w-full object-cover" />
         </div>
 
         <div className="p-6 sm:p-8">

@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { mainMenu, type MenuItem } from '@/content/menu';
 import { trackAnalyticsEvent } from '@/lib/analytics-events';
+import { getSiteLogoUrl } from '@/lib/site-branding';
 import { defaultSiteProfileSettings } from '@/lib/site-profile-settings';
 import { uploadRequestAttachment } from '@/lib/request-attachment-client';
 
@@ -61,6 +62,7 @@ export default function SiteHeader() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [contactPhones, setContactPhones] = useState<string[]>(defaultSiteProfileSettings.contactPhones);
+  const [logoUrl, setLogoUrl] = useState<string>(defaultSiteProfileSettings.logoUrl);
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
 
   const [feedbackName, setFeedbackName] = useState('');
@@ -89,12 +91,13 @@ export default function SiteHeader() {
     async function loadContacts() {
       try {
         const response = await fetch('/api/admin/site-profile', { cache: 'no-store' });
-        const payload = (await response.json()) as { ok?: boolean; settings?: { contactPhones?: string[] } };
+        const payload = (await response.json()) as { ok?: boolean; settings?: { contactPhones?: string[]; logoUrl?: string } };
         if (!response.ok || !payload.ok || cancelled) return;
 
         if (Array.isArray(payload.settings?.contactPhones) && payload.settings.contactPhones.length > 0) {
           setContactPhones(payload.settings.contactPhones);
         }
+        setLogoUrl(getSiteLogoUrl(payload.settings));
       } catch {
         // Keep default contacts when API is unavailable.
       }
@@ -464,7 +467,7 @@ export default function SiteHeader() {
         <nav className="relative z-[130] rounded-2xl border border-brand/30 bg-white p-3 shadow-sm sm:p-4">
           <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-3 sm:gap-4">
             <Link href="/" className="flex items-center">
-              <Image src="/img/logo.png" alt="Pchilka Market" width={160} height={52} priority className="h-9 w-auto sm:h-10" />
+              <Image src={logoUrl} alt="Pchilka Market" width={160} height={52} priority className="h-9 w-auto sm:h-10" />
             </Link>
 
             <div className="flex items-center gap-2 sm:gap-3">

@@ -26,6 +26,11 @@ export const adminSections: AdminSection[] = [
     description: 'Керування акційними блоками, промо-сторінками та PDF-каталогом.'
   },
   {
+    href: '/admin/media',
+    title: 'Медіафайли',
+    description: 'Фото, відео, PDF, банери та бренд-матеріали в одному керованому сховищі.'
+  },
+  {
     href: '/admin/network',
     title: 'Мережа',
     description: 'Контакти, карта та список магазинів для публічних сторінок.'

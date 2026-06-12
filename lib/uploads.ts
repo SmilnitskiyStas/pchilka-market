@@ -79,6 +79,14 @@ export function getContentType(filePath: string): string {
       return 'image/gif';
     case '.svg':
       return 'image/svg+xml';
+    case '.mp4':
+      return 'video/mp4';
+    case '.webm':
+      return 'video/webm';
+    case '.mov':
+      return 'video/quicktime';
+    case '.m4v':
+      return 'video/x-m4v';
     case '.pdf':
       return 'application/pdf';
     case '.doc':

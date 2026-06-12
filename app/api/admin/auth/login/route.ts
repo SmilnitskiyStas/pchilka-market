@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     }
 
     const response = NextResponse.json({ ok: true, username: verified.username });
-    applyAdminSessionCookie(response, { username: verified.username, sub: verified.sub });
+    applyAdminSessionCookie(response, { username: verified.username, sub: verified.sub }, request);
     return response;
   } catch {
     return NextResponse.json({ ok: false, error: 'Не вдалося виконати вхід.' }, { status: 400 });

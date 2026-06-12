@@ -1,0 +1,54 @@
+services:
+  db:
+    image: mysql:8.4
+    container_name: pchilka-db
+    restart: unless-stopped
+    env_file:
+      - ../env/.env.docker
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-pchilkaapp}
+      MYSQL_USER: ${DB_USER:-pchilka_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - /srv/pchilka-app/data/db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ../app
+      dockerfile: ../app/Dockerfile
+    container_name: pchilka-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ../env/.env.docker
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      TZ: Europe/Kiev
+      DB_HOST: db
+      DB_PORT: 3306
+      UPLOADS_DIR: /app/data/uploads
+    volumes:
+      - /srv/pchilka-app/data/app/uploads:/app/data/uploads
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3000/api/health/db').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 10
