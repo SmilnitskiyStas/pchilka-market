@@ -20,6 +20,18 @@ const nextConfig = {
         hostname: 'www.pchilka-market.ua'
       }
     ]
+  },
+  async rewrites() {
+    return [
+      {
+        source: '/admin/banners',
+        destination: '/admin/home-slides'
+      },
+      {
+        source: '/api/admin/banners',
+        destination: '/api/admin/home-slides'
+      }
+    ];
   }
 };
 

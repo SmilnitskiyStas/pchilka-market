@@ -130,7 +130,7 @@ export default function AdminNav() {
         label: 'Маркетинг',
         children: [
           { href: '/admin/promotions', label: 'Акції' },
-          { href: '/admin/banners', label: 'Банери' },
+          { href: '/admin/home-slides', label: 'Банери' },
           { href: '/admin/media', label: 'Медіафайли' },
           { href: '/admin/seo', label: 'SEO' }
         ]

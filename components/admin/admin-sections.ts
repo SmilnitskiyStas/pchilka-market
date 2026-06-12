@@ -16,7 +16,7 @@ export const adminSections: AdminSection[] = [
     description: 'Статті та категорії: блог, новини мережі, благодійність.'
   },
   {
-    href: '/admin/banners',
+    href: '/admin/home-slides',
     title: 'Банери',
     description: 'Керування головними банерами та переходами на сторінки подій.'
   },

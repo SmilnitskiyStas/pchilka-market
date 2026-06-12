@@ -135,7 +135,7 @@ function normalizeBanner(raw: HomeBanner): HomeBanner {
 }
 
 async function fetchBanners(): Promise<HomeBanner[]> {
-  const response = await fetch('/api/admin/banners', { cache: 'no-store' });
+  const response = await fetch('/api/admin/home-slides', { cache: 'no-store' });
   const payload = (await response.json()) as { ok?: boolean; banners?: HomeBanner[]; error?: string };
 
   if (!response.ok || !payload.ok) {
@@ -162,7 +162,7 @@ async function saveBanners(banners: HomeBanner[]): Promise<HomeBanner[]> {
     preparedBanners.push({ ...banner, src: normalizedSrc });
   }
 
-  const response = await fetch('/api/admin/banners', {
+  const response = await fetch('/api/admin/home-slides', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ banners: preparedBanners })
