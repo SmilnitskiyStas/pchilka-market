@@ -61,22 +61,24 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
           const isActive = index === activeIndex;
           const useNativeImage = shouldUseNativeImage(slide.src);
           const imageSrc = getBannerImageSrc(slide.src, slide.id);
+          const imageClassName = 'h-full w-full object-contain';
 
           return (
             <div
               key={`${slide.src}-${index}`}
-              className={`transition-opacity duration-700 ease-in-out ${
-                isActive ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+              className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${
+                isActive ? 'pointer-events-auto z-10 opacity-100' : 'pointer-events-none z-0 opacity-0'
               }`}
+              aria-hidden={!isActive}
             >
               {slide.href ? (
-                <Link href={slide.href} aria-label={slide.alt} className="absolute inset-0 block">
+                <Link href={slide.href} aria-label={slide.alt} className="block h-full w-full">
                   {useNativeImage ? (
                     <img
                       src={imageSrc}
                       alt={slide.alt}
                       loading={index === 0 ? 'eager' : 'lazy'}
-                      className="h-full w-full object-contain transition-opacity duration-700 ease-in-out"
+                      className={imageClassName}
                     />
                   ) : (
                     <Image
@@ -84,18 +86,18 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
                       alt={slide.alt}
                       fill
                       priority={index === 0}
-                      className="object-contain transition-opacity duration-700 ease-in-out"
+                      className="object-contain"
                     />
                   )}
                 </Link>
               ) : (
-                <>
+                <div className="h-full w-full">
                   {useNativeImage ? (
                     <img
                       src={imageSrc}
                       alt={slide.alt}
                       loading={index === 0 ? 'eager' : 'lazy'}
-                      className="h-full w-full object-contain transition-opacity duration-700 ease-in-out"
+                      className={imageClassName}
                     />
                   ) : (
                     <Image
@@ -103,10 +105,10 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
                       alt={slide.alt}
                       fill
                       priority={index === 0}
-                      className="object-contain transition-opacity duration-700 ease-in-out"
+                      className="object-contain"
                     />
                   )}
-                </>
+                </div>
               )}
             </div>
           );
