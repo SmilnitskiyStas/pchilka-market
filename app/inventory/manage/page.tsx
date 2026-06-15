@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { uploadRequestAttachment } from '@/lib/request-attachment-client';
@@ -114,11 +114,11 @@ type BatchExpiryCorrectionPayload = {
 };
 
 const expiryCorrectionReasonOptions = [
-  { value: 'wrong_year', label: 'РџРѕРјРёР»РєР° РІ СЂРѕС†С–' },
-  { value: 'wrong_day_or_month', label: 'РџРѕРјРёР»РєР° РІ РґРЅС– Р°Р±Рѕ РјС–СЃСЏС†С–' },
-  { value: 'label_rechecked', label: 'РџРµСЂРµРІС–СЂРµРЅРѕ РїРѕ РµС‚РёРєРµС‚С†С–' },
-  { value: 'supplier_data_error', label: 'РџРѕРјРёР»РєР° РІ РґР°РЅРёС… РїРѕСЃС‚Р°С‡Р°Р»СЊРЅРёРєР°' },
-  { value: 'other', label: 'Р†РЅС€Р° РїСЂРёС‡РёРЅР°' }
+  { value: 'wrong_year', label: 'Помилка в році' },
+  { value: 'wrong_day_or_month', label: 'Помилка в дні або місяці' },
+  { value: 'label_rechecked', label: 'Перевірено по етикетці' },
+  { value: 'supplier_data_error', label: 'Помилка в даних постачальника' },
+  { value: 'other', label: 'Інша причина' }
 ] as const;
 
 const taskAssignmentModeOptions: Array<{
@@ -128,25 +128,25 @@ const taskAssignmentModeOptions: Array<{
 }> = [
   {
     value: 'personal',
-    label: 'РџРµСЂСЃРѕРЅР°Р»СЊРЅС– Р·Р°РґР°С‡С–',
-    description: 'РљРѕР¶РµРЅ РїСЂР°С†С–РІРЅРёРє Р±Р°С‡РёС‚СЊ С– РѕС‚СЂРёРјСѓС” С‚С–Р»СЊРєРё СЃРІРѕС— Р·Р°РґР°С‡С–.'
+    label: 'Персональні задачі',
+    description: 'Кожен працівник бачить і отримує тільки свої задачі.'
   },
   {
     value: 'shared',
-    label: 'РЎРїС–Р»СЊРЅРёР№ СЃРїРёСЃРѕРє РјР°РіР°Р·РёРЅСѓ',
-    description: 'РЈСЃС– РїСЂР°С†С–РІРЅРёРєРё Р±Р°С‡Р°С‚СЊ СЃРїС–Р»СЊРЅРёР№ СЃРїРёСЃРѕРє С– Р±РµСЂСѓС‚СЊ Р·Р°РґР°С‡С– РІ СЂРѕР±РѕС‚Сѓ РІСЂСѓС‡РЅСѓ.'
+    label: 'Спільний список магазину',
+    description: 'Усі працівники бачать спільний список і беруть задачі в роботу вручну.'
   },
   {
     value: 'hybrid',
-    label: 'Р—РјС–С€Р°РЅРёР№ СЂРµР¶РёРј',
-    description: 'РљСЂРёС‚РёС‡РЅС– Р·Р°РґР°С‡С– РїРµСЂСЃРѕРЅР°Р»СЊРЅС–, С–РЅС€С– РґРѕСЃС‚СѓРїРЅС– Сѓ СЃРїС–Р»СЊРЅРѕРјСѓ СЃРїРёСЃРєСѓ РјР°РіР°Р·РёРЅСѓ.'
+    label: 'Змішаний режим',
+    description: 'Критичні задачі персональні, інші доступні у спільному списку магазину.'
   }
 ];
 
 function formatDaysLeft(value: number) {
-  if (value < 0) return `РџСЂРѕСЃС‚СЂРѕС‡РµРЅРѕ РЅР° ${Math.abs(value)} РґРЅ.`;
-  if (value === 0) return 'РЎРїР»РёРІР°С” СЃСЊРѕРіРѕРґРЅС–';
-  return `Р—Р°Р»РёС€РёР»РѕСЃСЊ ${value} РґРЅ.`;
+  if (value < 0) return `Прострочено на ${Math.abs(value)} дн.`;
+  if (value === 0) return 'Спливає сьогодні';
+  return `Залишилось ${value} дн.`;
 }
 
 function formatBatchCheckStatus(value: string) {
@@ -189,7 +189,7 @@ function buildSupplyKey(batch: ExpiringBatchView) {
 }
 
 function formatDate(value: string) {
-  if (!value) return 'вЂ”';
+  if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('uk-UA');
 }
@@ -254,7 +254,7 @@ function groupBatchesBySupply(
     if (!existingSupply) {
       supplyGroups.set(supplyKey, {
         key: supplyKey,
-        label: batch.batchCode.trim() || `Р‘РµР· РєРѕРґСѓ РїРѕСЃС‚Р°РІРєРё вЂў РїР°СЂС‚С–СЏ #${batch.id}`,
+        label: batch.batchCode.trim() || `Без коду поставки • партія #${batch.id}`,
         totalQuantity: batch.quantity,
         batchesCount: 1,
         productsCount: 1,
@@ -408,7 +408,7 @@ export default function InventoryManagePage() {
           !Array.isArray(payload.storeBatches) ||
           !Array.isArray(payload.expiringBatches)
         ) {
-          throw new Error(payload.error || 'РќРµ РІРґР°Р»РѕСЃСЏ Р·Р°РІР°РЅС‚Р°Р¶РёС‚Рё РєРµСЂСѓРІР°РЅРЅСЏ РјР°РіР°Р·РёРЅРѕРј.');
+          throw new Error(payload.error || 'Не вдалося завантажити керування магазином.');
         }
 
         setCurrentUserRole(payload.user.role);
@@ -419,7 +419,7 @@ export default function InventoryManagePage() {
         setExpiringBatches(payload.expiringBatches);
         setError('');
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : 'РќРµ РІРґР°Р»РѕСЃСЏ Р·Р°РІР°РЅС‚Р°Р¶РёС‚Рё РєРµСЂСѓРІР°РЅРЅСЏ РјР°РіР°Р·РёРЅРѕРј.');
+        setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити керування магазином.');
       } finally {
         setIsLoading(false);
       }
@@ -513,13 +513,13 @@ export default function InventoryManagePage() {
       });
       const payload = (await response.json()) as { ok?: boolean; user?: InventoryUserView; error?: string };
       if (!response.ok || !payload.ok || !payload.user) {
-        throw new Error(payload.error || 'РќРµ РІРґР°Р»РѕСЃСЏ РѕРЅРѕРІРёС‚Рё РїСЂР°С†С–РІРЅРёРєР°.');
+        throw new Error(payload.error || 'Не вдалося оновити працівника.');
       }
 
       setUsers((prev) => prev.map((item) => (item.id === payload.user?.id ? (payload.user as InventoryUserView) : item)));
-      setSuccess(`РћРЅРѕРІР»РµРЅРѕ РїСЂР°С†С–РІРЅРёРєР°: ${payload.user.surname} ${payload.user.name}.`);
+      setSuccess(`Оновлено працівника: ${payload.user.surname} ${payload.user.name}.`);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'РќРµ РІРґР°Р»РѕСЃСЏ РѕРЅРѕРІРёС‚Рё РїСЂР°С†С–РІРЅРёРєР°.');
+      setError(saveError instanceof Error ? saveError.message : 'Не вдалося оновити працівника.');
     } finally {
       setSavingUserId(null);
     }
@@ -544,13 +544,13 @@ export default function InventoryManagePage() {
         error?: string;
       };
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || 'РќРµ РІРґР°Р»РѕСЃСЏ РѕРЅРѕРІРёС‚Рё СЂРµР¶РёРј Р·Р°РґР°С‡.');
+        throw new Error(payload.error || 'Не вдалося оновити режим задач.');
       }
 
       setTaskAssignmentMode(payload.taskAssignmentMode ?? taskAssignmentMode);
-      setSuccess('Р РµР¶РёРј СЂРѕР·РїРѕРґС–Р»Сѓ Р·Р°РґР°С‡ РѕРЅРѕРІР»РµРЅРѕ РґР»СЏ С†СЊРѕРіРѕ РјР°РіР°Р·РёРЅСѓ.');
+      setSuccess('Режим розподілу задач оновлено для цього магазину.');
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'РќРµ РІРґР°Р»РѕСЃСЏ РѕРЅРѕРІРёС‚Рё СЂРµР¶РёРј Р·Р°РґР°С‡.');
+      setError(saveError instanceof Error ? saveError.message : 'Не вдалося оновити режим задач.');
     } finally {
       setIsSavingTaskMode(false);
     }
@@ -572,7 +572,7 @@ export default function InventoryManagePage() {
       });
       const payload = (await response.json()) as { ok?: boolean; batch?: ExpiringBatchView; error?: string };
       if (!response.ok || !payload.ok || !payload.batch) {
-        throw new Error(payload.error || 'РќРµ РІРґР°Р»РѕСЃСЏ РїРµСЂРµРЅР°Р·РЅР°С‡РёС‚Рё РІС–РґРїРѕРІС–РґР°Р»СЊРЅРѕРіРѕ.');
+        throw new Error(payload.error || 'Не вдалося переназначити відповідального.');
       }
 
       setExpiringBatches((prev) =>
@@ -597,9 +597,9 @@ export default function InventoryManagePage() {
             : item
         )
       );
-      setSuccess(`РџР°СЂС‚С–СЋ ${payload.batch.productName} РїРµСЂРµРЅР°Р·РЅР°С‡РµРЅРѕ.`);
+      setSuccess(`Партію ${payload.batch.productName} переназначено.`);
     } catch (assignError) {
-      setError(assignError instanceof Error ? assignError.message : 'РќРµ РІРґР°Р»РѕСЃСЏ РїРµСЂРµРЅР°Р·РЅР°С‡РёС‚Рё РІС–РґРїРѕРІС–РґР°Р»СЊРЅРѕРіРѕ.');
+      setError(assignError instanceof Error ? assignError.message : 'Не вдалося переназначити відповідального.');
     } finally {
       setAssigningBatchId('');
     }
@@ -627,7 +627,7 @@ export default function InventoryManagePage() {
       let nextPhotoUrl = expiryCorrectionPhotoUrl.trim();
       if (!nextPhotoUrl) {
         if (!expiryCorrectionPhotoFile) {
-          throw new Error('Р”РѕРґР°Р№С‚Рµ С„РѕС‚Рѕ С‚РѕРІР°СЂСѓ СЏРє РїС–РґС‚РІРµСЂРґР¶РµРЅРЅСЏ Р·РјС–РЅРё.');
+          throw new Error('Додайте фото товару як підтвердження зміни.');
         }
         const uploaded = await uploadRequestAttachment(expiryCorrectionPhotoFile, {
           folder: 'inventory/expiry-corrections'
@@ -655,16 +655,16 @@ export default function InventoryManagePage() {
         return;
       }
       if (!response.ok || !payload.ok || !payload.batch || !payload.correction) {
-        throw new Error(payload.error || 'РќРµ РІРґР°Р»РѕСЃСЏ Р·РјС–РЅРёС‚Рё С‚РµСЂРјС–РЅ РїСЂРёРґР°С‚РЅРѕСЃС‚С–.');
+        throw new Error(payload.error || 'Не вдалося змінити термін придатності.');
       }
 
       upsertBatch(payload.batch);
       setSuccess(
-        `РўРµСЂРјС–РЅ РїСЂРёРґР°С‚РЅРѕСЃС‚С– РґР»СЏ "${payload.batch.productName}" Р·РјС–РЅРµРЅРѕ Р· ${payload.correction.oldExpiryDate} РЅР° ${payload.correction.newExpiryDate}.`
+        `Термін придатності для "${payload.batch.productName}" змінено з ${payload.correction.oldExpiryDate} на ${payload.correction.newExpiryDate}.`
       );
       closeExpiryCorrectionModal();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'РќРµ РІРґР°Р»РѕСЃСЏ Р·РјС–РЅРёС‚Рё С‚РµСЂРјС–РЅ РїСЂРёРґР°С‚РЅРѕСЃС‚С–.');
+      setError(saveError instanceof Error ? saveError.message : 'Не вдалося змінити термін придатності.');
     } finally {
       setIsSavingExpiryCorrection(false);
     }
@@ -680,24 +680,24 @@ export default function InventoryManagePage() {
               href={`/inventory/tasks?token=${encodeURIComponent(token)}`}
               className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
-              РќР°Р·Р°Рґ
+              Назад
             </a>
             <button
               type="button"
               onClick={() => window.location.reload()}
               className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
             >
-              РџРµСЂРµР·Р°РІР°РЅС‚Р°Р¶РёС‚Рё
+              Перезавантажити
             </button>
           </div>
         </div>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900">РљРµСЂСѓРІР°РЅРЅСЏ РїСЂР°С†С–РІРЅРёРєР°РјРё С– РїР°СЂС‚С–СЏРјРё РјР°РіР°Р·РёРЅСѓ</h1>
+        <h1 className="mt-2 text-2xl font-bold text-slate-900">Керування працівниками і партіями магазину</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Р”РѕСЃС‚СѓРїРЅРѕ РґР»СЏ СЂРѕР»РµР№ manager, store_manager С– admin. РўСѓС‚ РјРѕР¶РЅР° РѕРЅРѕРІР»СЋРІР°С‚Рё РїРѕСЃР°РґРё, СЂРѕР»С–, Р°РєС‚РёРІРЅС–СЃС‚СЊ РїСЂР°С†С–РІРЅРёРєС–РІ С–
-          Р±Р°С‡РёС‚Рё РїРѕСЃС‚Р°РІРєРё РјР°РіР°Р·РёРЅСѓ Р· С‚РѕРІР°СЂР°РјРё, РєС–Р»СЊРєС–СЃС‚СЋ, СЃС‚СЂРѕРєР°РјРё С‚Р° РІС–РґРїРѕРІС–РґР°Р»СЊРЅРёРјРё.
+          Доступно для ролей manager, store_manager і admin. Тут можна оновлювати посади, ролі, активність працівників і
+          бачити поставки магазину з товарами, кількістю, строками та відповідальними.
         </p>
 
-        {isLoading ? <p className="mt-4 text-sm text-slate-600">Р—Р°РІР°РЅС‚Р°Р¶РµРЅРЅСЏ...</p> : null}
+        {isLoading ? <p className="mt-4 text-sm text-slate-600">Завантаження...</p> : null}
         {error ? <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p> : null}
         {success ? <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{success}</p> : null}
 
@@ -705,33 +705,33 @@ export default function InventoryManagePage() {
           <>
             <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">РњР°РіР°Р·РёРЅ</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{storeLabel || 'вЂ”'}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Магазин</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{storeLabel || '—'}</p>
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Р РѕР»СЊ</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Роль</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">{currentUserRole}</p>
               </div>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Р¤РѕРєСѓСЃ</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Фокус</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">
-                  {groupedStoreBatches.length} РїРѕСЃС‚Р°РІРѕРє / {storeBatches.length} РїР°СЂС‚С–Р№ Сѓ РїРѕС‚РѕС‡РЅРѕРјСѓ СЃРїРёСЃРєСѓ
+                  {groupedStoreBatches.length} поставок / {storeBatches.length} партій у поточному списку
                 </p>
               </div>
             </div>
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
               <label className="block text-sm">
-                <span className="font-semibold text-slate-900">РџРѕС€СѓРє РїРѕ С‚РѕРІР°СЂР°С… С– РїР°СЂС‚С–СЏС…</span>
+                <span className="font-semibold text-slate-900">Пошук по товарах і партіях</span>
                 <input
                   value={manageFilter}
                   onChange={(event) => setManageFilter(event.target.value)}
-                  placeholder="РќР°Р·РІР°, Р°СЂС‚РёРєСѓР», С€С‚СЂРёС…РєРѕРґ, РєРѕРґ РїРѕСЃС‚Р°РІРєРё, РїР°СЂС‚С–СЏ, РІС–РґРїРѕРІС–РґР°Р»СЊРЅРёР№"
+                  placeholder="Назва, артикул, штрихкод, код поставки, партія, відповідальний"
                   className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
                 />
               </label>
               <p className="mt-2 text-xs text-slate-500">
-                Р¤С–Р»СЊС‚СЂ РѕРґРЅРѕС‡Р°СЃРЅРѕ Р·РІСѓР¶СѓС” РїРѕС‚РѕС‡РЅС– РїРѕСЃС‚Р°РІРєРё С– С‚РѕРІР°СЂРё Р·С– СЃС‚СЂРѕРєРѕРј, С‰Рѕ СЃРїР»РёРІР°С”.
+                Фільтр одночасно звужує поточні поставки і товари зі строком, що спливає.
               </p>
             </div>
 
@@ -739,9 +739,9 @@ export default function InventoryManagePage() {
               <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-base font-semibold text-slate-900">Р РµР¶РёРј СЂРѕР·РїРѕРґС–Р»Сѓ Р·Р°РґР°С‡</h2>
+                    <h2 className="text-base font-semibold text-slate-900">Режим розподілу задач</h2>
                     <p className="mt-1 text-sm text-slate-600">
-                      РљРµСЂС–РІРЅРёРє РјР°РіР°Р·РёРЅСѓ РІРёСЂС–С€СѓС”, С‡Рё РїСЂР°С†С–РІРЅРёРєРё РѕС‚СЂРёРјСѓСЋС‚СЊ Р»РёС€Рµ СЃРІРѕС— Р·Р°РґР°С‡С–, С‡Рё РєРѕРјР°РЅРґР° РїСЂР°С†СЋС” Р·С– СЃРїС–Р»СЊРЅРёРј СЃРїРёСЃРєРѕРј.
+                      Керівник магазину вирішує, чи працівники отримують лише свої задачі, чи команда працює зі спільним списком.
                     </p>
                   </div>
                   <button
@@ -752,7 +752,7 @@ export default function InventoryManagePage() {
                     disabled={isSavingTaskMode}
                     className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                   >
-                    {isSavingTaskMode ? 'Р—Р±РµСЂРµР¶РµРЅРЅСЏ...' : 'Р—Р±РµСЂРµРіС‚Рё СЂРµР¶РёРј'}
+                    {isSavingTaskMode ? 'Збереження...' : 'Зберегти режим'}
                   </button>
                 </div>
 
@@ -791,7 +791,7 @@ export default function InventoryManagePage() {
               <section>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <h2 className="text-lg font-semibold text-slate-900">{'РџСЂР°С†С–РІРЅРёРєРё РјР°РіР°Р·РёРЅСѓ'}</h2>
+                    <h2 className="text-lg font-semibold text-slate-900">{'Працівники магазину'}</h2>
                     <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{users.length}</span>
                   </div>
                   <button
@@ -799,7 +799,7 @@ export default function InventoryManagePage() {
                     onClick={() => setIsUsersSectionOpen((prev) => !prev)}
                     className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                   >
-                    {isUsersSectionOpen ? 'Р—РіРѕСЂРЅСѓС‚Рё' : 'Р РѕР·РіРѕСЂРЅСѓС‚Рё'}
+                    {isUsersSectionOpen ? 'Згорнути' : 'Розгорнути'}
                   </button>
                 </div>
                 {isUsersSectionOpen ? (
@@ -816,7 +816,7 @@ export default function InventoryManagePage() {
                           onChange={(event) =>
                             setUsers((prev) => prev.map((item) => (item.id === user.id ? { ...item, positionTitle: event.target.value } : item)))
                           }
-                          placeholder="РџРѕСЃР°РґР°"
+                          placeholder="Посада"
                           className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
                         />
                         <div className="grid gap-3 md:grid-cols-2">
@@ -845,7 +845,7 @@ export default function InventoryManagePage() {
                               }
                               className="h-4 w-4"
                             />
-                            РђРєС‚РёРІРЅРёР№ РїСЂР°С†С–РІРЅРёРє
+                            Активний працівник
                           </label>
                         </div>
                         <div className="flex justify-end">
@@ -857,7 +857,7 @@ export default function InventoryManagePage() {
                             disabled={savingUserId === user.id}
                             className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                           >
-                            {savingUserId === user.id ? 'Р—Р±РµСЂРµР¶РµРЅРЅСЏ...' : 'РћРЅРѕРІРёС‚Рё РїСЂР°С†С–РІРЅРёРєР°'}
+                            {savingUserId === user.id ? 'Збереження...' : 'Оновити працівника'}
                           </button>
                         </div>
                       </div>
@@ -865,27 +865,27 @@ export default function InventoryManagePage() {
                   ))}
                   </div>
                 ) : (
-                  <p className="mt-3 text-sm text-slate-600">{'РЎРїРёСЃРѕРє РїСЂР°С†С–РІРЅРёРєС–РІ РїСЂРёС…РѕРІР°РЅРѕ. Р’С–РґРєСЂРёР№С‚Рµ Р±Р»РѕРє, СЏРєС‰Рѕ РїРѕС‚СЂС–Р±РЅРѕ Р·РјС–РЅРёС‚Рё СЂРѕР»С– Р°Р±Рѕ СЃС‚Р°С‚СѓСЃРё.'}</p>
+                  <p className="mt-3 text-sm text-slate-600">{'Список працівників приховано. Відкрийте блок, якщо потрібно змінити ролі або статуси.'}</p>
                 )}
               </section>
 
               <div className="space-y-6">
               <section>
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-lg font-semibold text-slate-900">РџРѕС‚РѕС‡РЅС– РїРѕСЃС‚Р°РІРєРё РјР°РіР°Р·РёРЅСѓ</h2>
+                  <h2 className="text-lg font-semibold text-slate-900">Поточні поставки магазину</h2>
                   <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                    {groupedStoreBatches.length} РїРѕСЃС‚Р°РІРѕРє
+                    {groupedStoreBatches.length} поставок
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-slate-600">
-                  РћСЃС‚Р°РЅРЅС– РїР°СЂС‚С–С— Р·РіСЂСѓРїРѕРІР°РЅС– Р·Р° РєРѕРґРѕРј РїРѕСЃС‚Р°РІРєРё. РЈ РєРѕР¶РЅС–Р№ РїРѕСЃС‚Р°РІС†С– РІРёРґРЅРѕ С‚РѕРІР°СЂРё, РєС–Р»СЊРєС–СЃС‚СЊ, С‚РµСЂРјС–РЅ, С…С‚Рѕ РґРѕРґР°РІСЃСЏ СЏРє РІС–РґРїРѕРІС–РґР°Р»СЊРЅРёР№ С– РєРѕРіРѕ РјРѕР¶РЅР° РїСЂРёР·РЅР°С‡РёС‚Рё.
+                  Останні партії згруповані за кодом поставки. У кожній поставці видно товари, кількість, термін, хто додався як відповідальний і кого можна призначити.
                 </p>
                 {storeBatches.length === 0 ? (
-                  <p className="mt-4 text-sm text-slate-600">РЈ РїРѕС‚РѕС‡РЅРѕРјСѓ РјР°РіР°Р·РёРЅС– С‰Рµ РЅРµРјР°С” РІРЅРµСЃРµРЅРёС… РїР°СЂС‚С–Р№.</p>
+                  <p className="mt-4 text-sm text-slate-600">У поточному магазині ще немає внесених партій.</p>
                 ) : (
                   <div className="mt-4 space-y-3">
                     {groupedStoreBatches.length === 0 ? (
-                      <p className="text-sm text-slate-600">Р—Р° РІРёР±СЂР°РЅРёРј С„С–Р»СЊС‚СЂРѕРј Сѓ РїРѕС‚РѕС‡РЅРёС… РїРѕСЃС‚Р°РІРєР°С… РЅС–С‡РѕРіРѕ РЅРµ Р·РЅР°Р№РґРµРЅРѕ.</p>
+                      <p className="text-sm text-slate-600">За вибраним фільтром у поточних поставках нічого не знайдено.</p>
                     ) : null}
                     {groupedStoreBatches.map((supply) => (
                       <div
@@ -896,13 +896,13 @@ export default function InventoryManagePage() {
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-slate-900">РџРѕСЃС‚Р°РІРєР°: {supply.label}</p>
+                            <p className="text-sm font-semibold text-slate-900">Поставка: {supply.label}</p>
                             <p className="mt-1 text-xs text-slate-500">
-                              РўРѕРІР°СЂС–РІ: {supply.productsCount} вЂў РїР°СЂС‚С–Р№: {supply.batchesCount} вЂў РєС–Р»СЊРєС–СЃС‚СЊ: {supply.totalQuantity}
+                              Товарів: {supply.productsCount} • партій: {supply.batchesCount} • кількість: {supply.totalQuantity}
                             </p>
                           </div>
                           <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                            РћРЅРѕРІР»РµРЅРѕ: {formatDate(supply.latestCreatedAt)}
+                            Оновлено: {formatDate(supply.latestCreatedAt)}
                           </span>
                         </div>
 
@@ -913,11 +913,11 @@ export default function InventoryManagePage() {
                                 <div>
                                   <p className="text-sm font-semibold text-slate-900">{product.productName}</p>
                                   <p className="mt-1 text-xs text-slate-500">
-                                    РђСЂС‚РёРєСѓР»: {product.article || 'вЂ”'} вЂў РЁРљ: {product.barcode || 'вЂ”'}
+                                    Артикул: {product.article || '—'} • ШК: {product.barcode || '—'}
                                   </p>
                                 </div>
                                 <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                                  {product.totalQuantity} РѕРґ.
+                                  {product.totalQuantity} од.
                                 </span>
                               </div>
 
@@ -931,19 +931,19 @@ export default function InventoryManagePage() {
                                   >
                                     <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
                                       <p>
-                                        <span className="font-semibold text-slate-900">РџР°СЂС‚С–СЏ #{batch.id}</span> вЂў {batch.quantity} РѕРґ.
+                                        <span className="font-semibold text-slate-900">Партія #{batch.id}</span> • {batch.quantity} од.
                                       </p>
-                                      <p>РўРµСЂРјС–РЅ: {batch.expiryDate} ({formatDaysLeft(batch.daysLeft)})</p>
-                                      <p>Р”Р°С‚Р° РїРѕСЃС‚Р°РІРєРё: {batch.deliveryDate || 'вЂ”'}</p>
-                                      <p>РЎС‚РІРѕСЂРµРЅРѕ: {formatDate(batch.createdAt)}</p>
+                                      <p>Термін: {batch.expiryDate} ({formatDaysLeft(batch.daysLeft)})</p>
+                                      <p>Дата поставки: {batch.deliveryDate || '—'}</p>
+                                      <p>Створено: {formatDate(batch.createdAt)}</p>
                                     </div>
                                     <p className="mt-2 text-sm text-slate-700">
-                                      Р’С–РґРїРѕРІС–РґР°Р»СЊРЅРёР№: {batch.responsibleUserName || 'РЅРµ РїСЂРёР·РЅР°С‡РµРЅРѕ'}
+                                      Відповідальний: {batch.responsibleUserName || 'не призначено'}
                                     </p>
                                     <div className="mt-2 grid gap-1 text-sm text-slate-700">
-                                      <p>РЎС‚Р°С‚СѓСЃ РїРµСЂРµРІС–СЂРєРё: {formatBatchCheckStatus(batch.checkStatus || 'new')}</p>
-                                      <p>РћСЃС‚Р°РЅРЅСЏ РґС–СЏ: {formatBatchCheckStatus(batch.actionTaken || batch.checkStatus || 'new')}</p>
-                                      {batch.actionNote ? <p>РџСЂРёРјС–С‚РєР°: {batch.actionNote}</p> : null}
+                                      <p>Статус перевірки: {formatBatchCheckStatus(batch.checkStatus || 'new')}</p>
+                                      <p>Остання дія: {formatBatchCheckStatus(batch.actionTaken || batch.checkStatus || 'new')}</p>
+                                      {batch.actionNote ? <p>Примітка: {batch.actionNote}</p> : null}
                                     </div>
                                     <select
                                       value={batch.responsibleUserId}
@@ -953,7 +953,7 @@ export default function InventoryManagePage() {
                                       disabled={assigningBatchId === batch.id}
                                       className="mt-3 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand disabled:opacity-60"
                                     >
-                                      <option value="">Р‘РµР· РІС–РґРїРѕРІС–РґР°Р»СЊРЅРѕРіРѕ</option>
+                                      <option value="">Без відповідального</option>
                                       {activeUsers.map((user) => (
                                         <option key={user.id} value={user.id}>
                                           {[`${user.surname} ${user.name}`, user.positionTitle].filter(Boolean).join(' | ')}
@@ -965,7 +965,7 @@ export default function InventoryManagePage() {
                                         href={`/inventory/manage/expiry-date?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(batch.id)}`}
                                         className="mt-2 inline-flex rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
                                       >
-                                        Р—РјС–РЅРёС‚Рё С‚РµСЂРјС–РЅ РїСЂРёРґР°С‚РЅРѕСЃС‚С–
+                                        Змінити термін придатності
                                       </a>
                                     ) : null}
                                   </div>
@@ -982,17 +982,17 @@ export default function InventoryManagePage() {
 
               <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-lg font-semibold text-slate-900">РџРѕСЃС‚Р°РІРєРё С– С‚РѕРІР°СЂРё Р·С– СЃС‚СЂРѕРєРѕРј, С‰Рѕ СЃРїР»РёРІР°С”</h2>
+                  <h2 className="text-lg font-semibold text-slate-900">Поставки і товари зі строком, що спливає</h2>
                   <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                    {groupedExpiringBatches.length} РїРѕСЃС‚Р°РІРѕРє
+                    {groupedExpiringBatches.length} поставок
                   </span>
                 </div>
                 {expiringBatches.length === 0 ? (
-                  <p className="mt-4 text-sm text-slate-600">РЈ РїРѕС‚РѕС‡РЅРѕРјСѓ РјР°РіР°Р·РёРЅС– РЅРµРјР°С” РїР°СЂС‚С–Р№ Р·С– СЃС‚СЂРѕРєРѕРј РґРѕ 30 РґРЅС–РІ.</p>
+                  <p className="mt-4 text-sm text-slate-600">У поточному магазині немає партій зі строком до 30 днів.</p>
                 ) : (
                   <div className="mt-4 space-y-3">
                     {groupedExpiringBatches.length === 0 ? (
-                      <p className="text-sm text-slate-600">Р—Р° РІРёР±СЂР°РЅРёРј С„С–Р»СЊС‚СЂРѕРј Сѓ Р±Р»РѕС†С– С‚РµСЂРјС–РЅРѕРІРёС… С‚РѕРІР°СЂС–РІ РЅС–С‡РѕРіРѕ РЅРµ Р·РЅР°Р№РґРµРЅРѕ.</p>
+                      <p className="text-sm text-slate-600">За вибраним фільтром у блоці термінових товарів нічого не знайдено.</p>
                     ) : null}
                     {groupedExpiringBatches.map((supply) => (
                       <div
@@ -1009,9 +1009,9 @@ export default function InventoryManagePage() {
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-slate-900">РџРѕСЃС‚Р°РІРєР°: {supply.label}</p>
+                            <p className="text-sm font-semibold text-slate-900">Поставка: {supply.label}</p>
                             <p className="mt-1 text-xs text-slate-500">
-                              РўРѕРІР°СЂС–РІ: {supply.productsCount} вЂў РїР°СЂС‚С–Р№: {supply.batchesCount}
+                              Товарів: {supply.productsCount} • партій: {supply.batchesCount}
                             </p>
                           </div>
                           <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
@@ -1020,9 +1020,9 @@ export default function InventoryManagePage() {
                         </div>
 
                         <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-3">
-                          <p>РќР°Р№Р±Р»РёР¶С‡РёР№ С‚РµСЂРјС–РЅ: {supply.nearestExpiryDate}</p>
-                          <p>Р—Р°РіР°Р»СЊРЅР° РєС–Р»СЊРєС–СЃС‚СЊ: {supply.totalQuantity}</p>
-                          <p>РљР°СЂС‚РѕРє Сѓ РїРѕСЃС‚Р°РІС†С–: {supply.batchesCount}</p>
+                          <p>Найближчий термін: {supply.nearestExpiryDate}</p>
+                          <p>Загальна кількість: {supply.totalQuantity}</p>
+                          <p>Карток у поставці: {supply.batchesCount}</p>
                         </div>
 
                         <div className="mt-3 space-y-2">
@@ -1032,7 +1032,7 @@ export default function InventoryManagePage() {
                                 <div>
                                   <p className="text-sm font-semibold text-slate-900">{product.productName}</p>
                                   <p className="mt-1 text-xs text-slate-500">
-                                    РђСЂС‚РёРєСѓР»: {product.article || 'вЂ”'} вЂў РЁРљ: {product.barcode || 'вЂ”'} вЂў РїР°СЂС‚С–Р№: {product.batchesCount}
+                                    Артикул: {product.article || '—'} • ШК: {product.barcode || '—'} • партій: {product.batchesCount}
                                   </p>
                                 </div>
                                 <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
@@ -1041,9 +1041,9 @@ export default function InventoryManagePage() {
                               </div>
 
                               <div className="mt-3 grid gap-2 text-sm text-slate-700 md:grid-cols-3">
-                                <p>РќР°Р№Р±Р»РёР¶С‡РёР№ С‚РµСЂРјС–РЅ: {product.nearestExpiryDate}</p>
-                                <p>Р—Р°РіР°Р»СЊРЅР° РєС–Р»СЊРєС–СЃС‚СЊ: {product.totalQuantity}</p>
-                                <p>РљР°СЂС‚РѕРє РїРѕ С‚РѕРІР°СЂСѓ: {product.batchesCount}</p>
+                                <p>Найближчий термін: {product.nearestExpiryDate}</p>
+                                <p>Загальна кількість: {product.totalQuantity}</p>
+                                <p>Карток по товару: {product.batchesCount}</p>
                               </div>
 
                               <div className="mt-3 space-y-2">
@@ -1056,9 +1056,9 @@ export default function InventoryManagePage() {
                                   >
                                     <div className="flex flex-wrap items-start justify-between gap-3">
                                       <div>
-                                        <p className="text-sm font-semibold text-slate-900">РџР°СЂС‚С–СЏ #{batch.id}</p>
+                                        <p className="text-sm font-semibold text-slate-900">Партія #{batch.id}</p>
                                         <p className="mt-1 text-xs text-slate-500">
-                                          РљРѕРґ РїР°СЂС‚С–С—: {batch.batchCode || 'вЂ”'} вЂў РўРµСЂРјС–РЅ: {batch.expiryDate} вЂў РљС–Р»СЊРєС–СЃС‚СЊ: {batch.quantity}
+                                          Код партії: {batch.batchCode || '—'} • Термін: {batch.expiryDate} • Кількість: {batch.quantity}
                                         </p>
                                       </div>
                                       <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
@@ -1066,12 +1066,12 @@ export default function InventoryManagePage() {
                                       </span>
                                     </div>
                                     <p className="mt-2 text-sm text-slate-700">
-                                      Р’С–РґРїРѕРІС–РґР°Р»СЊРЅРёР№: {batch.responsibleUserName || 'РЅРµ РїСЂРёР·РЅР°С‡РµРЅРѕ'}
+                                      Відповідальний: {batch.responsibleUserName || 'не призначено'}
                                     </p>
                                     <div className="mt-2 grid gap-1 text-sm text-slate-700">
-                                      <p>РЎС‚Р°С‚СѓСЃ РїРµСЂРµРІС–СЂРєРё: {formatBatchCheckStatus(batch.checkStatus || 'new')}</p>
-                                      <p>РћСЃС‚Р°РЅРЅСЏ РґС–СЏ: {formatBatchCheckStatus(batch.actionTaken || batch.checkStatus || 'new')}</p>
-                                      {batch.actionNote ? <p>РџСЂРёРјС–С‚РєР°: {batch.actionNote}</p> : null}
+                                      <p>Статус перевірки: {formatBatchCheckStatus(batch.checkStatus || 'new')}</p>
+                                      <p>Остання дія: {formatBatchCheckStatus(batch.actionTaken || batch.checkStatus || 'new')}</p>
+                                      {batch.actionNote ? <p>Примітка: {batch.actionNote}</p> : null}
                                     </div>
                                     <select
                                       value={batch.responsibleUserId}
@@ -1081,7 +1081,7 @@ export default function InventoryManagePage() {
                                       disabled={assigningBatchId === batch.id}
                                       className="mt-3 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand disabled:opacity-60"
                                     >
-                                      <option value="">Р‘РµР· РІС–РґРїРѕРІС–РґР°Р»СЊРЅРѕРіРѕ</option>
+                                      <option value="">Без відповідального</option>
                                       {activeUsers.map((user) => (
                                         <option key={user.id} value={user.id}>
                                           {[`${user.surname} ${user.name}`, user.positionTitle].filter(Boolean).join(' | ')}
@@ -1093,7 +1093,7 @@ export default function InventoryManagePage() {
                                         href={`/inventory/manage/expiry-date?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(batch.id)}`}
                                         className="mt-2 inline-flex rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
                                       >
-                                        Р—РјС–РЅРёС‚Рё С‚РµСЂРјС–РЅ РїСЂРёРґР°С‚РЅРѕСЃС‚С–
+                                        Змінити термін придатності
                                       </a>
                                     ) : null}
                                   </div>
@@ -1115,15 +1115,15 @@ export default function InventoryManagePage() {
       {editingExpiryBatch ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6">
           <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">РљРѕРЅС‚СЂРѕР»СЊРѕРІР°РЅР° Р·РјС–РЅР° РґР°С‚Рё</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Контрольована зміна дати</p>
             <h3 className="mt-2 text-xl font-semibold text-slate-900">{editingExpiryBatch.productName}</h3>
             <p className="mt-2 text-sm text-slate-600">
-              Р—РјС–РЅР° С‚РµСЂРјС–РЅСѓ РїСЂРёРґР°С‚РЅРѕСЃС‚С– Р·Р±РµСЂС–РіР°С”С‚СЊСЃСЏ РІ С–СЃС‚РѕСЂС–СЋ СЂР°Р·РѕРј С–Р· РїСЂРёС‡РёРЅРѕСЋ, РєРѕРјРµРЅС‚Р°СЂРµРј, С„РѕС‚Рѕ, РєРѕСЂРёСЃС‚СѓРІР°С‡РµРј С– С‡Р°СЃРѕРј Р·РјС–РЅРё.
+              Зміна терміну придатності зберігається в історію разом із причиною, коментарем, фото, користувачем і часом зміни.
             </p>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="block text-sm">
-                <span className="font-semibold text-slate-900">РЎС‚Р°СЂР° РґР°С‚Р°</span>
+                <span className="font-semibold text-slate-900">Стара дата</span>
                 <input
                   value={editingExpiryBatch.expiryDate}
                   readOnly
@@ -1131,7 +1131,7 @@ export default function InventoryManagePage() {
                 />
               </label>
               <label className="block text-sm">
-                <span className="font-semibold text-slate-900">РќРѕРІР° РґР°С‚Р°</span>
+                <span className="font-semibold text-slate-900">Нова дата</span>
                 <input
                   type="date"
                   value={expiryCorrectionNewDate}
@@ -1143,7 +1143,7 @@ export default function InventoryManagePage() {
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="block text-sm">
-                <span className="font-semibold text-slate-900">РџСЂРёС‡РёРЅР° Р·РјС–РЅРё</span>
+                <span className="font-semibold text-slate-900">Причина зміни</span>
                 <select
                   value={expiryCorrectionReason}
                   onChange={(event) => setExpiryCorrectionReason(event.target.value)}
@@ -1157,7 +1157,7 @@ export default function InventoryManagePage() {
                 </select>
               </label>
               <label className="block text-sm">
-                <span className="font-semibold text-slate-900">Р¤РѕС‚Рѕ С‚РѕРІР°СЂСѓ</span>
+                <span className="font-semibold text-slate-900">Фото товару</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -1166,7 +1166,7 @@ export default function InventoryManagePage() {
                   className="mt-1.5 block w-full rounded-xl border border-slate-300 p-3 text-sm"
                 />
                 <label className="mt-2 inline-flex cursor-pointer items-center justify-center rounded-xl border border-brand px-4 py-3 text-sm font-semibold text-brand transition hover:bg-brand/5">
-                  Р—СЂРѕР±РёС‚Рё С„РѕС‚Рѕ
+                  Зробити фото
                   <input
                     type="file"
                     accept="image/*"
@@ -1177,30 +1177,30 @@ export default function InventoryManagePage() {
                   />
                 </label>
                 <span className="mt-1 block text-xs text-slate-500">
-                  РџРµСЂС€РёР№ С–РЅРїСѓС‚ РІС–РґРєСЂРёРІР°С” РіР°Р»РµСЂРµСЋ, РґСЂСѓРіРёР№ РґРѕР·РІРѕР»СЏС” РѕРґСЂР°Р·Сѓ Р·СЂРѕР±РёС‚Рё С„РѕС‚Рѕ РєР°РјРµСЂРѕСЋ.
+                  Перший інпут відкриває галерею, другий дозволяє одразу зробити фото камерою.
                 </span>
                 <span className="mt-1 block text-xs text-slate-500">
-                  {expiryCorrectionPhotoFile?.name || (expiryCorrectionPhotoUrl ? 'Р¤РѕС‚Рѕ РІР¶Рµ РґРѕРґР°РЅРѕ' : 'Р¤РѕС‚Рѕ РѕР±РѕРІвЂ™СЏР·РєРѕРІРµ')}
+                  {expiryCorrectionPhotoFile?.name || (expiryCorrectionPhotoUrl ? 'Фото вже додано' : 'Фото обов’язкове')}
                 </span>
               </label>
             </div>
 
             <label className="mt-4 block text-sm">
-              <span className="font-semibold text-slate-900">РљРѕРјРµРЅС‚Р°СЂ</span>
+              <span className="font-semibold text-slate-900">Коментар</span>
               <textarea
                 value={expiryCorrectionComment}
                 onChange={(event) => setExpiryCorrectionComment(event.target.value)}
                 rows={4}
-                placeholder="РћРїРёС€С–С‚СЊ, С‰Рѕ СЃР°РјРµ РїРµСЂРµРІС–СЂРёР»Рё С– С‡РѕРјСѓ Р·РјС–РЅСЋС”С‚Рµ РґР°С‚Сѓ."
+                placeholder="Опишіть, що саме перевірили і чому змінюєте дату."
                 className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
               />
             </label>
 
             <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-              <p><span className="font-semibold text-slate-900">РџР°СЂС‚С–СЏ:</span> #{editingExpiryBatch.id}</p>
-              <p className="mt-1"><span className="font-semibold text-slate-900">РљРѕРґ РїР°СЂС‚С–С—:</span> {editingExpiryBatch.batchCode || 'вЂ”'}</p>
-              <p className="mt-1"><span className="font-semibold text-slate-900">РљС–Р»СЊРєС–СЃС‚СЊ:</span> {editingExpiryBatch.quantity}</p>
-              <p className="mt-1"><span className="font-semibold text-slate-900">Р”Р°С‚Р° РїРѕСЃС‚Р°РІРєРё:</span> {editingExpiryBatch.deliveryDate || 'вЂ”'}</p>
+              <p><span className="font-semibold text-slate-900">Партія:</span> #{editingExpiryBatch.id}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Код партії:</span> {editingExpiryBatch.batchCode || '—'}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Кількість:</span> {editingExpiryBatch.quantity}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Дата поставки:</span> {editingExpiryBatch.deliveryDate || '—'}</p>
             </div>
 
             <div className="mt-5 flex flex-wrap justify-end gap-2">
@@ -1210,7 +1210,7 @@ export default function InventoryManagePage() {
                 disabled={isSavingExpiryCorrection}
                 className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
               >
-                РЎРєР°СЃСѓРІР°С‚Рё
+                Скасувати
               </button>
               <button
                 type="button"
@@ -1220,7 +1220,7 @@ export default function InventoryManagePage() {
                 disabled={isSavingExpiryCorrection}
                 className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
-                {isSavingExpiryCorrection ? 'Р—Р±РµСЂРµР¶РµРЅРЅСЏ...' : 'Р—Р±РµСЂРµРіС‚Рё Р·РјС–РЅСѓ'}
+                {isSavingExpiryCorrection ? 'Збереження...' : 'Зберегти зміну'}
               </button>
             </div>
           </div>
@@ -1229,14 +1229,14 @@ export default function InventoryManagePage() {
       {editingExpiryBatch && expiryCorrectionWarning ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 px-4 py-6">
           <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">РџС–РґС‚РІРµСЂРґР¶РµРЅРЅСЏ РґР°С‚Рё</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Підтвердження дати</p>
             <h3 className="mt-2 text-xl font-semibold text-slate-900">
-              {expiryCorrectionWarning.title || 'РџРµСЂРµРІС–СЂС‚Рµ РЅРѕРІСѓ РґР°С‚Сѓ'}
+              {expiryCorrectionWarning.title || 'Перевірте нову дату'}
             </h3>
             <p className="mt-2 text-sm text-slate-600">{expiryCorrectionWarning.message}</p>
             <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-              <p><span className="font-semibold text-slate-900">РЎС‚Р°СЂР° РґР°С‚Р°:</span> {editingExpiryBatch.expiryDate}</p>
-              <p className="mt-1"><span className="font-semibold text-slate-900">РќРѕРІР° РґР°С‚Р°:</span> {expiryCorrectionNewDate || 'вЂ”'}</p>
+              <p><span className="font-semibold text-slate-900">Стара дата:</span> {editingExpiryBatch.expiryDate}</p>
+              <p className="mt-1"><span className="font-semibold text-slate-900">Нова дата:</span> {expiryCorrectionNewDate || '—'}</p>
             </div>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
@@ -1245,7 +1245,7 @@ export default function InventoryManagePage() {
                 disabled={isSavingExpiryCorrection}
                 className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
               >
-                РџРѕРІРµСЂРЅСѓС‚РёСЃСЏ
+                Повернутися
               </button>
               <button
                 type="button"
@@ -1255,7 +1255,7 @@ export default function InventoryManagePage() {
                 disabled={isSavingExpiryCorrection}
                 className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
-                {isSavingExpiryCorrection ? 'Р—Р±РµСЂРµР¶РµРЅРЅСЏ...' : 'РџС–РґС‚РІРµСЂРґРёС‚Рё Р·РјС–РЅСѓ'}
+                {isSavingExpiryCorrection ? 'Збереження...' : 'Підтвердити зміну'}
               </button>
             </div>
           </div>
@@ -1264,4 +1264,3 @@ export default function InventoryManagePage() {
     </main>
   );
 }
-
