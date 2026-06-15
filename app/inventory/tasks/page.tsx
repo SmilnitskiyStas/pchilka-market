@@ -64,6 +64,21 @@ type Payload = {
 
 type QuickTaskFilter = 'all' | 'critical' | 'overdue' | 'high';
 
+function repairMojibake(value: string) {
+  const text = String(value ?? '');
+  if (!text || (!text.includes('Р') && !text.includes('С') && !text.includes('вЂ'))) {
+    return text;
+  }
+
+  try {
+    const bytes = Uint8Array.from(text, (char) => char.charCodeAt(0) & 0xff);
+    const repaired = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    return repaired.includes('\uFFFD') ? text : repaired;
+  } catch {
+    return text;
+  }
+}
+
 function formatDate(value: string) {
   if (!value) return '—';
   const date = new Date(value);
@@ -463,7 +478,9 @@ export default function InventoryTasksPage() {
                             </p>
                           </div>
 
-                          {task.note ? <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{task.note}</p> : null}
+                          {task.note ? (
+                            <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{repairMojibake(task.note)}</p>
+                          ) : null}
                           {isTakenByAnotherUser && !isManagerView ? (
                             <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                               Цю задачу вже взяв у роботу: <span className="font-semibold">{task.assignedUserName}</span>
@@ -534,7 +551,11 @@ export default function InventoryTasksPage() {
                           {task.assignedUserName ? (
                             <p>Хто виконав: <span className="font-semibold text-slate-900">{task.assignedUserName}</span></p>
                           ) : null}
-                          {task.resolutionNote ? <p>Коментар: <span className="text-slate-900">{task.resolutionNote}</span></p> : null}
+                          {task.resolutionNote ? (
+                            <p>
+                              Коментар: <span className="text-slate-900">{repairMojibake(task.resolutionNote)}</span>
+                            </p>
+                          ) : null}
                         </div>
                         <div className="mt-4 flex flex-wrap gap-3">
                           <a
