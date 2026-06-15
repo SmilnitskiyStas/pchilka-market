@@ -74,7 +74,7 @@ export async function createInventoryBatchCheckInDb(
     productId: number;
     storeId: number;
     userId: number;
-    action: 'checked' | 'writeoff' | 'discussion_required';
+    action: 'checked' | 'writeoff' | 'discussion_required' | 'do_not_track';
     countedQuantity?: number | null;
     itemCondition?: string | null;
     issueReason?: string | null;

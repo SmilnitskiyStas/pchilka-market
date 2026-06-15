@@ -120,6 +120,10 @@ function deriveRiskLevel(daysLeft: number) {
 }
 
 function shouldKeepExpiryTaskActive(batch: InventoryBatchRecord) {
+  if (batch.doNotTrack) {
+    return false;
+  }
+
   return (
     batch.checkStatus === 'checked' &&
     (batch.checkedFollowupAction === 'left_on_shelf' || batch.checkedFollowupAction === 'other')
@@ -127,15 +131,22 @@ function shouldKeepExpiryTaskActive(batch: InventoryBatchRecord) {
 }
 
 function deriveTaskStatus(batch: InventoryBatchRecord) {
+  if (batch.doNotTrack) return 'completed';
   if (batch.quantityCurrent <= 0 || batch.batchStatus === 'closed') return 'cancelled';
   if (shouldKeepExpiryTaskActive(batch)) return 'open';
-  if (batch.checkStatus === 'writeoff' || batch.checkStatus === 'discussion_required' || batch.checkStatus === 'checked') {
+  if (
+    batch.checkStatus === 'writeoff' ||
+    batch.checkStatus === 'discussion_required' ||
+    batch.checkStatus === 'checked' ||
+    batch.checkStatus === 'do_not_track'
+  ) {
     return 'completed';
   }
   return 'open';
 }
 
 function deriveTaskOutcome(batch: InventoryBatchRecord) {
+  if (batch.doNotTrack) return 'do_not_track';
   if (batch.checkStatus === 'writeoff' || batch.batchStatus === 'writeoff_pending') return 'writeoff_required';
   if (batch.checkStatus === 'discussion_required' || batch.batchStatus === 'hold') return 'manager_review';
   if (batch.checkStatus === 'checked' && batch.checkedFollowupAction === 'left_on_shelf') return 'left_on_shelf';
@@ -279,6 +290,7 @@ export async function syncInventoryExpiryTasksInDb() {
       }
 
       if (batch.quantityCurrent <= 0) continue;
+      if (batch.doNotTrack) continue;
 
       const daysLeft = daysLeftUntil(batch.expiryDate);
       if (daysLeft == null) continue;

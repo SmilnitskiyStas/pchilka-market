@@ -26,7 +26,8 @@ type BatchView = {
   actionTaken: string;
   actionNote: string;
   checkedFollowupAction: string;
-  discussionRequired?: boolean;
+  doNotTrack?: boolean;
+  doNotTrackReason?: string;
 };
 
 type BatchCheckView = {
@@ -50,7 +51,7 @@ type Payload = {
   error?: string;
 };
 
-type BatchAction = 'checked' | 'writeoff' | 'discussion_required';
+type BatchAction = 'checked' | 'writeoff' | 'discussion_required' | 'do_not_track';
 type CheckedFollowupAction = 'left_on_shelf' | 'removed_from_shelf' | 'other';
 
 type BatchCheckFieldErrors = {
@@ -75,6 +76,14 @@ const ISSUE_REASONS = [
   { value: 'quality_issue', label: 'Проблема якості' },
   { value: 'pricing_issue', label: 'Проблема з ціною' },
   { value: 'other', label: 'Інше' }
+];
+
+const DO_NOT_TRACK_REASONS = [
+  { value: 'removed', label: 'Зняти' },
+  { value: 'sold', label: 'Продано' },
+  { value: 'written_off', label: 'Списано' },
+  { value: 'moved', label: 'Переміщення' },
+  { value: 'used_for_cooking', label: 'На кулінарію' }
 ];
 
 const CHECKED_FOLLOWUP_ACTIONS = [
@@ -104,6 +113,8 @@ function getStatusLabel(value: string) {
       return 'На списанні';
     case 'discussion_required':
       return 'Для обговорення';
+    case 'do_not_track':
+      return 'Не відстежувати';
     case 'new':
     default:
       return 'Нова перевірка';
@@ -118,6 +129,8 @@ function getActionLabel(value: BatchAction) {
       return 'На списанні';
     case 'discussion_required':
       return 'Для обговорення';
+    case 'do_not_track':
+      return 'Не відстежувати';
   }
 }
 
@@ -126,7 +139,12 @@ function getConditionLabel(value: string) {
 }
 
 function getIssueReasonLabel(value: string) {
-  return ISSUE_REASONS.find((item) => item.value === value)?.label || value || '—';
+  return (
+    ISSUE_REASONS.find((item) => item.value === value)?.label ||
+    DO_NOT_TRACK_REASONS.find((item) => item.value === value)?.label ||
+    value ||
+    '—'
+  );
 }
 
 function getCheckedFollowupActionLabel(value: string) {
@@ -137,18 +155,18 @@ function getActionRequirements(action: BatchAction | null) {
   return {
     requiresCountedQuantity: action != null,
     requiresItemCondition: action != null,
-    requiresIssueReason: action === 'writeoff' || action === 'discussion_required',
+    requiresIssueReason: action === 'writeoff' || action === 'discussion_required' || action === 'do_not_track',
     requiresCheckedFollowupAction: action === 'checked',
     requiresNote: action === 'checked'
   };
 }
 
-function getMissingFieldLabels(errors: BatchCheckFieldErrors) {
+function getMissingFieldLabels(errors: BatchCheckFieldErrors, action: BatchAction | null) {
   const labels: string[] = [];
 
   if (errors.countedQuantity) labels.push('фактичну кількість');
   if (errors.itemCondition) labels.push('стан товару');
-  if (errors.issueReason) labels.push('причину проблеми');
+  if (errors.issueReason) labels.push(action === 'do_not_track' ? 'причину зняття' : 'причину проблеми');
   if (errors.checkedFollowupAction) labels.push('дію після перевірки');
   if (errors.note) labels.push('коментар');
 
@@ -200,6 +218,7 @@ export default function InventoryBatchCheckPage() {
           ? payload.batch.checkedFollowupAction
           : ''
       );
+      setIssueReason(payload.batch.doNotTrack ? payload.batch.doNotTrackReason || '' : '');
       setError('');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити партію для перевірки.');
@@ -269,7 +288,10 @@ export default function InventoryBatchCheckPage() {
     }
 
     if (requirements.requiresIssueReason && !issueReason.trim()) {
-      nextErrors.issueReason = 'Для цієї дії потрібно вказати причину проблеми.';
+      nextErrors.issueReason =
+        action === 'do_not_track'
+          ? 'Для цієї дії потрібно вказати причину зняття з відстеження.'
+          : 'Для цієї дії потрібно вказати причину проблеми.';
     }
 
     if (requirements.requiresCheckedFollowupAction && !checkedFollowupAction) {
@@ -341,14 +363,18 @@ export default function InventoryBatchCheckPage() {
 
   const daysLeft = batch ? daysLeftUntil(batch.expiryDate) : 0;
   const actionRequirements = getActionRequirements(selectedAction);
-  const missingFieldLabels = getMissingFieldLabels(fieldErrors);
-  const writeoffErrors = useMemo(() => validateForm('writeoff'), [countedQuantity, itemCondition, issueReason]);
-  const writeoffMissingLabels = getMissingFieldLabels(writeoffErrors);
+  const missingFieldLabels = getMissingFieldLabels(fieldErrors, selectedAction);
   const checkedErrors = useMemo(
     () => validateForm('checked'),
     [countedQuantity, itemCondition, checkedFollowupAction, actionNote]
   );
-  const checkedMissingLabels = getMissingFieldLabels(checkedErrors);
+  const checkedMissingLabels = getMissingFieldLabels(checkedErrors, 'checked');
+  const writeoffErrors = useMemo(() => validateForm('writeoff'), [countedQuantity, itemCondition, issueReason]);
+  const writeoffMissingLabels = getMissingFieldLabels(writeoffErrors, 'writeoff');
+  const doNotTrackErrors = useMemo(() => validateForm('do_not_track'), [countedQuantity, itemCondition, issueReason]);
+  const doNotTrackMissingLabels = getMissingFieldLabels(doNotTrackErrors, 'do_not_track');
+
+  const isDoNotTrackSelected = selectedAction === 'do_not_track';
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl items-start justify-center px-4 py-8 sm:px-6 lg:px-8">
@@ -356,21 +382,13 @@ export default function InventoryBatchCheckPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory / Batch Check</p>
         <h1 className="mt-2 text-2xl font-bold text-slate-900">Перевірка конкретної партії товару</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Працівник фіксує фактичну кількість, стан товару, дію після перевірки, причину проблеми,
-          коментар і за потреби фото.
+          Працівник фіксує фактичну кількість, стан товару, дію після перевірки, причину проблеми або причину
+          зняття з відстеження, коментар і за потреби фото.
         </p>
 
         {isLoading ? <p className="mt-4 text-sm text-slate-600">Завантаження...</p> : null}
-        {error ? (
-          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-            {error}
-          </p>
-        ) : null}
-        {success ? (
-          <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
-            {success}
-          </p>
-        ) : null}
+        {error ? <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p> : null}
+        {success ? <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{success}</p> : null}
 
         {!isLoading && batch ? (
           <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
@@ -415,6 +433,11 @@ export default function InventoryBatchCheckPage() {
                   {batch.checkedFollowupAction ? (
                     <p className="mt-1 text-sm text-slate-700">
                       Дія після перевірки: {getCheckedFollowupActionLabel(batch.checkedFollowupAction)}
+                    </p>
+                  ) : null}
+                  {batch.doNotTrack ? (
+                    <p className="mt-1 text-sm font-semibold text-rose-700">
+                      Не відстежувати: {getIssueReasonLabel(batch.doNotTrackReason || '')}
                     </p>
                   ) : null}
                   <p className="mt-1 text-sm text-slate-700">Статус партії: {batch.batchStatus || 'active'}</p>
@@ -489,8 +512,9 @@ export default function InventoryBatchCheckPage() {
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
               <h2 className="text-lg font-semibold text-slate-900">Зафіксувати перевірку</h2>
               <p className="mt-1 text-sm text-slate-600">
-                Для дії “Перевірив” обов’язково вкажіть, що зробили з товаром після перевірки.
-                Якщо товар залишили на полиці, система нагадає про нього повторно.
+                Для дії «Перевірив» обов’язково вкажіть, що зробили з товаром після перевірки. Якщо товар залишили
+                на полиці, система нагадає про нього повторно. Для дії «Не відстежувати» товар буде знятий з
+                подальших задач і повідомлень.
               </p>
 
               {selectedAction ? (
@@ -502,7 +526,11 @@ export default function InventoryBatchCheckPage() {
                       actionRequirements.requiresCountedQuantity ? 'фактичну кількість' : '',
                       actionRequirements.requiresItemCondition ? 'стан товару' : '',
                       actionRequirements.requiresCheckedFollowupAction ? 'дію після перевірки' : '',
-                      actionRequirements.requiresIssueReason ? 'причину проблеми' : '',
+                      actionRequirements.requiresIssueReason
+                        ? selectedAction === 'do_not_track'
+                          ? 'причину зняття з відстеження'
+                          : 'причину проблеми'
+                        : '',
                       actionRequirements.requiresNote && checkedFollowupAction === 'other' ? 'коментар' : ''
                     ]
                       .filter(Boolean)
@@ -537,9 +565,6 @@ export default function InventoryBatchCheckPage() {
                       fieldErrors.countedQuantity ? 'border-red-300 bg-red-50' : 'border-slate-300'
                     }`}
                   />
-                  {fieldErrors.countedQuantity ? (
-                    <p className="mt-1.5 text-xs font-semibold text-red-700">{fieldErrors.countedQuantity}</p>
-                  ) : null}
                 </div>
 
                 <div>
@@ -566,9 +591,6 @@ export default function InventoryBatchCheckPage() {
                       </option>
                     ))}
                   </select>
-                  {fieldErrors.itemCondition ? (
-                    <p className="mt-1.5 text-xs font-semibold text-red-700">{fieldErrors.itemCondition}</p>
-                  ) : null}
                 </div>
 
                 <div>
@@ -599,14 +621,11 @@ export default function InventoryBatchCheckPage() {
                       </option>
                     ))}
                   </select>
-                  {fieldErrors.checkedFollowupAction ? (
-                    <p className="mt-1.5 text-xs font-semibold text-red-700">{fieldErrors.checkedFollowupAction}</p>
-                  ) : null}
                 </div>
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-900" htmlFor="issue-reason">
-                    Причина проблеми
+                    {isDoNotTrackSelected ? 'Причина зняття з відстеження' : 'Причина проблеми'}
                     {actionRequirements.requiresIssueReason ? <span className="ml-1 text-red-600">*</span> : null}
                   </label>
                   <select
@@ -622,16 +641,13 @@ export default function InventoryBatchCheckPage() {
                       fieldErrors.issueReason ? 'border-red-300 bg-red-50' : 'border-slate-300'
                     }`}
                   >
-                    <option value="">Без проблеми / не вказано</option>
-                    {ISSUE_REASONS.map((option) => (
+                    <option value="">{isDoNotTrackSelected ? 'Оберіть причину зняття' : 'Без проблеми / не вказано'}</option>
+                    {(isDoNotTrackSelected ? DO_NOT_TRACK_REASONS : ISSUE_REASONS).map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
                     ))}
                   </select>
-                  {fieldErrors.issueReason ? (
-                    <p className="mt-1.5 text-xs font-semibold text-red-700">{fieldErrors.issueReason}</p>
-                  ) : null}
                 </div>
 
                 <div>
@@ -656,7 +672,6 @@ export default function InventoryBatchCheckPage() {
                       fieldErrors.note ? 'border-red-300 bg-red-50' : 'border-slate-300'
                     }`}
                   />
-                  {fieldErrors.note ? <p className="mt-1.5 text-xs font-semibold text-red-700">{fieldErrors.note}</p> : null}
                 </div>
 
                 <div>
@@ -724,6 +739,23 @@ export default function InventoryBatchCheckPage() {
                   >
                     {isSaving ? 'Збереження...' : 'Для обговорення'}
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedAction('do_not_track');
+                      void handleBatchAction('do_not_track');
+                    }}
+                    disabled={isSaving || isUploadingPhoto || doNotTrackMissingLabels.length > 0}
+                    className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-100 disabled:opacity-60"
+                  >
+                    {isSaving ? 'Збереження...' : 'Не відстежувати'}
+                  </button>
+                  {doNotTrackMissingLabels.length > 0 ? (
+                    <p className="text-xs font-semibold text-rose-700">
+                      Щоб активувати «Не відстежувати», заповніть: {doNotTrackMissingLabels.join(', ')}.
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>

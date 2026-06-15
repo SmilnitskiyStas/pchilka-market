@@ -40,6 +40,8 @@ export const INVENTORY_REQUIRED_PRODUCT_BATCH_COLUMNS = [
   'action_taken',
   'action_note',
   'checked_followup_action',
+  'do_not_track',
+  'do_not_track_reason',
   'responsible_user_id',
   'discussion_required',
   'discussion_note',

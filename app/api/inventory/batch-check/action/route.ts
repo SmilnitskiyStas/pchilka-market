@@ -12,12 +12,13 @@ import { findInventoryUserByChatId } from '@/lib/inventory-users-repository';
 export const runtime = 'nodejs';
 
 type CheckedFollowupAction = 'left_on_shelf' | 'removed_from_shelf' | 'other';
+type BatchAction = 'checked' | 'writeoff' | 'discussion_required' | 'do_not_track';
 
 type ActionPayload = {
   token?: string;
   batchId?: string;
   taskId?: string;
-  action?: 'checked' | 'writeoff' | 'discussion_required';
+  action?: BatchAction;
   countedQuantity?: number | null;
   itemCondition?: string;
   issueReason?: string;
@@ -26,7 +27,12 @@ type ActionPayload = {
   photoUrl?: string;
 };
 
-const ALLOWED_ACTIONS = new Set<ActionPayload['action']>(['checked', 'writeoff', 'discussion_required']);
+const ALLOWED_ACTIONS = new Set<ActionPayload['action']>([
+  'checked',
+  'writeoff',
+  'discussion_required',
+  'do_not_track'
+]);
 const ALLOWED_FOLLOWUP_ACTIONS = new Set<CheckedFollowupAction>(['left_on_shelf', 'removed_from_shelf', 'other']);
 
 function normalizeCheckedFollowupAction(value: string): CheckedFollowupAction | null {
@@ -51,19 +57,21 @@ function formatCheckedFollowupAction(value: CheckedFollowupAction | null) {
 }
 
 function buildSnapshotNote(input: {
+  action: BatchAction;
   countedQuantity?: number | null;
   itemCondition?: string;
   issueReason?: string;
   note?: string;
   checkedFollowupAction?: CheckedFollowupAction | null;
 }) {
+  const reasonLabel = input.action === 'do_not_track' ? 'Причина зняття' : 'Причина';
   const segments = [
     input.countedQuantity != null ? `Факт. кількість: ${input.countedQuantity}` : '',
     input.itemCondition ? `Стан: ${input.itemCondition}` : '',
     input.checkedFollowupAction
       ? `Дія після перевірки: ${formatCheckedFollowupAction(input.checkedFollowupAction)}`
       : '',
-    input.issueReason ? `Причина: ${input.issueReason}` : '',
+    input.issueReason ? `${reasonLabel}: ${input.issueReason}` : '',
     input.note ? `Коментар: ${input.note}` : ''
   ].filter(Boolean);
 
@@ -71,7 +79,7 @@ function buildSnapshotNote(input: {
 }
 
 function validatePayload(input: {
-  action: 'checked' | 'writeoff' | 'discussion_required';
+  action: BatchAction;
   countedQuantity: number | null;
   itemCondition: string;
   issueReason: string;
@@ -90,8 +98,17 @@ function validatePayload(input: {
   if (input.action === 'checked' && input.checkedFollowupAction === 'other' && !input.note) {
     throw new Error('Для варіанту "Інша дія" додайте коментар.');
   }
-  if ((input.action === 'writeoff' || input.action === 'discussion_required') && !input.issueReason) {
-    throw new Error('Для цієї дії потрібно вказати причину проблеми.');
+  if (
+    (input.action === 'writeoff' ||
+      input.action === 'discussion_required' ||
+      input.action === 'do_not_track') &&
+    !input.issueReason
+  ) {
+    throw new Error(
+      input.action === 'do_not_track'
+        ? 'Для цієї дії потрібно вказати причину зняття з відстеження.'
+        : 'Для цієї дії потрібно вказати причину проблеми.'
+    );
   }
 }
 
@@ -109,15 +126,13 @@ export async function POST(request: Request) {
     const checkedFollowupAction = normalizeCheckedFollowupAction(String(body.checkedFollowupAction ?? '').trim());
     const countedQuantityRaw = body.countedQuantity;
     const countedQuantity =
-      countedQuantityRaw == null
-        ? null
-        : Math.max(Math.round(Number(countedQuantityRaw)), 0);
+      countedQuantityRaw == null ? null : Math.max(Math.round(Number(countedQuantityRaw)), 0);
 
     if (!ALLOWED_ACTIONS.has(action)) {
       return NextResponse.json({ ok: false, error: 'Некоректна дія для партії.' }, { status: 400 });
     }
 
-    const safeAction = action as 'checked' | 'writeoff' | 'discussion_required';
+    const safeAction = action as BatchAction;
     validatePayload({
       action: safeAction,
       countedQuantity,
@@ -135,7 +150,10 @@ export async function POST(request: Request) {
 
     const user = await findInventoryUserByChatId(payload.chatId);
     if (!user || !user.isActive || !user.storeId) {
-      return NextResponse.json({ ok: false, error: 'Користувача не знайдено або обліковий запис недоступний.' }, { status: 403 });
+      return NextResponse.json(
+        { ok: false, error: 'Користувача не знайдено або обліковий запис недоступний.' },
+        { status: 403 }
+      );
     }
 
     const existingBatch = await findInventoryBatchByIdInDb(batchId);
@@ -149,11 +167,15 @@ export async function POST(request: Request) {
     if (taskId) {
       const task = await findInventoryExpiryTaskByIdInDb(taskId);
       if (!task || String(task.batchId) !== String(existingBatch.id) || Number(task.storeId) !== Number(user.storeId)) {
-        return NextResponse.json({ ok: false, error: 'Завдання не знайдено або воно не відповідає цій партії.' }, { status: 404 });
+        return NextResponse.json(
+          { ok: false, error: 'Завдання не знайдено або воно не відповідає цій партії.' },
+          { status: 404 }
+        );
       }
     }
 
     const snapshotNote = buildSnapshotNote({
+      action: safeAction,
       countedQuantity,
       itemCondition,
       issueReason,
@@ -167,7 +189,8 @@ export async function POST(request: Request) {
       storeId: user.storeId,
       action: safeAction,
       note: snapshotNote,
-      checkedFollowupAction
+      checkedFollowupAction,
+      doNotTrackReason: safeAction === 'do_not_track' ? issueReason : null
     });
 
     await createInventoryBatchCheckInDb({
@@ -216,9 +239,11 @@ export async function POST(request: Request) {
           ? 'writeoff_required'
           : safeAction === 'discussion_required'
             ? 'manager_review'
-            : issueReason === 'quantity_mismatch'
-              ? 'quantity_mismatch'
-              : 'checked_ok';
+            : safeAction === 'do_not_track'
+              ? 'do_not_track'
+              : issueReason === 'quantity_mismatch'
+                ? 'quantity_mismatch'
+                : 'checked_ok';
 
       await completeInventoryExpiryTaskInDb({
         taskId,

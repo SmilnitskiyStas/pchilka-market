@@ -93,8 +93,14 @@ async function ensureProductBatchesWorkflowColumns() {
   if (!columns.has('checked_followup_action')) {
     statements.push('ALTER TABLE product_batches ADD COLUMN checked_followup_action VARCHAR(40) NULL AFTER action_note');
   }
+  if (!columns.has('do_not_track')) {
+    statements.push("ALTER TABLE product_batches ADD COLUMN do_not_track TINYINT(1) NOT NULL DEFAULT 0 AFTER checked_followup_action");
+  }
+  if (!columns.has('do_not_track_reason')) {
+    statements.push('ALTER TABLE product_batches ADD COLUMN do_not_track_reason VARCHAR(80) NULL AFTER do_not_track');
+  }
   if (!columns.has('responsible_user_id')) {
-    statements.push('ALTER TABLE product_batches ADD COLUMN responsible_user_id BIGINT UNSIGNED NULL AFTER action_note');
+    statements.push('ALTER TABLE product_batches ADD COLUMN responsible_user_id BIGINT UNSIGNED NULL AFTER do_not_track_reason');
   }
   if (!columns.has('batch_code')) {
     statements.push('ALTER TABLE product_batches ADD COLUMN batch_code VARCHAR(120) NULL AFTER store_id');
@@ -190,6 +196,9 @@ async function ensureProductBatchesWorkflowColumns() {
     await pool.query(
       'ALTER TABLE product_batches ADD KEY idx_product_batches_checked_followup_action (checked_followup_action)'
     );
+  }
+  if (!refreshedIndexes.has('idx_product_batches_do_not_track')) {
+    await pool.query('ALTER TABLE product_batches ADD KEY idx_product_batches_do_not_track (do_not_track)');
   }
 
   if (!refreshedConstraints.has('fk_product_batches_discussion_requested_by_user')) {

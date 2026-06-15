@@ -32,6 +32,8 @@ type BatchRow = RowDataPacket & {
   action_taken: string | null;
   action_note: string | null;
   checked_followup_action: string | null;
+  do_not_track: number;
+  do_not_track_reason: string | null;
   responsible_user_id: number | null;
   responsible_user_name: string | null;
   responsible_user_surname: string | null;
@@ -93,6 +95,8 @@ function mapRow(row: BatchRow): InventoryBatchRecord {
     actionTaken: row.action_taken ?? '',
     actionNote: row.action_note ?? '',
     checkedFollowupAction: row.checked_followup_action ?? '',
+    doNotTrack: row.do_not_track === 1,
+    doNotTrackReason: row.do_not_track_reason ?? '',
     responsibleUserId: row.responsible_user_id == null ? '' : String(row.responsible_user_id),
     responsibleUserName: [row.responsible_user_name, row.responsible_user_surname].filter(Boolean).join(' '),
     createdByUserId: row.created_by_user_id == null ? '' : String(row.created_by_user_id),
@@ -138,6 +142,8 @@ function buildBatchSelectSql(whereSql: string) {
         pb.action_taken,
         pb.action_note,
         pb.checked_followup_action,
+        pb.do_not_track,
+        pb.do_not_track_reason,
         pb.responsible_user_id,
         ru.name AS responsible_user_name,
         ru.surname AS responsible_user_surname,
@@ -178,6 +184,8 @@ function buildBatchSelectSql(whereSql: string) {
         pb.action_taken,
         pb.action_note,
         pb.checked_followup_action,
+        pb.do_not_track,
+        pb.do_not_track_reason,
         pb.responsible_user_id,
         ru.name,
         ru.surname,
@@ -805,9 +813,10 @@ export async function updateInventoryBatchCheckActionInDb(input: {
   batchId: string | number;
   userId: string | number;
   storeId: string | number;
-  action: 'checked' | 'writeoff' | 'discussion_required';
+  action: 'checked' | 'writeoff' | 'discussion_required' | 'do_not_track';
   note?: string | null;
   checkedFollowupAction?: 'left_on_shelf' | 'removed_from_shelf' | 'other' | null;
+  doNotTrackReason?: string | null;
 }): Promise<InventoryBatchRecord> {
   const pool = getDbPool();
   const batchId = Number(input.batchId);
@@ -815,6 +824,7 @@ export async function updateInventoryBatchCheckActionInDb(input: {
   const storeId = Number(input.storeId);
   const note = String(input.note ?? '').trim();
   const checkedFollowupAction = String(input.checkedFollowupAction ?? '').trim();
+  const doNotTrackReason = String(input.doNotTrackReason ?? '').trim();
 
   if (!Number.isFinite(batchId) || batchId <= 0) {
     throw new Error('Некоректний batchId.');
@@ -849,6 +859,8 @@ export async function updateInventoryBatchCheckActionInDb(input: {
   const discussionRequired = input.action === 'discussion_required' ? 1 : 0;
   const discussionNote = input.action === 'discussion_required' ? note || null : null;
   const discussionRequestedByUserId = input.action === 'discussion_required' ? userId : null;
+  const doNotTrack = input.action === 'do_not_track' ? 1 : 0;
+  const nextDoNotTrackReason = input.action === 'do_not_track' ? doNotTrackReason || null : null;
 
   await pool.query(
     `
@@ -863,10 +875,13 @@ export async function updateInventoryBatchCheckActionInDb(input: {
         batch_status = CASE
           WHEN ? = 'writeoff' THEN 'writeoff_pending'
           WHEN ? = 'discussion_required' THEN 'hold'
+          WHEN ? = 'do_not_track' THEN 'closed'
           WHEN ? = 'checked' AND ? = 'removed_from_shelf' THEN 'closed'
           WHEN quantity_current <= 0 THEN 'closed'
           ELSE 'active'
         END,
+        do_not_track = ?,
+        do_not_track_reason = ?,
         discussion_required = ?,
         discussion_note = ?,
         discussion_requested_by_user_id = ?,
@@ -883,7 +898,10 @@ export async function updateInventoryBatchCheckActionInDb(input: {
       input.action,
       input.action,
       input.action,
+      input.action,
       nextCheckedFollowupAction,
+      doNotTrack,
+      nextDoNotTrackReason,
       discussionRequired,
       discussionNote,
       discussionRequestedByUserId,

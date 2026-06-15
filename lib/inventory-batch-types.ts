@@ -18,6 +18,8 @@ export type InventoryBatchRecord = {
   actionTaken: string;
   actionNote: string;
   checkedFollowupAction: string;
+  doNotTrack: boolean;
+  doNotTrackReason: string;
   responsibleUserId: string;
   responsibleUserName: string;
   createdByUserId: string;
