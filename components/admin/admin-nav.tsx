@@ -97,66 +97,66 @@ export default function AdminNav() {
     () => [
       { href: '/admin', label: 'Dashboard' },
       {
-        label: 'Інвентар',
+        label: 'Р†РЅРІРµРЅС‚Р°СЂ',
         children: [
-          { href: '/admin/inventory', label: 'Огляд' },
+          { href: '/admin/inventory', label: 'РћРіР»СЏРґ' },
           {
-            label: 'Товари',
+            label: 'РўРѕРІР°СЂРё',
             children: [
-              { href: '/admin/inventory/products', label: 'Список товарів' },
-              { href: '/admin/inventory/products/create', label: 'Створити товар' },
-              { href: '/admin/inventory/products/import', label: 'Імпорт товарів' }
+              { href: '/admin/inventory/products', label: 'РЎРїРёСЃРѕРє С‚РѕРІР°СЂС–РІ' },
+              { href: '/admin/inventory/products/create', label: 'РЎС‚РІРѕСЂРёС‚Рё С‚РѕРІР°СЂ' },
+              { href: '/admin/inventory/products/import', label: 'Р†РјРїРѕСЂС‚ С‚РѕРІР°СЂС–РІ' }
             ]
           },
           {
-            label: 'Партії',
+            label: 'РџР°СЂС‚С–С—',
             children: [
-              { href: '/admin/inventory/batches', label: 'Усі партії' },
-              { href: '/admin/inventory/batches/expiring', label: 'Закінчується термін' },
-              { href: '/admin/inventory/batches/overdue', label: 'Прострочені' },
-              { href: '/admin/inventory/batches/action-required', label: 'Потребують дії' },
-              { href: '/admin/inventory/batches/written-off', label: 'Списані' }
+              { href: '/admin/inventory/batches', label: 'РЈСЃС– РїР°СЂС‚С–С—' },
+              { href: '/admin/inventory/batches/expiring', label: 'Р—Р°РєС–РЅС‡СѓС”С‚СЊСЃСЏ С‚РµСЂРјС–РЅ' },
+              { href: '/admin/inventory/batches/overdue', label: 'РџСЂРѕСЃС‚СЂРѕС‡РµРЅС–' },
+              { href: '/admin/inventory/batches/action-required', label: 'РџРѕС‚СЂРµР±СѓСЋС‚СЊ РґС–С—' },
+              { href: '/admin/inventory/batches/written-off', label: 'РЎРїРёСЃР°РЅС–' }
             ]
           },
-          { href: '/admin/inventory/tasks', label: 'Завдання' },
-          { href: '/admin/inventory/employees', label: 'Працівники' },
-          { href: '/admin/inventory/actions', label: 'Дії працівників' },
-          { href: '/admin/inventory/notifications', label: 'Сповіщення' },
-          { href: '/admin/network', label: 'Магазини' },
-          { href: '/admin/inventory/analytics', label: 'Аналітика' }
+          { href: '/admin/inventory/tasks', label: 'Р—Р°РІРґР°РЅРЅСЏ' },
+          { href: '/admin/inventory/employees', label: 'РџСЂР°С†С–РІРЅРёРєРё' },
+          { href: '/admin/inventory/actions', label: 'Р”С–С— РїСЂР°С†С–РІРЅРёРєС–РІ' },
+          { href: '/admin/inventory/notifications', label: 'РЎРїРѕРІС–С‰РµРЅРЅСЏ' },
+          { href: '/admin/network', label: 'РњР°РіР°Р·РёРЅРё' },
+          { href: '/admin/inventory/analytics', label: 'РђРЅР°Р»С–С‚РёРєР°' }
         ]
       },
       {
-        label: 'Маркетинг',
+        label: 'РњР°СЂРєРµС‚РёРЅРі',
         children: [
-          { href: '/admin/promotions', label: 'Акції' },
-          { href: '/admin/home-slides', label: 'Банери' },
-          { href: '/admin/media', label: 'Медіафайли' },
+          { href: '/admin/promotions', label: 'РђРєС†С–С—' },
+          { href: '/admin/home-slides', label: 'Р‘Р°РЅРµСЂРё' },
+          { href: '/admin/media', label: 'РњРµРґС–Р°С„Р°Р№Р»Рё' },
           { href: '/admin/seo', label: 'SEO' }
         ]
       },
       {
-        label: 'Контент',
-        children: [{ href: '/admin/content', label: 'Статті' }]
+        label: 'РљРѕРЅС‚РµРЅС‚',
+        children: [{ href: '/admin/content', label: 'РЎС‚Р°С‚С‚С–' }]
       },
       {
         href: '/admin/own-brand',
-        label: 'Власне класне'
+        label: 'Р’Р»Р°СЃРЅРµ РєР»Р°СЃРЅРµ'
       },
       {
         href: '/admin/messages',
-        label: 'Повідомлення',
+        label: 'РџРѕРІС–РґРѕРјР»РµРЅРЅСЏ',
         badge: unprocessedCount > 0 ? unprocessedCount : undefined
       },
       {
-        label: 'Система',
+        label: 'РЎРёСЃС‚РµРјР°',
         children: [
-          { href: '/admin/users', label: 'Користувачі' },
-          { href: '/admin/integrations', label: 'Інтеграції' },
+          { href: '/admin/users', label: 'РљРѕСЂРёСЃС‚СѓРІР°С‡С–' },
+          { href: '/admin/integrations', label: 'Р†РЅС‚РµРіСЂР°С†С–С—' },
           {
-            label: 'Налаштування',
+            label: 'РќР°Р»Р°С€С‚СѓРІР°РЅРЅСЏ',
             children: [
-              { href: '/admin/inventory/settings/schema', label: 'Схема' },
+              { href: '/admin/inventory/settings/schema', label: 'РЎС…РµРјР°' },
               { href: '/admin/inventory/settings/telegram', label: 'Telegram' }
             ]
           }
@@ -211,7 +211,7 @@ export default function AdminNav() {
 
   function renderItems(items: NavItem[], depth = 0, parentKey = 'root') {
     return (
-      <ul className={depth === 0 ? 'space-y-1.5' : 'mt-2 space-y-1.5 border-l border-black/5 pl-3.5'}>
+      <ul className={depth === 0 ? 'space-y-1.5' : 'mt-1 space-y-1 border-l border-slate-200 pl-3'}>
         {items.map((item, index) => {
           const active = isItemActive(item.href);
           const itemKey = `${parentKey}:${index}:${item.label}`;
@@ -225,17 +225,17 @@ export default function AdminNav() {
                   href={item.href}
                   scroll={false}
                   onClick={(event) => handleItemClick(event, item.href!)}
-                  className={`flex items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-sm transition ${
+                  className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
                     active
-                      ? 'border border-amber-200 bg-amber-50/90 font-semibold text-slate-950 shadow-sm'
+                      ? 'bg-brand/10 font-semibold text-brand'
                       : depth === 0
-                        ? 'text-slate-900 hover:bg-black/[0.035]'
-                        : 'text-slate-700 hover:bg-black/[0.035]'
+                        ? 'text-slate-900 hover:bg-slate-100'
+                        : 'text-slate-700 hover:bg-slate-100'
                   }`}
                 >
                   <span>{item.label}</span>
                   {item.badge != null ? (
-                    <span className="rounded-full border border-black/10 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                    <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700">
                       {item.badge}
                     </span>
                   ) : null}
@@ -245,17 +245,17 @@ export default function AdminNav() {
                   type="button"
                   onClick={() => toggleGroup(parentKey, itemKey)}
                   aria-expanded={expanded}
-                  className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-left text-sm transition ${
-                    expanded ? 'bg-black/[0.04] font-semibold text-slate-950' : 'text-slate-900 hover:bg-black/[0.035]'
+                  className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                    expanded ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-900'
                   }`}
                 >
                   <span>{item.label}</span>
-                  <span className="text-xs text-slate-400">{expanded ? '−' : '+'}</span>
+                  <span className="text-xs text-slate-500">{expanded ? '-' : '+'}</span>
                 </button>
               ) : (
-                <div className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-black/10 bg-slate-50 px-3.5 py-3 text-sm text-slate-400">
+                <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-400">
                   <span>{item.label}</span>
-                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">Поки ні</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">РџРѕРєРё РЅС–</span>
                 </div>
               )}
 
@@ -268,33 +268,25 @@ export default function AdminNav() {
   }
 
   return (
-    <nav className="flex max-h-[calc(100vh-3rem)] flex-col rounded-[2rem] border border-black/5 bg-white/88 p-4 shadow-[0_18px_50px_rgba(24,24,18,0.08)] backdrop-blur xl:h-full xl:max-h-[calc(100vh-3rem)]">
-      <div className="rounded-[1.5rem] border border-black/5 bg-[linear-gradient(135deg,_rgba(250,249,246,0.96),_rgba(255,255,255,0.92))] px-4 py-4">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Admin Panel</p>
-        <h2 className="mt-2 text-xl font-semibold text-slate-950">Pchilka Control</h2>
-        <p className="mt-1 text-sm leading-6 text-slate-600">
-          Оновлена мінімалістична навігація для поступового переходу на новий інтерфейс.
-        </p>
-      </div>
-
+    <nav className="flex max-h-[calc(100vh-2.5rem)] flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-sm xl:h-full xl:max-h-[calc(100vh-2.5rem)]">
       {currentLogin ? (
-        <div className="mt-4 rounded-[1.5rem] border border-amber-200/70 bg-amber-50/70 px-4 py-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Session</p>
-          <p className="mt-2 text-sm font-semibold text-slate-950">{currentLogin}</p>
+        <div className="rounded-2xl border border-brand/20 bg-brand/5 px-3 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Admin Session</p>
+          <p className="mt-2 text-sm font-semibold text-slate-900">{currentLogin}</p>
           <p className="mt-1 text-xs text-slate-600">{currentRole || 'admin'}</p>
         </div>
       ) : null}
 
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">{renderItems(navGroups)}</div>
 
-      <div className="mt-4 border-t border-black/5 pt-4">
+      <div className="mt-4 border-t border-slate-200 pt-4">
         <button
           type="button"
           onClick={handleLogout}
           disabled={isLoggingOut}
-          className="w-full rounded-2xl border border-black/10 bg-slate-950 px-3 py-3 text-sm font-semibold text-white transition enabled:hover:bg-slate-800 disabled:opacity-60"
+          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition enabled:hover:border-red-400 enabled:hover:text-red-700 disabled:opacity-60"
         >
-          {isLoggingOut ? 'Вихід...' : 'Вийти з адмінки'}
+          {isLoggingOut ? 'Р’РёС…С–Рґ...' : 'Р’РёР№С‚Рё Р· Р°РґРјС–РЅРєРё'}
         </button>
       </div>
     </nav>
