@@ -11,6 +11,27 @@ import { normalizeInventoryProductInput } from '@/lib/inventory-product-types';
 
 export const runtime = 'nodejs';
 
+function resolveManualProductErrorStatus(message: string) {
+  if (
+    message.includes('Товар уже існує в базі') ||
+    message.includes('Штрихкод') ||
+    message.includes('already exists') ||
+    message.includes('already belongs')
+  ) {
+    return 409;
+  }
+
+  if (
+    message.includes('Не знайдено') ||
+    message.includes('не знайдено') ||
+    message.includes('Invalid product id')
+  ) {
+    return 404;
+  }
+
+  return 500;
+}
+
 export async function GET(request: Request) {
   if (!isAdminRequestAuthorized(request)) {
     return unauthorizedAdminResponse();
@@ -89,6 +110,6 @@ export async function PATCH(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown DB error';
     console.error('manual-products PATCH failed', { ...debugContext, message, error });
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: message }, { status: resolveManualProductErrorStatus(message) });
   }
 }
