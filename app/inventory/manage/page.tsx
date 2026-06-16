@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   getSuspiciousInventoryExpiryDate,
   type SuspiciousInventoryExpiryDate
 } from '@/lib/inventory-expiry-date-rules';
+import { normalizeInventoryBarcode } from '@/lib/inventory-product-types';
 import { canEditInventoryBatchExpiry, canManageInventoryTaskMode, type InventoryUserRole } from '@/lib/inventory-user-roles';
 import { uploadRequestAttachment } from '@/lib/request-attachment-client';
 import type { InventoryTaskAssignmentMode } from '@/lib/store-types';
@@ -113,6 +114,24 @@ type BatchExpiryCorrectionPayload = {
   };
   error?: string;
 };
+
+type DetectedBarcode = {
+  rawValue?: string;
+};
+
+type BarcodeDetectorInstance = {
+  detect: (source: HTMLVideoElement) => Promise<DetectedBarcode[]>;
+};
+
+type ZxingControls = {
+  stop: () => void;
+};
+
+declare global {
+  interface Window {
+    BarcodeDetector?: new (options?: { formats?: string[] }) => BarcodeDetectorInstance;
+  }
+}
 
 const expiryCorrectionReasonOptions = [
   { value: 'wrong_year', label: 'Помилка в році' },
@@ -557,6 +576,8 @@ export default function InventoryManagePage() {
   const [currentUserRole, setCurrentUserRole] = useState<InventoryUserRole>('staff');
   const [isUsersSectionOpen, setIsUsersSectionOpen] = useState(false);
   const [manageFilter, setManageFilter] = useState('');
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerMessage, setScannerMessage] = useState('');
   const [storeLabel, setStoreLabel] = useState('');
   const [taskAssignmentMode, setTaskAssignmentMode] = useState<InventoryTaskAssignmentMode>('personal');
   const [users, setUsers] = useState<InventoryUserView[]>([]);
@@ -576,6 +597,14 @@ export default function InventoryManagePage() {
   const [isSavingTaskMode, setIsSavingTaskMode] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const detectorRef = useRef<BarcodeDetectorInstance | null>(null);
+  const scanTimerRef = useRef<number | null>(null);
+  const zxingControlsRef = useRef<ZxingControls | null>(null);
+  const zxingReaderRef = useRef<{ reset?: () => void } | null>(null);
+  const scannerEngineRef = useRef<'barcode-detector' | 'zxing' | null>(null);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -618,6 +647,10 @@ export default function InventoryManagePage() {
     }
 
     void load();
+
+    return () => {
+      stopScanner();
+    };
   }, []);
 
   const activeUsers = useMemo(() => users.filter((item) => item.isActive), [users]);
@@ -643,6 +676,92 @@ export default function InventoryManagePage() {
     () => expiringBatches.filter((item) => item.daysLeft >= 0 && item.daysLeft <= 7).length,
     [expiringBatches]
   );
+
+  useEffect(() => {
+    if (!isScannerOpen || !streamRef.current || !videoRef.current || !detectorRef.current) return;
+    if (scannerEngineRef.current !== 'barcode-detector') return;
+
+    const video = videoRef.current;
+    video.srcObject = streamRef.current;
+
+    let cancelled = false;
+
+    async function attachAndScan() {
+      try {
+        await video.play();
+      } catch {
+        return;
+      }
+
+      if (cancelled) return;
+
+      scanTimerRef.current = window.setInterval(async () => {
+        if (!videoRef.current || !detectorRef.current) return;
+
+        try {
+          const detected = await detectorRef.current.detect(videoRef.current);
+          const first = detected.find((item) => item.rawValue?.trim());
+          if (first?.rawValue) {
+            await handleDetectedBarcode(first.rawValue);
+          }
+        } catch {
+          // Ignore transient detector errors while camera stream stabilizes.
+        }
+      }, 600);
+    }
+
+    void attachAndScan();
+
+    return () => {
+      cancelled = true;
+      if (scanTimerRef.current != null) {
+        window.clearInterval(scanTimerRef.current);
+        scanTimerRef.current = null;
+      }
+    };
+  }, [isScannerOpen]);
+
+  useEffect(() => {
+    if (!isScannerOpen || !videoRef.current) return;
+    if (scannerEngineRef.current !== 'zxing') return;
+    if (zxingControlsRef.current) return;
+
+    let cancelled = false;
+
+    async function attachAndScanWithZxing() {
+      try {
+        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        if (cancelled || !videoRef.current) return;
+
+        const reader = new BrowserMultiFormatReader();
+        zxingReaderRef.current = reader as { reset?: () => void };
+        const controls = await reader.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+          if (result) {
+            void handleDetectedBarcode(result.getText());
+          }
+        });
+
+        if (cancelled) {
+          controls.stop();
+          (reader as { reset?: () => void }).reset?.();
+          return;
+        }
+
+        zxingControlsRef.current = controls as ZxingControls;
+      } catch (cameraError) {
+        if (!cancelled) {
+          stopScanner();
+          setError(cameraError instanceof Error ? cameraError.message : 'Не вдалося відкрити камеру для сканування.');
+        }
+      }
+    }
+
+    void attachAndScanWithZxing();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isScannerOpen]);
 
   function openExpiryCorrectionModal(batch: ExpiringBatchView) {
     setEditingExpiryBatch(batch);
@@ -685,6 +804,93 @@ export default function InventoryManagePage() {
       const next = prev.some((item) => item.id === nextBatch.id) ? prev.map((item) => (item.id === nextBatch.id ? nextBatch : item)) : [nextBatch, ...prev];
       return nextBatch.daysLeft <= 30 ? next : next.filter((item) => item.id !== nextBatch.id);
     });
+  }
+
+  function stopScanner() {
+    if (scanTimerRef.current != null) {
+      window.clearInterval(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
+
+    if (streamRef.current) {
+      for (const track of streamRef.current.getTracks()) {
+        track.stop();
+      }
+      streamRef.current = null;
+    }
+
+    detectorRef.current = null;
+    scannerEngineRef.current = null;
+
+    if (zxingControlsRef.current) {
+      zxingControlsRef.current.stop();
+      zxingControlsRef.current = null;
+    }
+    if (zxingReaderRef.current?.reset) {
+      zxingReaderRef.current.reset();
+      zxingReaderRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
+
+    setIsScannerOpen(false);
+  }
+
+  async function handleDetectedBarcode(rawValue: string) {
+    const barcode = normalizeInventoryBarcode(rawValue);
+    if (!barcode) return;
+
+    setManageFilter(barcode);
+    setScannerMessage(`Знайдено штрихкод: ${barcode}`);
+    setSuccess(`Штрихкод ${barcode} підставлено в пошук.`);
+    setError('');
+    stopScanner();
+  }
+
+  async function startScanner() {
+    setScannerMessage('');
+    setError('');
+    setSuccess('');
+
+    if (!window.isSecureContext) {
+      setError('Сканування камерою працює лише через HTTPS або на localhost.');
+      return;
+    }
+
+    if (!window.BarcodeDetector) {
+      scannerEngineRef.current = 'zxing';
+      setIsScannerOpen(true);
+      setScannerMessage('Відкрито fallback-сканер. Наведіть камеру на штрихкод товару.');
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Браузер не підтримує доступ до камери.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' }
+        },
+        audio: false
+      });
+
+      streamRef.current = stream;
+      detectorRef.current = new window.BarcodeDetector({
+        formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39']
+      });
+      scannerEngineRef.current = 'barcode-detector';
+      setIsScannerOpen(true);
+      setScannerMessage('Наведіть камеру на штрихкод товару.');
+    } catch (cameraError) {
+      stopScanner();
+      setError(cameraError instanceof Error ? cameraError.message : 'Не вдалося відкрити камеру для сканування.');
+    }
   }
 
   async function handleSaveUser(user: InventoryUserView) {
@@ -928,13 +1134,45 @@ export default function InventoryManagePage() {
                 <div className="rounded-[28px] bg-slate-50 p-4">
                   <label className="block">
                     <span className="text-sm font-medium text-slate-700">Пошук по товарах, партіях і відповідальних</span>
-                    <input
-                      value={manageFilter}
-                      onChange={(event) => setManageFilter(event.target.value)}
-                      placeholder="Назва, артикул, штрихкод, код поставки, працівник"
-                      className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
-                    />
+                    <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                      <input
+                        value={manageFilter}
+                        onChange={(event) => setManageFilter(event.target.value)}
+                        placeholder="Назва, артикул, штрихкод, код поставки, працівник"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                      />
+                      {isScannerOpen ? (
+                        <button
+                          type="button"
+                          onClick={stopScanner}
+                          className="shrink-0 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          Закрити камеру
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void startScanner();
+                          }}
+                          className="shrink-0 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          Сканувати
+                        </button>
+                      )}
+                    </div>
                   </label>
+                  {scannerMessage ? <p className="mt-3 text-sm text-slate-700">{scannerMessage}</p> : null}
+                  {isScannerOpen ? (
+                    <div className="mt-4 rounded-[24px] border border-slate-300 bg-slate-950 p-3">
+                      <div className="mx-auto flex max-w-sm justify-center overflow-hidden rounded-[20px] border border-slate-700 bg-black">
+                        <video ref={videoRef} className="h-[320px] w-auto max-w-full object-contain bg-black" autoPlay muted playsInline />
+                      </div>
+                      <p className="mt-3 text-center text-xs text-slate-300">
+                        Наведіть камеру на штрихкод. Після зчитування код автоматично підставиться в пошук.
+                      </p>
+                    </div>
+                  ) : null}
                   <p className="mt-3 text-xs leading-5 text-slate-500">
                     Фільтр одночасно застосовується до активних поставок і до списку партій, які вже в контролі по терміну придатності.
                   </p>
