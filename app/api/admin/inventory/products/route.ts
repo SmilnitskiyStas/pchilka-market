@@ -4,6 +4,7 @@ import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin
 import {
   countInventoryProductsInDb,
   createInventoryProductInDb,
+  findInventoryProductByIdInDb,
   findInventoryProductDuplicateInDb,
   listInventoryProductCategoriesFromDb,
   listInventoryProductsFromDb
@@ -19,6 +20,15 @@ export async function GET(request: Request) {
 
   try {
     const url = new URL(request.url);
+    const productId = Number(url.searchParams.get('productId') ?? 0);
+    if (Number.isFinite(productId) && productId > 0) {
+      const product = await findInventoryProductByIdInDb(productId);
+      if (!product) {
+        return NextResponse.json({ ok: false, error: 'Товар не знайдено.' }, { status: 404 });
+      }
+      return NextResponse.json({ ok: true, product });
+    }
+
     const q = url.searchParams.get('q') ?? '';
     const category = url.searchParams.get('category') ?? '';
     const limit = Number(url.searchParams.get('limit') ?? 50);

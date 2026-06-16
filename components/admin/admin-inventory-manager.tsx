@@ -904,14 +904,33 @@ export default function AdminInventoryManager({
     setManualProductCreations(payload.items);
   }
 
-  function startManualProductReviewEdit(item: ManualProductCreationView) {
-    const product = products.find((entry) => Number(entry.id) === Number(item.productId));
+  async function startManualProductReviewEdit(item: ManualProductCreationView) {
+    let product = products.find((entry) => Number(entry.id) === Number(item.productId));
+
+    if (!product && item.productId) {
+      try {
+        const response = await fetch(`/api/admin/inventory/products?productId=${encodeURIComponent(String(item.productId))}`, {
+          cache: 'no-store'
+        });
+        const payload = (await response.json()) as ProductsPayload;
+        if (response.ok && payload.ok && payload.product) {
+          product = payload.product;
+          setProducts((prev) => {
+            if (prev.some((entry) => Number(entry.id) === Number(payload.product?.id))) return prev;
+            return [payload.product as InventoryProductRecord, ...prev];
+          });
+        }
+      } catch {
+        // Keep fallback draft below if point lookup fails.
+      }
+    }
+
     setManualProductEditId(item.id);
     setManualProductReviewDraft({
       article: product?.article || item.article || '',
       barcode: product?.barcodes?.join(', ') || item.barcode || '',
       productName: product?.productName || item.productName || '',
-      unitsOfMeasurement: product?.unitsOfMeasurement || '',
+      unitsOfMeasurement: product?.unitsOfMeasurement || 'шт',
       category: product?.category || '',
       notifiedDaysDefault: Number(product?.notifiedDaysDefault ?? 7),
       isActive: product?.isActive !== false,
@@ -935,8 +954,15 @@ export default function AdminInventoryManager({
 
     const draft = manualProductEditId === item.id ? manualProductReviewDraft : null;
     if (action === 'update' && !draft) {
-      startManualProductReviewEdit(item);
+      void startManualProductReviewEdit(item);
       return;
+    }
+
+    if ((action === 'approve' || action === 'update') && draft) {
+      if (!draft.article.trim() || !draft.productName.trim() || !draft.unitsOfMeasurement.trim()) {
+        setError('Для збереження потрібно вказати артикул, назву товару та одиницю вимірювання.');
+        return;
+      }
     }
 
     setManualProductReviewBusyId(item.id);
@@ -2763,7 +2789,7 @@ export default function AdminInventoryManager({
                   ) : (
                     <button
                       type="button"
-                      onClick={() => startManualProductReviewEdit(item)}
+                      onClick={() => { void startManualProductReviewEdit(item); }}
                       disabled={manualProductReviewBusyId === item.id}
                       className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
                     >
