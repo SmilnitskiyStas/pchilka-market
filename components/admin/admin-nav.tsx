@@ -211,7 +211,7 @@ export default function AdminNav() {
 
   function renderItems(items: NavItem[], depth = 0, parentKey = 'root') {
     return (
-      <ul className={depth === 0 ? 'space-y-1.5' : 'mt-1 space-y-1 border-l border-slate-200 pl-3'}>
+      <ul className={depth === 0 ? 'space-y-1.5' : 'mt-2 space-y-1.5 border-l border-black/5 pl-3.5'}>
         {items.map((item, index) => {
           const active = isItemActive(item.href);
           const itemKey = `${parentKey}:${index}:${item.label}`;
@@ -225,17 +225,17 @@ export default function AdminNav() {
                   href={item.href}
                   scroll={false}
                   onClick={(event) => handleItemClick(event, item.href!)}
-                  className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
+                  className={`flex items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-sm transition ${
                     active
-                      ? 'bg-brand/10 font-semibold text-brand'
+                      ? 'border border-amber-200 bg-amber-50/90 font-semibold text-slate-950 shadow-sm'
                       : depth === 0
-                        ? 'text-slate-900 hover:bg-slate-100'
-                        : 'text-slate-700 hover:bg-slate-100'
+                        ? 'text-slate-900 hover:bg-black/[0.035]'
+                        : 'text-slate-700 hover:bg-black/[0.035]'
                   }`}
                 >
                   <span>{item.label}</span>
                   {item.badge != null ? (
-                    <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                    <span className="rounded-full border border-black/10 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700">
                       {item.badge}
                     </span>
                   ) : null}
@@ -245,15 +245,15 @@ export default function AdminNav() {
                   type="button"
                   onClick={() => toggleGroup(parentKey, itemKey)}
                   aria-expanded={expanded}
-                  className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
-                    expanded ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-900'
+                  className={`flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-left text-sm transition ${
+                    expanded ? 'bg-black/[0.04] font-semibold text-slate-950' : 'text-slate-900 hover:bg-black/[0.035]'
                   }`}
                 >
                   <span>{item.label}</span>
-                  <span className="text-xs text-slate-500">{expanded ? '-' : '+'}</span>
+                  <span className="text-xs text-slate-400">{expanded ? '−' : '+'}</span>
                 </button>
               ) : (
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-400">
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-black/10 bg-slate-50 px-3.5 py-3 text-sm text-slate-400">
                   <span>{item.label}</span>
                   <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">Поки ні</span>
                 </div>
@@ -268,23 +268,31 @@ export default function AdminNav() {
   }
 
   return (
-    <nav className="flex max-h-[calc(100vh-2.5rem)] flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-sm xl:h-full xl:max-h-[calc(100vh-2.5rem)]">
+    <nav className="flex max-h-[calc(100vh-3rem)] flex-col rounded-[2rem] border border-black/5 bg-white/88 p-4 shadow-[0_18px_50px_rgba(24,24,18,0.08)] backdrop-blur xl:h-full xl:max-h-[calc(100vh-3rem)]">
+      <div className="rounded-[1.5rem] border border-black/5 bg-[linear-gradient(135deg,_rgba(250,249,246,0.96),_rgba(255,255,255,0.92))] px-4 py-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Admin Panel</p>
+        <h2 className="mt-2 text-xl font-semibold text-slate-950">Pchilka Control</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-600">
+          Оновлена мінімалістична навігація для поступового переходу на новий інтерфейс.
+        </p>
+      </div>
+
       {currentLogin ? (
-        <div className="rounded-2xl border border-brand/20 bg-brand/5 px-3 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Admin Session</p>
-          <p className="mt-2 text-sm font-semibold text-slate-900">{currentLogin}</p>
+        <div className="mt-4 rounded-[1.5rem] border border-amber-200/70 bg-amber-50/70 px-4 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Session</p>
+          <p className="mt-2 text-sm font-semibold text-slate-950">{currentLogin}</p>
           <p className="mt-1 text-xs text-slate-600">{currentRole || 'admin'}</p>
         </div>
       ) : null}
 
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">{renderItems(navGroups)}</div>
 
-      <div className="mt-4 border-t border-slate-200 pt-4">
+      <div className="mt-4 border-t border-black/5 pt-4">
         <button
           type="button"
           onClick={handleLogout}
           disabled={isLoggingOut}
-          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition enabled:hover:border-red-400 enabled:hover:text-red-700 disabled:opacity-60"
+          className="w-full rounded-2xl border border-black/10 bg-slate-950 px-3 py-3 text-sm font-semibold text-white transition enabled:hover:bg-slate-800 disabled:opacity-60"
         >
           {isLoggingOut ? 'Вихід...' : 'Вийти з адмінки'}
         </button>
