@@ -943,6 +943,17 @@ export default function AdminInventoryManager({
     setManualProductReviewDraft(null);
   }
 
+  async function loadProductByIdForReview(productId: number) {
+    const response = await fetch(`/api/admin/inventory/products?productId=${encodeURIComponent(String(productId))}`, {
+      cache: 'no-store'
+    });
+    const payload = (await response.json()) as ProductsPayload;
+    if (!response.ok || !payload.ok || !payload.product) {
+      throw new Error(payload.error || 'Не вдалося завантажити товар для погодження.');
+    }
+    return payload.product;
+  }
+
   async function submitManualProductReview(
     item: ManualProductCreationView,
     action: 'approve' | 'reject' | 'update'
@@ -969,6 +980,34 @@ export default function AdminInventoryManager({
     setError('');
     setSuccess('');
     try {
+      let productPayload: InventoryProductInput | undefined;
+      if (action !== 'reject') {
+        if (draft) {
+          productPayload = {
+            article: draft.article,
+            barcode: draft.barcode,
+            productName: draft.productName,
+            unitsOfMeasurement: draft.unitsOfMeasurement,
+            category: draft.category,
+            notifiedDaysDefault: draft.notifiedDaysDefault,
+            isActive: draft.isActive
+          };
+        } else {
+          const currentProduct =
+            products.find((entry) => Number(entry.id) === Number(item.productId)) ??
+            (await loadProductByIdForReview(Number(item.productId)));
+          productPayload = {
+            article: currentProduct.article,
+            barcode: currentProduct.barcodes?.join(', ') || currentProduct.barcode || '',
+            productName: currentProduct.productName,
+            unitsOfMeasurement: currentProduct.unitsOfMeasurement,
+            category: currentProduct.category,
+            notifiedDaysDefault: currentProduct.notifiedDaysDefault,
+            isActive: currentProduct.isActive
+          };
+        }
+      }
+
       const response = await fetch('/api/admin/inventory/manual-products', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -976,18 +1015,7 @@ export default function AdminInventoryManager({
           productId: item.productId,
           action,
           note: draft?.note ?? item.approvalNote ?? '',
-          product:
-            action === 'reject' || !draft
-              ? undefined
-              : {
-                  article: draft?.article,
-                  barcode: draft?.barcode,
-                  productName: draft?.productName,
-                  unitsOfMeasurement: draft?.unitsOfMeasurement,
-                  category: draft?.category,
-                  notifiedDaysDefault: draft?.notifiedDaysDefault,
-                  isActive: draft?.isActive
-                }
+          product: productPayload
         })
       });
       const payload = (await response.json()) as ProductsPayload;
