@@ -472,6 +472,96 @@ function SectionShell({
   );
 }
 
+function InventoryBatchCard({
+  batch,
+  token,
+  focusedBatchId,
+  currentUserRole,
+  activeUsers,
+  assigningBatchId,
+  onReassign,
+  onEditExpiry
+}: {
+  batch: ExpiringBatchView;
+  token: string;
+  focusedBatchId: string;
+  currentUserRole: InventoryUserRole;
+  activeUsers: InventoryUserView[];
+  assigningBatchId: string;
+  onReassign: (batchId: string, responsibleUserId: string) => void;
+  onEditExpiry: (batch: ExpiringBatchView) => void;
+}) {
+  const severityTone = getSeverityTone(batch.daysLeft);
+  const detailHref = canEditInventoryBatchExpiry(currentUserRole)
+    ? `/inventory/manage/expiry-date?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(batch.id)}`
+    : `/inventory/manage?token=${encodeURIComponent(token)}&batchId=${encodeURIComponent(batch.id)}`;
+
+  return (
+    <article
+      className={`rounded-[28px] border p-4 shadow-[0_8px_24px_rgba(15,23,42,0.03)] transition sm:p-5 ${
+        focusedBatchId === batch.id ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white'
+      }`}
+    >
+      <a href={detailHref} className="block">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`rounded-xl px-3 py-1 text-xs font-semibold ${severityTone.badgeClassName}`}>{severityTone.badge}</span>
+          <span className={`rounded-xl px-3 py-1 text-xs font-semibold ${getTaskStatusTone(batch.checkStatus || 'new')}`}>
+            {formatBatchCheckStatus(batch.checkStatus || 'new')}
+          </span>
+          {focusedBatchId === batch.id ? (
+            <span className="rounded-xl bg-slate-900 px-3 py-1 text-xs font-semibold text-white">Поточна</span>
+          ) : null}
+        </div>
+
+        <h3 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-slate-950">{batch.productName}</h3>
+        <p className="mt-1 text-sm text-slate-500">{batch.barcode || batch.article || `Партія #${batch.id}`}</p>
+
+        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <p className={severityTone.accentClassName}>Exp: {batch.expiryDate}</p>
+          <p className="text-slate-600">Qty: {batch.quantity}</p>
+          <p className="text-slate-500">Відповідальний: {batch.responsibleUserName || 'не призначено'}</p>
+        </div>
+      </a>
+
+      <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 lg:flex-row lg:items-center">
+        <select
+          value={batch.responsibleUserId}
+          onChange={(event) => {
+            void onReassign(batch.id, event.target.value);
+          }}
+          disabled={assigningBatchId === batch.id}
+          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 disabled:opacity-60 lg:max-w-sm"
+        >
+          <option value="">Без відповідального</option>
+          {activeUsers.map((user) => (
+            <option key={user.id} value={user.id}>
+              {[`${user.surname} ${user.name}`, user.positionTitle].filter(Boolean).join(' | ')}
+            </option>
+          ))}
+        </select>
+
+        <div className="flex flex-wrap gap-2">
+          <a
+            href={detailHref}
+            className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Деталі
+          </a>
+          {canEditInventoryBatchExpiry(currentUserRole) ? (
+            <button
+              type="button"
+              onClick={() => onEditExpiry(batch)}
+              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Швидко змінити дату
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export default function InventoryManagePage() {
   const [token, setToken] = useState('');
   const [focusedBatchId, setFocusedBatchId] = useState('');
@@ -551,13 +641,13 @@ export default function InventoryManagePage() {
     () => expiringBatches.filter((item) => batchMatchesFilter(item, normalizedManageFilter)),
     [expiringBatches, normalizedManageFilter]
   );
-  const groupedStoreBatches = useMemo(
-    () => groupBatchesBySupply(filteredStoreBatches, focusedBatchId, 'recent'),
-    [filteredStoreBatches, focusedBatchId]
+  const sortedStoreBatches = useMemo(
+    () => [...filteredStoreBatches].sort((a, b) => compareDateDesc(a.createdAt, b.createdAt) || Number(b.id) - Number(a.id)),
+    [filteredStoreBatches]
   );
-  const groupedExpiringBatches = useMemo(
-    () => groupBatchesBySupply(filteredExpiringBatches, focusedBatchId, 'recent'),
-    [filteredExpiringBatches, focusedBatchId]
+  const sortedExpiringBatches = useMemo(
+    () => [...filteredExpiringBatches].sort((a, b) => a.daysLeft - b.daysLeft || a.expiryDate.localeCompare(b.expiryDate) || Number(a.id) - Number(b.id)),
+    [filteredExpiringBatches]
   );
   const overdueBatchesCount = useMemo(() => expiringBatches.filter((item) => item.daysLeft < 0).length, [expiringBatches]);
   const nearExpiryBatchesCount = useMemo(
@@ -1005,124 +1095,28 @@ export default function InventoryManagePage() {
 
             <SectionShell
               title="Активні поставки"
-              subtitle="Усі партії, які є в магазині. Поставки згруповані за кодом, щоб було простіше швидко оглянути товари, кількість і відповідальних."
-              count={`${groupedStoreBatches.length} поставок`}
+              subtitle="Плоский список карток без вкладених блоків. Кожна картка веде в деталі товару, але основний список лишається легким і швидким для перегляду."
+              count={`${sortedStoreBatches.length} карток`}
             >
               {storeBatches.length === 0 ? (
                 <div className="rounded-[28px] bg-slate-50 px-5 py-8 text-center text-sm text-slate-500">У поточному магазині ще немає внесених партій.</div>
-              ) : groupedStoreBatches.length === 0 ? (
+              ) : sortedStoreBatches.length === 0 ? (
                 <div className="rounded-[28px] bg-slate-50 px-5 py-8 text-center text-sm text-slate-500">За поточним фільтром активних поставок не знайдено.</div>
               ) : (
-                <div className="space-y-4">
-                  {groupedStoreBatches.map((supply) => {
-                    const tone = getSeverityTone(supply.minDaysLeft);
-
-                    return (
-                      <article key={supply.key} className={`rounded-[30px] border p-4 sm:p-5 ${tone.cardClassName}`}>
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone.badgeClassName}`}>{tone.badge}</span>
-                              {supply.hasFocusedBatch ? (
-                                <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">Поточна партія</span>
-                              ) : null}
-                            </div>
-                            <h3 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-slate-950">{supply.label}</h3>
-                            <p className="mt-2 text-sm text-slate-500">
-                              {supply.productsCount} товарів · {supply.batchesCount} партій · {supply.totalQuantity} од.
-                            </p>
-                          </div>
-                          <div className="rounded-2xl bg-white px-4 py-3 text-right">
-                            <p className={`text-sm font-semibold ${tone.accentClassName}`}>{formatDaysLeft(supply.minDaysLeft)}</p>
-                            <p className="mt-1 text-xs text-slate-500">Оновлено: {formatDate(supply.latestCreatedAt)}</p>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 space-y-3">
-                          {supply.products.map((product) => (
-                            <div key={product.key} className="rounded-[24px] border border-slate-200 bg-white p-4">
-                              <div className="flex flex-wrap items-start justify-between gap-3">
-                                <div>
-                                  <h4 className="text-lg font-semibold text-slate-950">{product.productName}</h4>
-                                  <p className="mt-1 text-sm text-slate-500">
-                                    Артикул: {product.article || '—'} · ШК: {product.barcode || '—'}
-                                  </p>
-                                </div>
-                                <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{product.totalQuantity} од.</div>
-                              </div>
-
-                              <div className="mt-4 space-y-3">
-                                {product.batches.map((batch) => {
-                                  const batchTone = getSeverityTone(batch.daysLeft);
-                                  const batchStatus = formatBatchCheckStatus(batch.actionTaken || batch.checkStatus || 'new');
-
-                                  return (
-                                    <div
-                                      key={batch.id}
-                                      className={`rounded-[22px] border p-4 ${
-                                        focusedBatchId === batch.id ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-slate-50/60'
-                                      }`}
-                                    >
-                                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                                        <div className="min-w-0 flex-1">
-                                          <div className="flex flex-wrap items-center gap-2">
-                                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${batchTone.badgeClassName}`}>{batchTone.badge}</span>
-                                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getTaskStatusTone(batch.checkStatus || 'new')}`}>
-                                              {formatBatchCheckStatus(batch.checkStatus || 'new')}
-                                            </span>
-                                          </div>
-
-                                          <p className="mt-3 text-base font-semibold text-slate-950">Партія #{batch.id}</p>
-                                          <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-                                            <p>Код поставки: {batch.batchCode || '—'}</p>
-                                            <p>Термін: {batch.expiryDate}</p>
-                                            <p>Кількість: {batch.quantity} од.</p>
-                                            <p>Поставка: {batch.deliveryDate || '—'}</p>
-                                            <p>Створено: {formatDate(batch.createdAt)}</p>
-                                            <p>Остання дія: {batchStatus}</p>
-                                          </div>
-                                          <p className="mt-3 text-sm text-slate-600">Відповідальний: {batch.responsibleUserName || 'не призначено'}</p>
-                                          {batch.actionNote ? <p className="mt-2 text-sm text-slate-500">Примітка: {batch.actionNote}</p> : null}
-                                        </div>
-
-                                        <div className="w-full max-w-sm space-y-3">
-                                          <div className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700">{formatDaysLeft(batch.daysLeft)}</div>
-                                          <select
-                                            value={batch.responsibleUserId}
-                                            onChange={(event) => {
-                                              void handleReassign(batch.id, event.target.value);
-                                            }}
-                                            disabled={assigningBatchId === batch.id}
-                                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 disabled:opacity-60"
-                                          >
-                                            <option value="">Без відповідального</option>
-                                            {activeUsers.map((user) => (
-                                              <option key={user.id} value={user.id}>
-                                                {[`${user.surname} ${user.name}`, user.positionTitle].filter(Boolean).join(' | ')}
-                                              </option>
-                                            ))}
-                                          </select>
-                                          {canEditInventoryBatchExpiry(currentUserRole) ? (
-                                            <button
-                                              type="button"
-                                              onClick={() => openExpiryCorrectionModal(batch)}
-                                              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
-                                            >
-                                              Змінити термін придатності
-                                            </button>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </article>
-                    );
-                  })}
+                <div className="grid gap-4">
+                  {sortedStoreBatches.map((batch) => (
+                    <InventoryBatchCard
+                      key={batch.id}
+                      batch={batch}
+                      token={token}
+                      focusedBatchId={focusedBatchId}
+                      currentUserRole={currentUserRole}
+                      activeUsers={activeUsers}
+                      assigningBatchId={assigningBatchId}
+                      onReassign={handleReassign}
+                      onEditExpiry={openExpiryCorrectionModal}
+                    />
+                  ))}
                 </div>
               )}
             </SectionShell>
@@ -1130,7 +1124,7 @@ export default function InventoryManagePage() {
             <SectionShell
               title="Контроль термінів"
               subtitle="Тут залишаються прострочені та термінові партії, доки користувач реально не підтвердить дію. Це і є потрібна нам логіка контролю."
-              count={`${groupedExpiringBatches.length} поставок`}
+              count={`${sortedExpiringBatches.length} карток`}
               actions={
                 <>
                   <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">{overdueBatchesCount} прострочених</span>
@@ -1140,121 +1134,23 @@ export default function InventoryManagePage() {
             >
               {expiringBatches.length === 0 ? (
                 <div className="rounded-[28px] bg-slate-50 px-5 py-8 text-center text-sm text-slate-500">У магазині зараз немає партій зі строком до 30 днів.</div>
-              ) : groupedExpiringBatches.length === 0 ? (
+              ) : sortedExpiringBatches.length === 0 ? (
                 <div className="rounded-[28px] bg-slate-50 px-5 py-8 text-center text-sm text-slate-500">За поточним фільтром термінових товарів не знайдено.</div>
               ) : (
-                <div className="space-y-4">
-                  {groupedExpiringBatches.map((supply) => {
-                    const tone = getSeverityTone(supply.minDaysLeft);
-
-                    return (
-                      <article key={supply.key} className={`rounded-[30px] border p-4 sm:p-5 ${tone.cardClassName}`}>
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone.badgeClassName}`}>{tone.badge}</span>
-                              {supply.hasFocusedBatch ? (
-                                <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">Поточна партія</span>
-                              ) : null}
-                            </div>
-                            <h3 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-slate-950">{supply.label}</h3>
-                            <p className="mt-2 text-sm text-slate-500">
-                              {supply.productsCount} товарів · {supply.batchesCount} партій · {supply.totalQuantity} од.
-                            </p>
-                          </div>
-                          <div className="rounded-2xl bg-white px-4 py-3 text-right">
-                            <p className={`text-sm font-semibold ${tone.accentClassName}`}>{formatDaysLeft(supply.minDaysLeft)}</p>
-                            <p className="mt-1 text-xs text-slate-500">Найближча дата: {supply.nearestExpiryDate}</p>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 space-y-3">
-                          {supply.products.map((product) => (
-                            <div key={product.key} className="rounded-[24px] border border-slate-200 bg-white p-4">
-                              <div className="flex flex-wrap items-start justify-between gap-3">
-                                <div>
-                                  <h4 className="text-lg font-semibold text-slate-950">{product.productName}</h4>
-                                  <p className="mt-1 text-sm text-slate-500">
-                                    Артикул: {product.article || '—'} · ШК: {product.barcode || '—'} · Партій: {product.batchesCount}
-                                  </p>
-                                </div>
-                                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getSeverityTone(product.minDaysLeft).badgeClassName}`}>
-                                  {formatDaysLeft(product.minDaysLeft)}
-                                </span>
-                              </div>
-
-                              <div className="mt-4 space-y-3">
-                                {product.batches.map((batch) => {
-                                  const batchTone = getSeverityTone(batch.daysLeft);
-                                  const batchStatus = formatBatchCheckStatus(batch.actionTaken || batch.checkStatus || 'new');
-
-                                  return (
-                                    <div
-                                      key={batch.id}
-                                      className={`rounded-[22px] border p-4 ${
-                                        focusedBatchId === batch.id ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-slate-50/60'
-                                      }`}
-                                    >
-                                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                                        <div className="min-w-0 flex-1">
-                                          <div className="flex flex-wrap items-center gap-2">
-                                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${batchTone.badgeClassName}`}>{batchTone.badge}</span>
-                                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getTaskStatusTone(batch.checkStatus || 'new')}`}>
-                                              {formatBatchCheckStatus(batch.checkStatus || 'new')}
-                                            </span>
-                                          </div>
-
-                                          <p className="mt-3 text-base font-semibold text-slate-950">Партія #{batch.id}</p>
-                                          <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-                                            <p>Код партії: {batch.batchCode || '—'}</p>
-                                            <p>Термін: {batch.expiryDate}</p>
-                                            <p>Кількість: {batch.quantity} од.</p>
-                                            <p>Поставка: {batch.deliveryDate || '—'}</p>
-                                            <p>Статус перевірки: {formatBatchCheckStatus(batch.checkStatus || 'new')}</p>
-                                            <p>Остання дія: {batchStatus}</p>
-                                          </div>
-                                          <p className="mt-3 text-sm text-slate-600">Відповідальний: {batch.responsibleUserName || 'не призначено'}</p>
-                                          {batch.actionNote ? <p className="mt-2 text-sm text-slate-500">Примітка: {batch.actionNote}</p> : null}
-                                        </div>
-
-                                        <div className="w-full max-w-sm space-y-3">
-                                          <div className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700">{formatDaysLeft(batch.daysLeft)}</div>
-                                          <select
-                                            value={batch.responsibleUserId}
-                                            onChange={(event) => {
-                                              void handleReassign(batch.id, event.target.value);
-                                            }}
-                                            disabled={assigningBatchId === batch.id}
-                                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-slate-400 disabled:opacity-60"
-                                          >
-                                            <option value="">Без відповідального</option>
-                                            {activeUsers.map((user) => (
-                                              <option key={user.id} value={user.id}>
-                                                {[`${user.surname} ${user.name}`, user.positionTitle].filter(Boolean).join(' | ')}
-                                              </option>
-                                            ))}
-                                          </select>
-                                          {canEditInventoryBatchExpiry(currentUserRole) ? (
-                                            <button
-                                              type="button"
-                                              onClick={() => openExpiryCorrectionModal(batch)}
-                                              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
-                                            >
-                                              Змінити термін придатності
-                                            </button>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </article>
-                    );
-                  })}
+                <div className="grid gap-4">
+                  {sortedExpiringBatches.map((batch) => (
+                    <InventoryBatchCard
+                      key={batch.id}
+                      batch={batch}
+                      token={token}
+                      focusedBatchId={focusedBatchId}
+                      currentUserRole={currentUserRole}
+                      activeUsers={activeUsers}
+                      assigningBatchId={assigningBatchId}
+                      onReassign={handleReassign}
+                      onEditExpiry={openExpiryCorrectionModal}
+                    />
+                  ))}
                 </div>
               )}
             </SectionShell>
