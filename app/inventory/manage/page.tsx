@@ -479,8 +479,7 @@ function InventoryBatchCard({
   currentUserRole,
   activeUsers,
   assigningBatchId,
-  onReassign,
-  onEditExpiry
+  onReassign
 }: {
   batch: ExpiringBatchView;
   token: string;
@@ -489,7 +488,6 @@ function InventoryBatchCard({
   activeUsers: InventoryUserView[];
   assigningBatchId: string;
   onReassign: (batchId: string, responsibleUserId: string) => void;
-  onEditExpiry: (batch: ExpiringBatchView) => void;
 }) {
   const severityTone = getSeverityTone(batch.daysLeft);
   const detailHref = canEditInventoryBatchExpiry(currentUserRole)
@@ -547,15 +545,6 @@ function InventoryBatchCard({
           >
             Деталі
           </a>
-          {canEditInventoryBatchExpiry(currentUserRole) ? (
-            <button
-              type="button"
-              onClick={() => onEditExpiry(batch)}
-              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              Швидко змінити дату
-            </button>
-          ) : null}
         </div>
       </div>
     </article>
@@ -1114,7 +1103,6 @@ export default function InventoryManagePage() {
                       activeUsers={activeUsers}
                       assigningBatchId={assigningBatchId}
                       onReassign={handleReassign}
-                      onEditExpiry={openExpiryCorrectionModal}
                     />
                   ))}
                 </div>
@@ -1148,7 +1136,6 @@ export default function InventoryManagePage() {
                       activeUsers={activeUsers}
                       assigningBatchId={assigningBatchId}
                       onReassign={handleReassign}
-                      onEditExpiry={openExpiryCorrectionModal}
                     />
                   ))}
                 </div>
