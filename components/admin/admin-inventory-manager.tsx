@@ -996,20 +996,27 @@ export default function AdminInventoryManager({
       }
 
       const updatedProduct = payload.product;
-      setProducts((prev) =>
-        prev.map((product) => (product.id === updatedProduct.id ? updatedProduct : product))
-      );
+      setProducts((prev) => {
+        const hasExisting = prev.some((product) => product.id === updatedProduct.id);
+        if (!hasExisting) return [updatedProduct as InventoryProductRecord, ...prev];
+        return prev.map((product) => (product.id === updatedProduct.id ? updatedProduct : product));
+      });
       setManualProductCreations((prev) =>
         prev.map((entry) =>
-          Number(entry.productId) === Number(updatedProduct.id)
+          entry.id === item.id || Number(entry.productId) === Number(updatedProduct.id)
             ? {
                 ...entry,
                 article: updatedProduct.article,
                 barcode: updatedProduct.barcodes?.[0] || updatedProduct.barcode || '',
                 productName: updatedProduct.productName,
-                approvalStatus: updatedProduct.approvalStatus,
+                approvalStatus:
+                  action === 'approve'
+                    ? 'approved'
+                    : action === 'reject'
+                      ? 'rejected'
+                      : updatedProduct.approvalStatus,
                 approvalRequestedAt: updatedProduct.approvalRequestedAt,
-                approvedAt: updatedProduct.approvedAt,
+                approvedAt: action === 'approve' ? updatedProduct.approvedAt || new Date().toISOString() : updatedProduct.approvedAt,
                 approvedByUserId: updatedProduct.approvedByUserId ? Number(updatedProduct.approvedByUserId) : null,
                 approvalNote: updatedProduct.approvalNote
               }
