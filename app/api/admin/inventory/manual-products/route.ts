@@ -11,13 +11,6 @@ import { normalizeInventoryProductInput } from '@/lib/inventory-product-types';
 
 export const runtime = 'nodejs';
 
-function parseAdminUserId(request: Request) {
-  const session = getAdminSessionFromRequest(request);
-  if (!session?.sub?.startsWith('admin_user:')) return null;
-  const parsed = Number(session.sub.slice('admin_user:'.length));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
 export async function GET(request: Request) {
   if (!isAdminRequestAuthorized(request)) {
     return unauthorizedAdminResponse();
@@ -79,7 +72,9 @@ export async function PATCH(request: Request) {
     const updatedProduct = await updateInventoryProductApprovalInDb({
       productId,
       action,
-      reviewedByUserId: parseAdminUserId(request),
+      // Admin auth uses `admin_users`, while inventory approval foreign keys point to `users`.
+      // Passing the admin id here can break approval with FK errors on production.
+      reviewedByUserId: null,
       changedBy: getAdminSessionFromRequest(request)?.username ?? 'admin',
       note: String(body.note ?? ''),
       product
