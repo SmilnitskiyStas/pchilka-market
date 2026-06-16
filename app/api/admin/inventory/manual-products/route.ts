@@ -34,6 +34,8 @@ export async function PATCH(request: Request) {
     return unauthorizedAdminResponse();
   }
 
+  let debugContext: { productId?: number; action?: string; hasProduct?: boolean } = {};
+
   try {
     const body = (await request.json()) as {
       productId?: number;
@@ -43,16 +45,19 @@ export async function PATCH(request: Request) {
     };
 
     const productId = Number(body.productId ?? 0);
+    debugContext.productId = productId;
     if (!Number.isFinite(productId) || productId <= 0) {
       return NextResponse.json({ ok: false, error: 'Некоректний товар для погодження.' }, { status: 400 });
     }
 
     const action = body.action;
+    debugContext.action = action;
     if (!action || !['approve', 'reject', 'update'].includes(action)) {
       return NextResponse.json({ ok: false, error: 'Некоректна дія погодження.' }, { status: 400 });
     }
 
     const product = body.product ? normalizeInventoryProductInput(body.product) : null;
+    debugContext.hasProduct = Boolean(product);
     if (product) {
       if (!product.article || !product.productName || !product.unitsOfMeasurement) {
         return NextResponse.json(
@@ -83,6 +88,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true, product: updatedProduct });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown DB error';
+    console.error('manual-products PATCH failed', { ...debugContext, message, error });
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

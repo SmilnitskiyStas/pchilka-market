@@ -5,7 +5,7 @@ import { defaultSiteProfileSettings } from '@/lib/site-profile-settings';
 
 const FOOTER_LINKS = [
   { label: 'Наші магазини', href: '/about/stores' },
-  { label: 'Акції', href: '/promotions' },
+  { label: 'Акції', href: '/promotions/catalog' },
   { label: 'Каталог акцій', href: '/promotions/catalog' },
   { label: 'Програма лояльності', href: '/loyalty/about' },
   { label: 'Співпраця', href: '/cooperation/offer-product' },
@@ -66,4 +66,3 @@ export default async function SiteFooter() {
     </footer>
   );
 }
-
