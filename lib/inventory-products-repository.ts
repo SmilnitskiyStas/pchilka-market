@@ -811,17 +811,25 @@ export async function updateInventoryProductApprovalInDb(
     nextRecord = (await findInventoryProductByIdInDb(input.productId, db)) ?? product;
   }
 
-  await createInventoryProductApprovalReviewInDb(
-    {
+  try {
+    await createInventoryProductApprovalReviewInDb(
+      {
+        productId: input.productId,
+        action: input.action,
+        oldValues: beforeSnapshot,
+        newValues: nextRecord as Record<string, unknown>,
+        note: trimmedNote,
+        reviewedByUserId: input.reviewedByUserId ?? null
+      },
+      db
+    );
+  } catch (error) {
+    console.error('Failed to write product approval review audit record', {
       productId: input.productId,
       action: input.action,
-      oldValues: beforeSnapshot,
-      newValues: nextRecord as Record<string, unknown>,
-      note: trimmedNote,
-      reviewedByUserId: input.reviewedByUserId ?? null
-    },
-    db
-  );
+      error
+    });
+  }
 
   return nextRecord;
 }
