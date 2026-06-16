@@ -97,66 +97,66 @@ export default function AdminNav() {
     () => [
       { href: '/admin', label: 'Dashboard' },
       {
-        label: 'Р†РЅРІРµРЅС‚Р°СЂ',
+        label: 'Інвентар',
         children: [
-          { href: '/admin/inventory', label: 'РћРіР»СЏРґ' },
+          { href: '/admin/inventory', label: 'Огляд' },
           {
-            label: 'РўРѕРІР°СЂРё',
+            label: 'Товари',
             children: [
-              { href: '/admin/inventory/products', label: 'РЎРїРёСЃРѕРє С‚РѕРІР°СЂС–РІ' },
-              { href: '/admin/inventory/products/create', label: 'РЎС‚РІРѕСЂРёС‚Рё С‚РѕРІР°СЂ' },
-              { href: '/admin/inventory/products/import', label: 'Р†РјРїРѕСЂС‚ С‚РѕРІР°СЂС–РІ' }
+              { href: '/admin/inventory/products', label: 'Список товарів' },
+              { href: '/admin/inventory/products/create', label: 'Створити товар' },
+              { href: '/admin/inventory/products/import', label: 'Імпорт товарів' }
             ]
           },
           {
-            label: 'РџР°СЂС‚С–С—',
+            label: 'Партії',
             children: [
-              { href: '/admin/inventory/batches', label: 'РЈСЃС– РїР°СЂС‚С–С—' },
-              { href: '/admin/inventory/batches/expiring', label: 'Р—Р°РєС–РЅС‡СѓС”С‚СЊСЃСЏ С‚РµСЂРјС–РЅ' },
-              { href: '/admin/inventory/batches/overdue', label: 'РџСЂРѕСЃС‚СЂРѕС‡РµРЅС–' },
-              { href: '/admin/inventory/batches/action-required', label: 'РџРѕС‚СЂРµР±СѓСЋС‚СЊ РґС–С—' },
-              { href: '/admin/inventory/batches/written-off', label: 'РЎРїРёСЃР°РЅС–' }
+              { href: '/admin/inventory/batches', label: 'Усі партії' },
+              { href: '/admin/inventory/batches/expiring', label: 'Закінчується термін' },
+              { href: '/admin/inventory/batches/overdue', label: 'Прострочені' },
+              { href: '/admin/inventory/batches/action-required', label: 'Потребують дії' },
+              { href: '/admin/inventory/batches/written-off', label: 'Списані' }
             ]
           },
-          { href: '/admin/inventory/tasks', label: 'Р—Р°РІРґР°РЅРЅСЏ' },
-          { href: '/admin/inventory/employees', label: 'РџСЂР°С†С–РІРЅРёРєРё' },
-          { href: '/admin/inventory/actions', label: 'Р”С–С— РїСЂР°С†С–РІРЅРёРєС–РІ' },
-          { href: '/admin/inventory/notifications', label: 'РЎРїРѕРІС–С‰РµРЅРЅСЏ' },
-          { href: '/admin/network', label: 'РњР°РіР°Р·РёРЅРё' },
-          { href: '/admin/inventory/analytics', label: 'РђРЅР°Р»С–С‚РёРєР°' }
+          { href: '/admin/inventory/tasks', label: 'Завдання' },
+          { href: '/admin/inventory/employees', label: 'Працівники' },
+          { href: '/admin/inventory/actions', label: 'Дії працівників' },
+          { href: '/admin/inventory/notifications', label: 'Сповіщення' },
+          { href: '/admin/network', label: 'Магазини' },
+          { href: '/admin/inventory/analytics', label: 'Аналітика' }
         ]
       },
       {
-        label: 'РњР°СЂРєРµС‚РёРЅРі',
+        label: 'Маркетинг',
         children: [
-          { href: '/admin/promotions', label: 'РђРєС†С–С—' },
-          { href: '/admin/home-slides', label: 'Р‘Р°РЅРµСЂРё' },
-          { href: '/admin/media', label: 'РњРµРґС–Р°С„Р°Р№Р»Рё' },
+          { href: '/admin/promotions', label: 'Акції' },
+          { href: '/admin/home-slides', label: 'Банери' },
+          { href: '/admin/media', label: 'Медіафайли' },
           { href: '/admin/seo', label: 'SEO' }
         ]
       },
       {
-        label: 'РљРѕРЅС‚РµРЅС‚',
-        children: [{ href: '/admin/content', label: 'РЎС‚Р°С‚С‚С–' }]
+        label: 'Контент',
+        children: [{ href: '/admin/content', label: 'Статті' }]
       },
       {
         href: '/admin/own-brand',
-        label: 'Р’Р»Р°СЃРЅРµ РєР»Р°СЃРЅРµ'
+        label: 'Власне класне'
       },
       {
         href: '/admin/messages',
-        label: 'РџРѕРІС–РґРѕРјР»РµРЅРЅСЏ',
+        label: 'Повідомлення',
         badge: unprocessedCount > 0 ? unprocessedCount : undefined
       },
       {
-        label: 'РЎРёСЃС‚РµРјР°',
+        label: 'Система',
         children: [
-          { href: '/admin/users', label: 'РљРѕСЂРёСЃС‚СѓРІР°С‡С–' },
-          { href: '/admin/integrations', label: 'Р†РЅС‚РµРіСЂР°С†С–С—' },
+          { href: '/admin/users', label: 'Користувачі' },
+          { href: '/admin/integrations', label: 'Інтеграції' },
           {
-            label: 'РќР°Р»Р°С€С‚СѓРІР°РЅРЅСЏ',
+            label: 'Налаштування',
             children: [
-              { href: '/admin/inventory/settings/schema', label: 'РЎС…РµРјР°' },
+              { href: '/admin/inventory/settings/schema', label: 'Схема' },
               { href: '/admin/inventory/settings/telegram', label: 'Telegram' }
             ]
           }
@@ -255,7 +255,7 @@ export default function AdminNav() {
               ) : (
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-400">
                   <span>{item.label}</span>
-                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">РџРѕРєРё РЅС–</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">Поки ні</span>
                 </div>
               )}
 
@@ -286,7 +286,7 @@ export default function AdminNav() {
           disabled={isLoggingOut}
           className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition enabled:hover:border-red-400 enabled:hover:text-red-700 disabled:opacity-60"
         >
-          {isLoggingOut ? 'Р’РёС…С–Рґ...' : 'Р’РёР№С‚Рё Р· Р°РґРјС–РЅРєРё'}
+          {isLoggingOut ? 'Вихід...' : 'Вийти з адмінки'}
         </button>
       </div>
     </nav>
