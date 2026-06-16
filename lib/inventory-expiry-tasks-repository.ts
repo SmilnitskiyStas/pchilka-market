@@ -294,6 +294,7 @@ export async function syncInventoryExpiryTasksInDb() {
 
       const daysLeft = daysLeftUntil(batch.expiryDate);
       if (daysLeft == null) continue;
+      // Keep overdue batches in the active queue until a user confirms the final action.
       if (daysLeft > Number(batch.notifiedDays || 7)) continue;
 
       const batchId = toNullablePositiveNumber(batch.id);
