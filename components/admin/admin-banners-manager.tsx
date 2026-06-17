@@ -12,6 +12,20 @@ type BannerLinkOption = {
   href: string;
 };
 
+type MediaAsset = {
+  url: string;
+  metadata?: {
+    alt?: string;
+    title?: string;
+  };
+};
+
+type MediaAssetsPayload = {
+  ok?: boolean;
+  assets?: MediaAsset[];
+  error?: string;
+};
+
 function isValidImagePath(value: string) {
   return (
     value.startsWith('/img/') ||
@@ -134,6 +148,29 @@ function normalizeBanner(raw: HomeBanner): HomeBanner {
   };
 }
 
+function isImageAsset(assetUrl: string): boolean {
+  const cleanUrl = assetUrl.split('?')[0] ?? assetUrl;
+  return ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.svg'].some((extension) =>
+    cleanUrl.toLowerCase().endsWith(extension)
+  );
+}
+
+function getFileName(assetUrl: string): string {
+  const normalized = assetUrl.split('/').filter(Boolean);
+  return normalized[normalized.length - 1] ?? assetUrl;
+}
+
+async function fetchMediaAssets(): Promise<MediaAsset[]> {
+  const response = await fetch('/api/admin/assets', { cache: 'no-store' });
+  const payload = (await response.json()) as MediaAssetsPayload;
+
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || 'Не вдалося завантажити медіафайли.');
+  }
+
+  return Array.isArray(payload.assets) ? payload.assets.filter((asset) => isImageAsset(asset.url)) : [];
+}
+
 async function fetchBanners(): Promise<HomeBanner[]> {
   const response = await fetch('/api/admin/home-slides', { cache: 'no-store' });
   const payload = (await response.json()) as { ok?: boolean; banners?: HomeBanner[]; error?: string };
@@ -198,6 +235,9 @@ export default function AdminBannersManager() {
   const [publishTo, setPublishTo] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [formError, setFormError] = useState('');
+  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
+  const [isMediaLoading, setIsMediaLoading] = useState(false);
+  const [mediaSearchQuery, setMediaSearchQuery] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -226,6 +266,53 @@ export default function AdminBannersManager() {
   const sortedBanners = useMemo(() => [...banners], [banners]);
   const linkOptions = useMemo(() => buildBannerLinkOptions(), []);
   const isEditing = editingBannerId !== null;
+  const filteredMediaAssets = useMemo(() => {
+    const normalizedQuery = mediaSearchQuery.trim().toLowerCase();
+
+    return mediaAssets.filter((asset) => {
+      if (!normalizedQuery) return true;
+      const fileName = getFileName(asset.url).toLowerCase();
+      const altValue = asset.metadata?.alt?.toLowerCase() ?? '';
+      const titleValue = asset.metadata?.title?.toLowerCase() ?? '';
+      return (
+        asset.url.toLowerCase().includes(normalizedQuery) ||
+        fileName.includes(normalizedQuery) ||
+        altValue.includes(normalizedQuery) ||
+        titleValue.includes(normalizedQuery)
+      );
+    });
+  }, [mediaAssets, mediaSearchQuery]);
+
+  useEffect(() => {
+    if (!isModalOpen || imageSourceMode !== 'path' || mediaAssets.length > 0 || isMediaLoading) return;
+
+    let cancelled = false;
+
+    async function loadMediaAssets() {
+      setIsMediaLoading(true);
+      try {
+        const loadedAssets = await fetchMediaAssets();
+        if (!cancelled) {
+          setMediaAssets(loadedAssets);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : 'Не вдалося завантажити медіафайли.';
+          setFormError(message);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsMediaLoading(false);
+        }
+      }
+    }
+
+    void loadMediaAssets();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [imageSourceMode, isMediaLoading, isModalOpen, mediaAssets.length]);
 
   function getPublicationState(banner: HomeBanner) {
     return getBannerPublicationState(banner.publishFrom, banner.publishTo);
@@ -267,6 +354,7 @@ export default function AdminBannersManager() {
     setPublishTo('');
     setIsActive(true);
     setFormError('');
+    setMediaSearchQuery('');
   }
 
   function openCreateModal() {
@@ -688,7 +776,7 @@ export default function AdminBannersManager() {
               </div>
 
               {imageSourceMode === 'path' ? (
-                <div>
+                <div className="space-y-3">
                   <label htmlFor="banner-src" className="block text-sm font-semibold text-slate-900">
                     Шлях до зображення
                   </label>
@@ -700,6 +788,55 @@ export default function AdminBannersManager() {
                     className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
                     placeholder="/img/baners/banner.jpg"
                   />
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-900">Або виберіть з каталогу сайту</p>
+                      <p className="text-xs text-slate-500">Знайдено: {filteredMediaAssets.length}</p>
+                    </div>
+
+                    <input
+                      value={mediaSearchQuery}
+                      onChange={(event) => setMediaSearchQuery(event.target.value)}
+                      placeholder="Пошук по назві або шляху..."
+                      className="mt-3 w-full rounded-xl border border-slate-300 bg-white p-2.5 text-sm outline-none transition focus:border-brand"
+                    />
+
+                    {isMediaLoading ? <p className="mt-3 text-sm text-slate-600">Завантаження зображень...</p> : null}
+
+                    {!isMediaLoading && filteredMediaAssets.length === 0 ? (
+                      <p className="mt-3 text-sm text-slate-600">Немає доступних зображень за цим фільтром.</p>
+                    ) : null}
+
+                    <div className="mt-3 grid max-h-72 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+                      {filteredMediaAssets.map((asset) => {
+                        const isSelected = normalizeImagePathInput(src) === asset.url;
+                        return (
+                          <button
+                            key={asset.url}
+                            type="button"
+                            onClick={() => {
+                              setSrc(asset.url);
+                              setFormError('');
+                            }}
+                            className={`overflow-hidden rounded-2xl border text-left transition ${
+                              isSelected
+                                ? 'border-brand bg-brand/5 shadow-sm'
+                                : 'border-slate-200 bg-white hover:border-brand/50'
+                            }`}
+                          >
+                            <div className="aspect-[4/3] overflow-hidden bg-slate-100">
+                              <img src={asset.url} alt={asset.metadata?.alt || getFileName(asset.url)} className="h-full w-full object-cover" />
+                            </div>
+                            <div className="space-y-1 px-3 py-2">
+                              <p className="truncate text-sm font-semibold text-slate-900">{getFileName(asset.url)}</p>
+                              <p className="truncate text-xs text-slate-500">{asset.url}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div>
