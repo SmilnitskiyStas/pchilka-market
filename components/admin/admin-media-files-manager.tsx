@@ -116,6 +116,40 @@ function getFileName(assetUrl: string): string {
   return normalized[normalized.length - 1] ?? assetUrl;
 }
 
+function getCategoryLabel(category: AssetCategory): string {
+  return categoryOptions.find((option) => option.id === category)?.label ?? 'Інше';
+}
+
+function renderAssetCardPreview(asset: AssetItem) {
+  const fileName = getFileName(asset.url);
+
+  if (isImageAsset(asset.url)) {
+    return <img src={asset.url} alt={asset.metadata.alt || fileName} className="h-full w-full object-cover" />;
+  }
+
+  if (isVideoAsset(asset.url)) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-slate-900 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white">
+        Video
+      </div>
+    );
+  }
+
+  if (isPdfAsset(asset.url)) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-rose-50 text-center text-xs font-semibold uppercase tracking-[0.18em] text-rose-700">
+        PDF
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-slate-100 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+      File
+    </div>
+  );
+}
+
 async function fetchAssets(): Promise<AssetItem[]> {
   const response = await fetch('/api/admin/assets', { cache: 'no-store' });
   const payload = (await response.json()) as AssetsPayload;
@@ -440,7 +474,7 @@ export default function AdminMediaFilesManager() {
             </p>
           ) : null}
 
-          <ul className="mt-4 space-y-2">
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {filteredAssets.map((asset) => {
               const category = getCategoryForAsset(asset.url);
               const isSelected = asset.url === selectedAssetUrl;
@@ -450,27 +484,36 @@ export default function AdminMediaFilesManager() {
                   <button
                     type="button"
                     onClick={() => setSelectedAssetUrl(asset.url)}
-                    className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
+                    className={`w-full overflow-hidden rounded-2xl border text-left transition ${
                       isSelected
                         ? 'border-brand bg-brand/5 shadow-sm'
                         : 'border-slate-200 bg-slate-50 hover:border-brand/50 hover:bg-white'
                     }`}
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-900">{getFileName(asset.url)}</p>
-                        <p className="mt-1 truncate text-xs text-slate-500">{asset.url}</p>
-                      </div>
-                      <span className="rounded-full border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                        {categoryOptions.find((option) => option.id === category)?.label ?? 'Інше'}
-                      </span>
+                    <div className="aspect-[4/3] overflow-hidden border-b border-slate-200 bg-white">
+                      {renderAssetCardPreview(asset)}
                     </div>
-                    <p className="mt-2 text-xs text-slate-600">Папка: {getFolderLabel(asset.url)}</p>
-                    {asset.metadata.alt || asset.metadata.title ? (
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        SEO: {[asset.metadata.alt, asset.metadata.title].filter(Boolean).join(' · ')}
-                      </p>
-                    ) : null}
+
+                    <div className="space-y-3 px-3 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-900">{getFileName(asset.url)}</p>
+                          <p className="mt-1 truncate text-xs text-slate-500">{asset.url}</p>
+                        </div>
+                        <span className="rounded-full border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
+                          {getCategoryLabel(category)}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-slate-600">Папка: {getFolderLabel(asset.url)}</p>
+                      {asset.metadata.alt || asset.metadata.title ? (
+                        <p className="line-clamp-2 text-xs text-slate-500">
+                          SEO: {[asset.metadata.alt, asset.metadata.title].filter(Boolean).join(' · ')}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-400">SEO-дані ще не заповнені.</p>
+                      )}
+                    </div>
                   </button>
                 </li>
               );
@@ -509,7 +552,7 @@ export default function AdminMediaFilesManager() {
                 </p>
                 <p>
                   <span className="font-semibold text-slate-900">Категорія:</span>{' '}
-                  {categoryOptions.find((option) => option.id === selectedAssetDetails.category)?.label ?? 'Інше'}
+                  {getCategoryLabel(selectedAssetDetails.category)}
                 </p>
                 <p>
                   <span className="font-semibold text-slate-900">Папка:</span> {selectedAssetDetails.folderLabel}
