@@ -238,6 +238,7 @@ export default function AdminBannersManager() {
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
   const [isMediaLoading, setIsMediaLoading] = useState(false);
   const [mediaSearchQuery, setMediaSearchQuery] = useState('');
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -284,7 +285,7 @@ export default function AdminBannersManager() {
   }, [mediaAssets, mediaSearchQuery]);
 
   useEffect(() => {
-    if (!isModalOpen || imageSourceMode !== 'path' || mediaAssets.length > 0 || isMediaLoading) return;
+    if (!isCatalogOpen || mediaAssets.length > 0 || isMediaLoading) return;
 
     let cancelled = false;
 
@@ -312,7 +313,7 @@ export default function AdminBannersManager() {
     return () => {
       cancelled = true;
     };
-  }, [imageSourceMode, isMediaLoading, isModalOpen, mediaAssets.length]);
+  }, [isCatalogOpen, isMediaLoading, mediaAssets.length]);
 
   function getPublicationState(banner: HomeBanner) {
     return getBannerPublicationState(banner.publishFrom, banner.publishTo);
@@ -355,6 +356,7 @@ export default function AdminBannersManager() {
     setIsActive(true);
     setFormError('');
     setMediaSearchQuery('');
+    setIsCatalogOpen(false);
   }
 
   function openCreateModal() {
@@ -780,62 +782,22 @@ export default function AdminBannersManager() {
                   <label htmlFor="banner-src" className="block text-sm font-semibold text-slate-900">
                     Шлях до зображення
                   </label>
-                  <input
-                    id="banner-src"
-                    required
-                    value={src}
-                    onChange={(event) => setSrc(event.target.value)}
-                    className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
-                    placeholder="/img/baners/banner.jpg"
-                  />
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-slate-900">Або виберіть з каталогу сайту</p>
-                      <p className="text-xs text-slate-500">Знайдено: {filteredMediaAssets.length}</p>
-                    </div>
-
+                  <div className="mt-1.5 flex gap-2">
                     <input
-                      value={mediaSearchQuery}
-                      onChange={(event) => setMediaSearchQuery(event.target.value)}
-                      placeholder="Пошук по назві або шляху..."
-                      className="mt-3 w-full rounded-xl border border-slate-300 bg-white p-2.5 text-sm outline-none transition focus:border-brand"
+                      id="banner-src"
+                      required
+                      value={src}
+                      onChange={(event) => setSrc(event.target.value)}
+                      className="min-w-0 flex-1 rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
+                      placeholder="/img/baners/banner.jpg"
                     />
-
-                    {isMediaLoading ? <p className="mt-3 text-sm text-slate-600">Завантаження зображень...</p> : null}
-
-                    {!isMediaLoading && filteredMediaAssets.length === 0 ? (
-                      <p className="mt-3 text-sm text-slate-600">Немає доступних зображень за цим фільтром.</p>
-                    ) : null}
-
-                    <div className="mt-3 grid max-h-72 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
-                      {filteredMediaAssets.map((asset) => {
-                        const isSelected = normalizeImagePathInput(src) === asset.url;
-                        return (
-                          <button
-                            key={asset.url}
-                            type="button"
-                            onClick={() => {
-                              setSrc(asset.url);
-                              setFormError('');
-                            }}
-                            className={`overflow-hidden rounded-2xl border text-left transition ${
-                              isSelected
-                                ? 'border-brand bg-brand/5 shadow-sm'
-                                : 'border-slate-200 bg-white hover:border-brand/50'
-                            }`}
-                          >
-                            <div className="aspect-[4/3] overflow-hidden bg-slate-100">
-                              <img src={asset.url} alt={asset.metadata?.alt || getFileName(asset.url)} className="h-full w-full object-cover" />
-                            </div>
-                            <div className="space-y-1 px-3 py-2">
-                              <p className="truncate text-sm font-semibold text-slate-900">{getFileName(asset.url)}</p>
-                              <p className="truncate text-xs text-slate-500">{asset.url}</p>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCatalogOpen(true)}
+                      className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-brand hover:text-brand"
+                    >
+                      Каталог
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -934,6 +896,77 @@ export default function AdminBannersManager() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {isCatalogOpen ? (
+        <div className="fixed inset-0 z-[230] bg-slate-950/55 p-4" onClick={() => setIsCatalogOpen(false)}>
+          <div
+            className="mx-auto mt-4 w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:mt-8 sm:p-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900">Каталог зображень</h3>
+                <p className="mt-1 text-sm text-slate-600">Оберіть зображення з медіафайлів сервера, щоб підставити його шлях у банер.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCatalogOpen(false)}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+              >
+                Закрити
+              </button>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <input
+                value={mediaSearchQuery}
+                onChange={(event) => setMediaSearchQuery(event.target.value)}
+                placeholder="Пошук по назві або шляху..."
+                className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none transition focus:border-brand"
+              />
+              <p className="text-sm text-slate-500">Знайдено: {filteredMediaAssets.length}</p>
+            </div>
+
+            {isMediaLoading ? <p className="mt-4 text-sm text-slate-600">Завантаження зображень...</p> : null}
+
+            {!isMediaLoading && filteredMediaAssets.length === 0 ? (
+              <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Немає доступних зображень за цим фільтром.
+              </p>
+            ) : null}
+
+            <div className="mt-4 grid max-h-[70vh] gap-4 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredMediaAssets.map((asset) => {
+                const isSelected = normalizeImagePathInput(src) === asset.url;
+                return (
+                  <button
+                    key={asset.url}
+                    type="button"
+                    onClick={() => {
+                      setSrc(asset.url);
+                      setFormError('');
+                      setIsCatalogOpen(false);
+                    }}
+                    className={`overflow-hidden rounded-2xl border text-left transition ${
+                      isSelected
+                        ? 'border-brand bg-brand/5 shadow-sm'
+                        : 'border-slate-200 bg-white hover:border-brand/50'
+                    }`}
+                  >
+                    <div className="aspect-[4/3] overflow-hidden bg-slate-100">
+                      <img src={asset.url} alt={asset.metadata?.alt || getFileName(asset.url)} className="h-full w-full object-cover" />
+                    </div>
+                    <div className="space-y-1 px-3 py-3">
+                      <p className="truncate text-sm font-semibold text-slate-900">{getFileName(asset.url)}</p>
+                      <p className="truncate text-xs text-slate-500">{asset.url}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       ) : null}
