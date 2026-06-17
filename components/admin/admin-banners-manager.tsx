@@ -20,9 +20,9 @@ type MediaAsset = {
   };
 };
 
-type MediaAssetsPayload = {
+type MediaImagesPayload = {
   ok?: boolean;
-  assets?: MediaAsset[];
+  images?: string[];
   error?: string;
 };
 
@@ -161,14 +161,16 @@ function getFileName(assetUrl: string): string {
 }
 
 async function fetchMediaAssets(): Promise<MediaAsset[]> {
-  const response = await fetch('/api/admin/assets', { cache: 'no-store' });
-  const payload = (await response.json()) as MediaAssetsPayload;
+  const response = await fetch('/api/admin/images', { cache: 'no-store' });
+  const payload = (await response.json()) as MediaImagesPayload;
 
   if (!response.ok || !payload.ok) {
     throw new Error(payload.error || 'Не вдалося завантажити медіафайли.');
   }
 
-  return Array.isArray(payload.assets) ? payload.assets.filter((asset) => isImageAsset(asset.url)) : [];
+  return Array.isArray(payload.images)
+    ? payload.images.filter(isImageAsset).map((url) => ({ url }))
+    : [];
 }
 
 async function fetchBanners(): Promise<HomeBanner[]> {
