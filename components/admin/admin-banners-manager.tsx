@@ -38,7 +38,7 @@ function isValidImagePath(value: string) {
 }
 
 function shouldUseNativeImage(src: string): boolean {
-  return src.startsWith('/media/') || src.startsWith('http://') || src.startsWith('https://');
+  return src.startsWith('/img/') || src.startsWith('/media/') || src.startsWith('http://') || src.startsWith('https://');
 }
 
 function encodeImageRef(src: string): string {
