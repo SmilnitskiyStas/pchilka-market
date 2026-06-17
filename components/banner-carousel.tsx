@@ -89,6 +89,13 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
                       alt={slide.alt}
                       loading={index === 0 ? 'eager' : 'lazy'}
                       className={imageClassName}
+                      onError={() => {
+                        console.error('[banner-carousel] Banner image failed to load', {
+                          slideId: slide.id,
+                          originalSrc: slide.src,
+                          imageSrc
+                        });
+                      }}
                     />
                   ) : (
                     <Image
@@ -108,6 +115,13 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
                       alt={slide.alt}
                       loading={index === 0 ? 'eager' : 'lazy'}
                       className={imageClassName}
+                      onError={() => {
+                        console.error('[banner-carousel] Banner image failed to load', {
+                          slideId: slide.id,
+                          originalSrc: slide.src,
+                          imageSrc
+                        });
+                      }}
                     />
                   ) : (
                     <Image

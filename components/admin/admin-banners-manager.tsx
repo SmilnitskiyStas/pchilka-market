@@ -662,7 +662,19 @@ export default function AdminBannersManager() {
             ) : (
               <div className="relative h-44 w-full bg-slate-50">
                 {useNativeImage ? (
-                  <img src={previewSrc} alt={banner.alt} className="h-full w-full object-contain" loading="lazy" />
+                  <img
+                    src={previewSrc}
+                    alt={banner.alt}
+                    className="h-full w-full object-contain"
+                    loading="lazy"
+                    onError={() => {
+                      console.error('[admin-home-slides] Banner preview failed to load', {
+                        bannerId: banner.id,
+                        originalSrc: banner.src,
+                        previewSrc
+                      });
+                    }}
+                  />
                 ) : (
                   <Image src={previewSrc} alt={banner.alt} fill className="object-contain" />
                 )}
@@ -969,7 +981,16 @@ export default function AdminBannersManager() {
                     }`}
                   >
                     <div className="aspect-[4/3] overflow-hidden bg-slate-100">
-                      <img src={asset.url} alt={asset.metadata?.alt || getFileName(asset.url)} className="h-full w-full object-cover" />
+                      <img
+                        src={asset.url}
+                        alt={asset.metadata?.alt || getFileName(asset.url)}
+                        className="h-full w-full object-cover"
+                        onError={() => {
+                          console.error('[admin-home-slides] Catalog image failed to load', {
+                            assetUrl: asset.url
+                          });
+                        }}
+                      />
                     </div>
                     <div className="space-y-1 px-3 py-3">
                       <p className="truncate text-sm font-semibold text-slate-900">{getFileName(asset.url)}</p>

@@ -33,6 +33,7 @@ async function readLocalAsset(src: string): Promise<Response> {
     ? resolveUploadPath(src.replace(/^\/media\//, '').split('/').filter(Boolean))
     : resolvePublicPath(src);
 
+  console.info('[site-image] Reading local asset', { src, absolutePath });
   const buffer = await fs.readFile(absolutePath);
 
   return new Response(buffer, {
@@ -46,16 +47,21 @@ async function readLocalAsset(src: string): Promise<Response> {
 }
 
 export async function GET(request: Request) {
+  let ref = '';
+  let src = '';
+
   try {
     const { searchParams } = new URL(request.url);
-    const ref = searchParams.get('ref')?.trim() ?? '';
+    ref = searchParams.get('ref')?.trim() ?? '';
 
     if (!ref) {
+      console.warn('[site-image] Missing image ref', { url: request.url });
       return new Response('Missing image ref', { status: 400 });
     }
 
-    const src = decodeRef(ref);
+    src = decodeRef(ref);
     if (!src) {
+      console.warn('[site-image] Invalid image ref after decode', { ref });
       return new Response('Invalid image ref', { status: 400 });
     }
 
@@ -66,6 +72,7 @@ export async function GET(request: Request) {
     if (src.startsWith('http://') || src.startsWith('https://')) {
       const upstream = await fetch(src, { cache: 'no-store' });
       if (!upstream.ok) {
+        console.error('[site-image] Upstream image error', { src, status: upstream.status });
         return new Response('Upstream image error', { status: upstream.status });
       }
 
@@ -78,8 +85,14 @@ export async function GET(request: Request) {
       });
     }
 
+    console.warn('[site-image] Unsupported image source', { src });
     return new Response('Unsupported image source', { status: 400 });
-  } catch {
+  } catch (error) {
+    console.error('[site-image] Image proxy error', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      ref,
+      src
+    });
     return new Response('Image proxy error', { status: 500 });
   }
 }
