@@ -26,6 +26,14 @@ type MediaImagesPayload = {
   error?: string;
 };
 
+type ImageDebugInfo = {
+  context: string;
+  requestedUrl: string;
+  responseStatus?: number;
+  responseText?: string;
+  originalSrc?: string;
+};
+
 function isValidImagePath(value: string) {
   return (
     value.startsWith('/img/') ||
@@ -194,6 +202,28 @@ async function fetchBanners(): Promise<HomeBanner[]> {
   return Array.isArray(payload.banners) ? payload.banners.map(normalizeBanner) : [];
 }
 
+async function inspectImageUrl(requestedUrl: string, context: string, originalSrc?: string): Promise<ImageDebugInfo> {
+  try {
+    const response = await fetch(requestedUrl, { cache: 'no-store' });
+    const responseText = response.ok ? 'OK' : (await response.text()).slice(0, 300);
+
+    return {
+      context,
+      requestedUrl,
+      responseStatus: response.status,
+      responseText,
+      originalSrc
+    };
+  } catch (error) {
+    return {
+      context,
+      requestedUrl,
+      responseText: error instanceof Error ? error.message : 'Unknown client fetch error',
+      originalSrc
+    };
+  }
+}
+
 async function saveBanners(banners: HomeBanner[]): Promise<HomeBanner[]> {
   const preparedBanners: HomeBanner[] = [];
 
@@ -251,6 +281,7 @@ export default function AdminBannersManager() {
   const [isMediaLoading, setIsMediaLoading] = useState(false);
   const [mediaSearchQuery, setMediaSearchQuery] = useState('');
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [imageDebugInfo, setImageDebugInfo] = useState<ImageDebugInfo | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -369,6 +400,7 @@ export default function AdminBannersManager() {
     setFormError('');
     setMediaSearchQuery('');
     setIsCatalogOpen(false);
+    setImageDebugInfo(null);
   }
 
   function openCreateModal() {
@@ -645,6 +677,33 @@ export default function AdminBannersManager() {
         </button>
       </div>
 
+      {imageDebugInfo ? (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <p className="font-semibold">Діагностика завантаження зображення</p>
+          <p className="mt-2">
+            <span className="font-semibold">Контекст:</span> {imageDebugInfo.context}
+          </p>
+          {imageDebugInfo.originalSrc ? (
+            <p className="mt-1 break-all">
+              <span className="font-semibold">Original src:</span> {imageDebugInfo.originalSrc}
+            </p>
+          ) : null}
+          <p className="mt-1 break-all">
+            <span className="font-semibold">Requested URL:</span> {imageDebugInfo.requestedUrl}
+          </p>
+          {typeof imageDebugInfo.responseStatus === 'number' ? (
+            <p className="mt-1">
+              <span className="font-semibold">HTTP статус:</span> {imageDebugInfo.responseStatus}
+            </p>
+          ) : null}
+          {imageDebugInfo.responseText ? (
+            <p className="mt-1 break-all">
+              <span className="font-semibold">Відповідь:</span> {imageDebugInfo.responseText}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       <ul className="mt-5 grid gap-4 sm:grid-cols-2">
         {filteredBanners.map((banner) => {
           const orderIndex = banners.findIndex((item) => item.id === banner.id);
@@ -668,11 +727,7 @@ export default function AdminBannersManager() {
                     className="h-full w-full object-contain"
                     loading="lazy"
                     onError={() => {
-                      console.error('[admin-home-slides] Banner preview failed to load', {
-                        bannerId: banner.id,
-                        originalSrc: banner.src,
-                        previewSrc
-                      });
+                      void inspectImageUrl(previewSrc, `Banner preview: ${banner.id}`, banner.src).then(setImageDebugInfo);
                     }}
                   />
                 ) : (
@@ -900,6 +955,33 @@ export default function AdminBannersManager() {
                 </p>
               ) : null}
 
+              {imageDebugInfo ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+                  <p className="font-semibold">Діагностика зображення</p>
+                  <p className="mt-1 break-all">
+                    <span className="font-semibold">Контекст:</span> {imageDebugInfo.context}
+                  </p>
+                  {imageDebugInfo.originalSrc ? (
+                    <p className="mt-1 break-all">
+                      <span className="font-semibold">Original src:</span> {imageDebugInfo.originalSrc}
+                    </p>
+                  ) : null}
+                  <p className="mt-1 break-all">
+                    <span className="font-semibold">Requested URL:</span> {imageDebugInfo.requestedUrl}
+                  </p>
+                  {typeof imageDebugInfo.responseStatus === 'number' ? (
+                    <p className="mt-1">
+                      <span className="font-semibold">HTTP статус:</span> {imageDebugInfo.responseStatus}
+                    </p>
+                  ) : null}
+                  {imageDebugInfo.responseText ? (
+                    <p className="mt-1 break-all">
+                      <span className="font-semibold">Відповідь:</span> {imageDebugInfo.responseText}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -962,6 +1044,33 @@ export default function AdminBannersManager() {
               </p>
             ) : null}
 
+            {imageDebugInfo ? (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <p className="font-semibold">Діагностика зображення</p>
+                <p className="mt-1 break-all">
+                  <span className="font-semibold">Контекст:</span> {imageDebugInfo.context}
+                </p>
+                {imageDebugInfo.originalSrc ? (
+                  <p className="mt-1 break-all">
+                    <span className="font-semibold">Original src:</span> {imageDebugInfo.originalSrc}
+                  </p>
+                ) : null}
+                <p className="mt-1 break-all">
+                  <span className="font-semibold">Requested URL:</span> {imageDebugInfo.requestedUrl}
+                </p>
+                {typeof imageDebugInfo.responseStatus === 'number' ? (
+                  <p className="mt-1">
+                    <span className="font-semibold">HTTP статус:</span> {imageDebugInfo.responseStatus}
+                  </p>
+                ) : null}
+                {imageDebugInfo.responseText ? (
+                  <p className="mt-1 break-all">
+                    <span className="font-semibold">Відповідь:</span> {imageDebugInfo.responseText}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="mt-4 grid max-h-[70vh] gap-4 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filteredMediaAssets.map((asset) => {
                 const isSelected = normalizeImagePathInput(src) === asset.url;
@@ -986,9 +1095,7 @@ export default function AdminBannersManager() {
                         alt={asset.metadata?.alt || getFileName(asset.url)}
                         className="h-full w-full object-cover"
                         onError={() => {
-                          console.error('[admin-home-slides] Catalog image failed to load', {
-                            assetUrl: asset.url
-                          });
+                          void inspectImageUrl(asset.url, 'Catalog image', asset.url).then(setImageDebugInfo);
                         }}
                       />
                     </div>
