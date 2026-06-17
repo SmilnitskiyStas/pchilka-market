@@ -17,7 +17,13 @@ type BannerCarouselProps = {
 };
 
 function shouldUseNativeImage(src: string): boolean {
-  return src.startsWith('/img/') || src.startsWith('/media/') || src.startsWith('http://') || src.startsWith('https://');
+  return (
+    src.startsWith('/api/site-image') ||
+    src.startsWith('/img/') ||
+    src.startsWith('/media/') ||
+    src.startsWith('http://') ||
+    src.startsWith('https://')
+  );
 }
 
 function encodeImageRef(src: string): string {
@@ -32,6 +38,10 @@ function encodeImageRef(src: string): string {
 }
 
 function getBannerImageSrc(src: string, cacheKey?: string): string {
+  if (src.startsWith('/api/site-image')) {
+    return src;
+  }
+
   if (!cacheKey || (!src.startsWith('/media/') && !src.startsWith('/img/') && !src.startsWith('http'))) {
     return src;
   }
