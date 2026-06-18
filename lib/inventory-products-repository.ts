@@ -36,6 +36,7 @@ type ProductRow = RowDataPacket & {
 };
 
 type ProductBarcodeRow = RowDataPacket & {
+  id: number;
   product_id: number;
   barcode: string;
   units_of_measurement: string | null;
@@ -490,7 +491,7 @@ export async function listInventoryProductsFromDb(
     const placeholders = productIds.map(() => '?').join(', ');
     const [barcodeRows] = await pool.query<ProductBarcodeRow[]>(
       `
-        SELECT product_id, barcode, units_of_measurement
+        SELECT id, product_id, barcode, units_of_measurement
         FROM product_barcodes
         WHERE product_id IN (${placeholders})
         ORDER BY product_id ASC, id ASC
@@ -560,6 +561,31 @@ export async function findInventoryProductByBarcodeInDb(
   if (!normalizedBarcode) return null;
 
   const db = executor ?? getDbPool();
+
+  const [barcodeRows] = await db.query<ProductBarcodeRow[]>(
+    `
+      SELECT id, product_id, barcode, units_of_measurement
+      FROM product_barcodes
+      WHERE barcode = ?
+      LIMIT 1
+    `,
+    [normalizedBarcode]
+  );
+  const barcodeRow = barcodeRows[0];
+  if (barcodeRow) {
+    const [rows] = await db.query<ProductRow[]>(
+      buildProductsSelectSql(
+        'WHERE p.id = ?',
+        'ORDER BY p.id ASC',
+        'LIMIT 1',
+        'MAX(CASE WHEN pb.id = ? THEN pb.units_of_measurement ELSE NULL END) AS matched_units_of_measurement'
+      ),
+      [barcodeRow.id, barcodeRow.product_id]
+    );
+
+    return rows[0] ? mapRow(rows[0]) : null;
+  }
+
   const [rows] = await db.query<ProductRow[]>(
     buildProductsSelectSql(
       'WHERE EXISTS (SELECT 1 FROM product_barcodes pb2 WHERE pb2.product_id = p.id AND REPLACE(TRIM(COALESCE(pb2.barcode, \'\')), \' \', \'\') = ?)',

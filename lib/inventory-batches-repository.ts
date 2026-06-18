@@ -48,6 +48,11 @@ type BatchRow = RowDataPacket & {
   updated_at: Date | string;
 };
 
+type BatchBarcodeRow = RowDataPacket & {
+  product_id: number;
+  barcode: string;
+};
+
 export type InventoryOpenBatchCodeRecord = {
   batchCode: string;
   itemCount: number;
@@ -117,6 +122,53 @@ type CreateInventoryBatchOptions = {
   updatedByUserId?: number | null;
   responsibleUserId?: number | null;
 };
+
+function buildBatchSelectWithoutBarcodesSql(whereSql: string) {
+  return `
+      SELECT
+        pb.id,
+        pb.product_id,
+        p.product_name,
+        p.article,
+        NULL AS barcode_list,
+        pb.store_id,
+        pb.batch_code,
+        s.store_code,
+        s.city,
+        s.address_line,
+        pb.quantity,
+        pb.quantity_received,
+        pb.quantity_current,
+        pb.batch_status,
+        DATE_FORMAT(pb.expiry_date, '%Y-%m-%d') AS expiry_date,
+        DATE_FORMAT(pb.delivery_date, '%Y-%m-%d') AS delivery_date,
+        pb.notified_days,
+        pb.check_status,
+        pb.action_taken,
+        pb.action_note,
+        pb.checked_followup_action,
+        pb.do_not_track,
+        pb.do_not_track_reason,
+        pb.responsible_user_id,
+        ru.name AS responsible_user_name,
+        ru.surname AS responsible_user_surname,
+        pb.created_by_user_id,
+        cu.name AS created_by_user_name,
+        cu.surname AS created_by_user_surname,
+        pb.discussion_required,
+        pb.discussion_note,
+        pb.admin_decision,
+        pb.admin_decision_note,
+        pb.created_at,
+        pb.updated_at
+      FROM product_batches pb
+      INNER JOIN products p ON p.id = pb.product_id
+      INNER JOIN stores s ON s.id = pb.store_id
+      LEFT JOIN users ru ON ru.id = pb.responsible_user_id
+      LEFT JOIN users cu ON cu.id = pb.created_by_user_id
+      ${whereSql}
+  `;
+}
 
 function buildBatchSelectSql(whereSql: string) {
   return `
@@ -201,6 +253,44 @@ function buildBatchSelectSql(whereSql: string) {
   `;
 }
 
+async function mapBatchRowsWithBarcodes(
+  rows: BatchRow[],
+  executor: InventoryDbExecutor
+): Promise<InventoryBatchRecord[]> {
+  if (rows.length === 0) return [];
+
+  const productIds = Array.from(new Set(rows.map((row) => row.product_id).filter(Boolean)));
+  if (productIds.length === 0) return rows.map(mapRow);
+
+  const placeholders = productIds.map(() => '?').join(', ');
+  const [barcodeRows] = await executor.query<BatchBarcodeRow[]>(
+    `
+      SELECT product_id, barcode
+      FROM product_barcodes
+      WHERE product_id IN (${placeholders})
+      ORDER BY product_id ASC, id ASC
+    `,
+    productIds
+  );
+
+  const barcodesByProductId = new Map<number, string[]>();
+  for (const row of barcodeRows) {
+    const barcode = String(row.barcode ?? '').trim();
+    if (!barcode) continue;
+
+    const barcodes = barcodesByProductId.get(row.product_id) ?? [];
+    barcodes.push(barcode);
+    barcodesByProductId.set(row.product_id, barcodes);
+  }
+
+  return rows.map((row) =>
+    mapRow({
+      ...row,
+      barcode_list: barcodesByProductId.get(row.product_id)?.join(',') ?? ''
+    })
+  );
+}
+
 export async function listInventoryBatchesFromDb(limit = 200, storeId?: string | number | null): Promise<InventoryBatchRecord[]> {
   const pool = getDbPool();
   const normalizedStoreId = Number(storeId);
@@ -217,14 +307,14 @@ export async function listInventoryBatchesFromDb(limit = 200, storeId?: string |
 
   const [rows] = await pool.query<BatchRow[]>(
     `
-      ${buildBatchSelectSql(whereSql)}
+      ${buildBatchSelectWithoutBarcodesSql(whereSql)}
       ORDER BY pb.created_at DESC, pb.id DESC
       LIMIT ?
     `,
     values
   );
 
-  return rows.map(mapRow);
+  return mapBatchRowsWithBarcodes(rows, pool);
 }
 
 export async function listInventoryBatchesPageFromDb(input?: {
@@ -255,14 +345,14 @@ export async function listInventoryBatchesPageFromDb(input?: {
 
   const [rows] = await pool.query<BatchRow[]>(
     `
-      ${buildBatchSelectSql(whereSql)}
+      ${buildBatchSelectWithoutBarcodesSql(whereSql)}
       ORDER BY pb.id DESC
       LIMIT ?
     `,
     values
   );
 
-  return rows.map(mapRow);
+  return mapBatchRowsWithBarcodes(rows, pool);
 }
 
 export async function findInventoryBatchByIdInDb(batchId: string | number): Promise<InventoryBatchRecord | null> {
