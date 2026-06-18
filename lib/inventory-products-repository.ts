@@ -35,6 +35,12 @@ type ProductRow = RowDataPacket & {
   updated_at: Date | string;
 };
 
+type ProductBarcodeRow = RowDataPacket & {
+  product_id: number;
+  barcode: string;
+  units_of_measurement: string | null;
+};
+
 export type InventoryProductApprovalAction = 'approve' | 'reject' | 'update';
 
 export type InventoryProductApprovalReviewRecord = {
@@ -104,6 +110,27 @@ function mapRow(row: ProductRow): InventoryProductRecord {
 }
 
 type InventoryDbExecutor = Pool | PoolConnection;
+
+function mapRowsWithBarcodeRows(rows: ProductRow[], barcodeRows: ProductBarcodeRow[]): InventoryProductRecord[] {
+  if (rows.length === 0) return [];
+
+  const barcodeEntriesByProductId = new Map<number, string[]>();
+  for (const row of barcodeRows) {
+    const barcode = String(row.barcode ?? '').trim();
+    if (!barcode) continue;
+
+    const entries = barcodeEntriesByProductId.get(row.product_id) ?? [];
+    entries.push(`${barcode}::${String(row.units_of_measurement ?? '').trim()}`);
+    barcodeEntriesByProductId.set(row.product_id, entries);
+  }
+
+  return rows.map((row) =>
+    mapRow({
+      ...row,
+      barcode_entry_list: barcodeEntriesByProductId.get(row.id)?.join(',') ?? ''
+    })
+  );
+}
 
 function buildProductsSelectSql(
   whereSql = '',
@@ -402,13 +429,13 @@ function buildInventoryProductsWhereSql(query = '', category = '') {
   if (trimmedQuery) {
     const like = `%${trimmedQuery}%`;
     whereParts.push(
-      "(p.article LIKE ? OR p.product_name LIKE ? OR COALESCE(p.category, '') LIKE ? OR EXISTS (SELECT 1 FROM product_barcodes pb2 WHERE pb2.product_id = p.id AND pb2.barcode LIKE ?))"
+      "(p.article LIKE ? OR p.product_name LIKE ? OR p.category LIKE ? OR EXISTS (SELECT 1 FROM product_barcodes pb2 WHERE pb2.product_id = p.id AND pb2.barcode LIKE ?))"
     );
     values.push(like, like, like, like);
   }
 
   if (trimmedCategory) {
-    whereParts.push("COALESCE(p.category, '') = ?");
+    whereParts.push('p.category = ?');
     values.push(trimmedCategory);
   }
 
@@ -428,6 +455,51 @@ export async function listInventoryProductsFromDb(
   const { whereSql, values } = buildInventoryProductsWhereSql(query, category);
   const safeLimit = Math.min(Math.max(limit, 1), 500);
   const safeOffset = Math.max(offset, 0);
+
+  if (!query.trim() && !category.trim()) {
+    const [productRows] = await pool.query<ProductRow[]>(
+      `
+        SELECT
+          p.id,
+          p.article,
+          NULL AS barcode_list,
+          NULL AS barcode_entry_list,
+          p.product_name,
+          p.category,
+          p.default_units_of_measurement,
+          p.notified_days_default,
+          p.is_active,
+          p.approval_status,
+          p.created_source,
+          p.approval_requested_at,
+          p.approved_at,
+          p.approved_by_user_id,
+          p.approval_note,
+          p.created_at,
+          p.updated_at
+        FROM products p
+        ORDER BY p.product_name ASC, p.id DESC
+        LIMIT ? OFFSET ?
+      `,
+      [safeLimit, safeOffset]
+    );
+
+    if (productRows.length === 0) return [];
+
+    const productIds = productRows.map((row) => row.id);
+    const placeholders = productIds.map(() => '?').join(', ');
+    const [barcodeRows] = await pool.query<ProductBarcodeRow[]>(
+      `
+        SELECT product_id, barcode, units_of_measurement
+        FROM product_barcodes
+        WHERE product_id IN (${placeholders})
+        ORDER BY product_id ASC, id ASC
+      `,
+      productIds
+    );
+
+    return mapRowsWithBarcodeRows(productRows, barcodeRows);
+  }
 
   const [rows] = await pool.query<ProductRow[]>(
     buildProductsSelectSql(whereSql, 'ORDER BY p.product_name ASC, p.id DESC', 'LIMIT ? OFFSET ?'),
