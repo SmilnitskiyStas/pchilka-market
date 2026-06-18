@@ -311,12 +311,12 @@ export async function syncInventoryExpiryTasksInDb() {
       const taskAssignmentMode = getTaskAssignmentModeForBatch(storeTaskMode, riskLevel);
       const nextStatus = deriveTaskStatus(batch);
       const nextOutcome = deriveTaskOutcome(batch);
-      const title = `РџРµСЂРµРІС–СЂРёС‚Рё С‚РѕРІР°СЂ "${batch.productName}"`;
+      const title = `Перевірити товар "${batch.productName}"`;
       const note = [
-        `РџР°СЂС‚С–СЏ #${batch.id}`,
-        batch.batchCode ? `РєРѕРґ ${batch.batchCode}` : '',
-        `Р·Р°Р»РёС€РѕРє ${batch.quantityCurrent}`,
-        `СЃС‚СЂРѕРє ${batch.expiryDate}`
+        `Партія #${batch.id}`,
+        batch.batchCode ? `код ${batch.batchCode}` : '',
+        `залишок ${batch.quantityCurrent}`,
+        `строк ${batch.expiryDate}`
       ].filter(Boolean).join(' | ');
 
       const existingTask = latestTaskByBatch.get(batchId);
