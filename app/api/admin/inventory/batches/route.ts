@@ -4,6 +4,7 @@ import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin
 import {
   createInventoryBatchInDb,
   findInventoryDuplicateBatchInDb,
+  getInventoryBatchOverviewMetricsFromDb,
   listInventoryBatchesFromDb,
   mergeInventoryBatchQuantityInDb
 } from '@/lib/inventory-batches-repository';
@@ -20,8 +21,11 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const limit = Number(url.searchParams.get('limit') ?? 200);
     const storeId = url.searchParams.get('storeId');
-    const batches = await listInventoryBatchesFromDb(limit, storeId);
-    return NextResponse.json({ ok: true, batches });
+    const [batches, metrics] = await Promise.all([
+      listInventoryBatchesFromDb(limit, storeId),
+      getInventoryBatchOverviewMetricsFromDb(storeId)
+    ]);
+    return NextResponse.json({ ok: true, batches, metrics });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown DB error';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

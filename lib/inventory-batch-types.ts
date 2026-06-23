@@ -32,6 +32,15 @@ export type InventoryBatchRecord = {
   updatedAt: string;
 };
 
+export type InventoryBatchOverviewMetrics = {
+  totalBatches: number;
+  totalQuantity: number;
+  expiringSoonCount: number;
+  overdueCount: number;
+  needsActionCount: number;
+  unassignedCount: number;
+};
+
 export type InventoryBatchInput = {
   productId?: string;
   storeId?: string;

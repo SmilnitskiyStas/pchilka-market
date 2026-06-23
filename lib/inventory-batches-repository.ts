@@ -4,6 +4,7 @@ import { getDbPool } from '@/lib/db';
 import {
   normalizeInventoryBatchInput,
   type InventoryBatchInput,
+  type InventoryBatchOverviewMetrics,
   type InventoryBatchRecord
 } from '@/lib/inventory-batch-types';
 
@@ -51,6 +52,15 @@ type BatchRow = RowDataPacket & {
 type BatchBarcodeRow = RowDataPacket & {
   product_id: number;
   barcode: string;
+};
+
+type BatchOverviewMetricsRow = RowDataPacket & {
+  total_batches: number;
+  total_quantity: number | string | null;
+  expiring_soon_count: number;
+  overdue_count: number;
+  needs_action_count: number;
+  unassigned_count: number;
 };
 
 export type InventoryOpenBatchCodeRecord = {
@@ -315,6 +325,61 @@ export async function listInventoryBatchesFromDb(limit = 200, storeId?: string |
   );
 
   return mapBatchRowsWithBarcodes(rows, pool);
+}
+
+export async function getInventoryBatchOverviewMetricsFromDb(
+  storeId?: string | number | null
+): Promise<InventoryBatchOverviewMetrics> {
+  const pool = getDbPool();
+  const normalizedStoreId = Number(storeId);
+  const values: number[] = [];
+  const whereSql =
+    Number.isFinite(normalizedStoreId) && normalizedStoreId > 0
+      ? 'WHERE pb.store_id = ?'
+      : '';
+
+  if (whereSql) {
+    values.push(normalizedStoreId);
+  }
+
+  const [rows] = await pool.query<BatchOverviewMetricsRow[]>(
+    `
+      SELECT
+        COUNT(*) AS total_batches,
+        COALESCE(SUM(pb.quantity_current), 0) AS total_quantity,
+        SUM(CASE
+          WHEN DATEDIFF(pb.expiry_date, CURDATE()) >= 0
+            AND DATEDIFF(pb.expiry_date, CURDATE()) <= COALESCE(NULLIF(pb.notified_days, 0), 7)
+          THEN 1 ELSE 0
+        END) AS expiring_soon_count,
+        SUM(CASE
+          WHEN DATEDIFF(pb.expiry_date, CURDATE()) < 0
+          THEN 1 ELSE 0
+        END) AS overdue_count,
+        SUM(CASE
+          WHEN pb.check_status = 'new'
+            AND DATEDIFF(pb.expiry_date, CURDATE()) <= COALESCE(NULLIF(pb.notified_days, 0), 7)
+          THEN 1 ELSE 0
+        END) AS needs_action_count,
+        SUM(CASE
+          WHEN pb.responsible_user_id IS NULL
+          THEN 1 ELSE 0
+        END) AS unassigned_count
+      FROM product_batches pb
+      ${whereSql}
+    `,
+    values
+  );
+
+  const row = rows[0];
+  return {
+    totalBatches: Number(row?.total_batches ?? 0),
+    totalQuantity: Number(row?.total_quantity ?? 0),
+    expiringSoonCount: Number(row?.expiring_soon_count ?? 0),
+    overdueCount: Number(row?.overdue_count ?? 0),
+    needsActionCount: Number(row?.needs_action_count ?? 0),
+    unassignedCount: Number(row?.unassigned_count ?? 0)
+  };
 }
 
 export async function listInventoryBatchesPageFromDb(input?: {
