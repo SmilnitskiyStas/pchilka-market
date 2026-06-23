@@ -16,7 +16,7 @@ import {
 import { type InventoryUserRole } from '@/lib/inventory-user-roles';
 import type { InventoryReadiness } from '@/lib/inventory-schema';
 import type { InventoryProductInput, InventoryProductRecord } from '@/lib/inventory-product-types';
-import type { InventoryBatchInput, InventoryBatchRecord } from '@/lib/inventory-batch-types';
+import type { InventoryBatchInput, InventoryBatchOverviewMetrics, InventoryBatchRecord } from '@/lib/inventory-batch-types';
 import type { StoreRecord } from '@/lib/store-types';
 
 type ReadinessPayload = { ok?: boolean; readiness?: InventoryReadiness; error?: string };
@@ -31,7 +31,13 @@ type ProductsPayload = {
   limit?: number;
   error?: string;
 };
-type BatchesPayload = { ok?: boolean; batches?: InventoryBatchRecord[]; batch?: InventoryBatchRecord; error?: string };
+type BatchesPayload = {
+  ok?: boolean;
+  batches?: InventoryBatchRecord[];
+  batch?: InventoryBatchRecord;
+  metrics?: InventoryBatchOverviewMetrics;
+  error?: string;
+};
 type DuplicateBatchConflict = {
   id: string;
   productName: string;
@@ -798,6 +804,7 @@ export default function AdminInventoryManager({
   const [productPageSize, setProductPageSize] = useState(50);
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [batches, setBatches] = useState<InventoryBatchRecord[]>([]);
+  const [batchOverviewMetrics, setBatchOverviewMetrics] = useState<InventoryBatchOverviewMetrics | null>(null);
   const [stores, setStores] = useState<StoreRecord[]>([]);
   const [inventoryUsers, setInventoryUsers] = useState<InventoryUserView[]>([]);
   const [inventoryActiveTasks, setInventoryActiveTasks] = useState<InventoryExpiryTaskView[]>([]);
@@ -1235,6 +1242,7 @@ export default function AdminInventoryManager({
           setProductsTotalCount(Number(p3.totalCount ?? p3.products.length));
           setProductCategories(Array.isArray(p3.categories) ? p3.categories : []);
           setBatches(p4.batches);
+          setBatchOverviewMetrics(p4.metrics ?? null);
           setStores(p5.stores);
           setInventoryUsers(p6.users);
           setWebhookInfo(p7.ok ? p7.info ?? null : null);
@@ -1319,20 +1327,20 @@ export default function AdminInventoryManager({
 
     return {
       totalProducts: productsTotalCount,
-      totalBatches: batches.length,
-      totalQuantity: batches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0),
+      totalBatches: batchOverviewMetrics?.totalBatches ?? batches.length,
+      totalQuantity: batchOverviewMetrics?.totalQuantity ?? batches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0),
       totalStores: stores.length,
       totalUsers: inventoryUsers.length,
       manualProductsCount: manualProductCreations.length,
       pendingImportCount: importReviewItems.length,
-      expiringSoonCount: rows.filter((row) => row.isExpiringSoon).length,
-      overdueCount: rows.filter((row) => row.isOverdue).length,
-      needsActionCount: rows.filter((row) => row.needsAction).length,
-      unassignedCount: rows.filter((row) => row.isUnassigned).length,
+      expiringSoonCount: batchOverviewMetrics?.expiringSoonCount ?? rows.filter((row) => row.isExpiringSoon).length,
+      overdueCount: batchOverviewMetrics?.overdueCount ?? rows.filter((row) => row.isOverdue).length,
+      needsActionCount: batchOverviewMetrics?.needsActionCount ?? rows.filter((row) => row.needsAction).length,
+      unassignedCount: batchOverviewMetrics?.unassignedCount ?? rows.filter((row) => row.isUnassigned).length,
       criticalBatches,
       hasSchemaIssues: !readiness?.allRequiredTablesPresent || (readiness?.productBatches.missingColumns?.length ?? 0) > 0
     };
-  }, [batches, importReviewItems.length, inventoryUsers.length, manualProductCreations.length, productsTotalCount, readiness, stores.length]);
+  }, [batchOverviewMetrics, batches, importReviewItems.length, inventoryUsers.length, manualProductCreations.length, productsTotalCount, readiness, stores.length]);
   const notificationLogsTotalPages = useMemo(
     () => Math.max(1, Math.ceil(notificationLogsTotalCount / Math.max(notificationLogsPageSize, 1))),
     [notificationLogsPageSize, notificationLogsTotalCount]
