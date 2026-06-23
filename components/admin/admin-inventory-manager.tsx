@@ -16,7 +16,12 @@ import {
 import { type InventoryUserRole } from '@/lib/inventory-user-roles';
 import type { InventoryReadiness } from '@/lib/inventory-schema';
 import type { InventoryProductInput, InventoryProductRecord } from '@/lib/inventory-product-types';
-import type { InventoryBatchInput, InventoryBatchOverviewMetrics, InventoryBatchRecord } from '@/lib/inventory-batch-types';
+import type {
+  InventoryAnalyticsMetrics,
+  InventoryBatchInput,
+  InventoryBatchOverviewMetrics,
+  InventoryBatchRecord
+} from '@/lib/inventory-batch-types';
 import type { StoreRecord } from '@/lib/store-types';
 
 type ReadinessPayload = { ok?: boolean; readiness?: InventoryReadiness; error?: string };
@@ -38,6 +43,7 @@ type BatchesPayload = {
   metrics?: InventoryBatchOverviewMetrics;
   error?: string;
 };
+type AnalyticsPayload = { ok?: boolean; metrics?: InventoryAnalyticsMetrics; error?: string };
 type DuplicateBatchConflict = {
   id: string;
   productName: string;
@@ -805,6 +811,7 @@ export default function AdminInventoryManager({
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [batches, setBatches] = useState<InventoryBatchRecord[]>([]);
   const [batchOverviewMetrics, setBatchOverviewMetrics] = useState<InventoryBatchOverviewMetrics | null>(null);
+  const [analyticsMetricsFromDb, setAnalyticsMetricsFromDb] = useState<InventoryAnalyticsMetrics | null>(null);
   const [stores, setStores] = useState<StoreRecord[]>([]);
   const [inventoryUsers, setInventoryUsers] = useState<InventoryUserView[]>([]);
   const [inventoryActiveTasks, setInventoryActiveTasks] = useState<InventoryExpiryTaskView[]>([]);
@@ -867,8 +874,8 @@ export default function AdminInventoryManager({
   const [activeSection, setActiveSection] = useState<InventorySectionId>(inventorySubsectionToSection[initialSubsection]);
   const [activeSubsection, setActiveSubsection] = useState<InventorySubsectionId>(initialSubsection);
   const [analyticsStoreId, setAnalyticsStoreId] = useState('');
-  const [analyticsDateFrom, setAnalyticsDateFrom] = useState(formatDateInputValue());
-  const [analyticsDateTo, setAnalyticsDateTo] = useState(formatDateInputValue());
+  const [analyticsDateFrom, setAnalyticsDateFrom] = useState('');
+  const [analyticsDateTo, setAnalyticsDateTo] = useState('');
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
@@ -1292,6 +1299,35 @@ export default function AdminInventoryManager({
   }, [activeSubsection, initialNotificationLogId]);
 
   useEffect(() => {
+    if (activeSection !== 'analytics') return;
+    let cancelled = false;
+
+    async function loadAnalyticsMetrics() {
+      const params = new URLSearchParams();
+      if (analyticsStoreId) params.set('storeId', analyticsStoreId);
+      if (analyticsDateFrom) params.set('dateFrom', analyticsDateFrom);
+      if (analyticsDateTo) params.set('dateTo', analyticsDateTo);
+
+      try {
+        setAnalyticsMetricsFromDb(null);
+        const response = await fetch(`/api/admin/inventory/analytics?${params.toString()}`, { cache: 'no-store' });
+        const payload = (await response.json()) as AnalyticsPayload;
+        if (!response.ok || !payload.ok || !payload.metrics) {
+          throw new Error(payload.error || 'Не вдалося завантажити inventory-аналітику.');
+        }
+        if (!cancelled) setAnalyticsMetricsFromDb(payload.metrics);
+      } catch {
+        if (!cancelled) setAnalyticsMetricsFromDb(null);
+      }
+    }
+
+    void loadAnalyticsMetrics();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, analyticsDateFrom, analyticsDateTo, analyticsStoreId]);
+
+  useEffect(() => {
     void loadProducts();
   }, [productPage, productPageSize, productCategoryFilter]);
 
@@ -1349,6 +1385,15 @@ export default function AdminInventoryManager({
   const analyticsMetrics = useMemo(() => {
     const rangeStart = analyticsDateFrom && analyticsDateTo && analyticsDateFrom > analyticsDateTo ? analyticsDateTo : analyticsDateFrom;
     const rangeEnd = analyticsDateFrom && analyticsDateTo && analyticsDateFrom > analyticsDateTo ? analyticsDateFrom : analyticsDateTo;
+
+    if (
+      analyticsMetricsFromDb &&
+      analyticsMetricsFromDb.analyticsStoreId === analyticsStoreId &&
+      analyticsMetricsFromDb.analyticsDateFrom === rangeStart &&
+      analyticsMetricsFromDb.analyticsDateTo === rangeEnd
+    ) {
+      return analyticsMetricsFromDb;
+    }
 
     const scopedBatches = analyticsStoreId
       ? batches.filter((batch) => String(batch.storeId) === analyticsStoreId)
@@ -1479,7 +1524,7 @@ export default function AdminInventoryManager({
       storeRows,
       employeeRows
     };
-  }, [analyticsDateFrom, analyticsDateTo, analyticsStoreId, batches, inventoryUsers, stores]);
+  }, [analyticsDateFrom, analyticsDateTo, analyticsMetricsFromDb, analyticsStoreId, batches, inventoryUsers, stores]);
 
   useEffect(() => {
     if (productPage > productTotalPages) {

@@ -41,6 +41,61 @@ export type InventoryBatchOverviewMetrics = {
   unassignedCount: number;
 };
 
+export type InventoryAnalyticsStatusCards = {
+  new: number;
+  checked: number;
+  writeoff: number;
+  discussion: number;
+};
+
+export type InventoryAnalyticsRiskCards = {
+  critical: number;
+  high: number;
+  medium: number;
+  safe: number;
+  overdue: number;
+};
+
+export type InventoryAnalyticsStoreRow = {
+  id: string;
+  label: string;
+  batches: number;
+  overdue: number;
+  expiring: number;
+  attention: number;
+  currentQuantity: number;
+};
+
+export type InventoryAnalyticsEmployeeRow = {
+  id: number;
+  name: string;
+  storeLabel: string;
+  role: string;
+  responsibleCount: number;
+  attention: number;
+  completed: number;
+  overdue: number;
+  expiring: number;
+  completionRatio: number;
+};
+
+export type InventoryAnalyticsMetrics = {
+  stockReceived: number;
+  stockCurrent: number;
+  stockDelta: number;
+  uniqueRiskStoresCount: number;
+  totalBatches: number;
+  periodBatches: number;
+  totalUsers: number;
+  analyticsDateFrom: string;
+  analyticsDateTo: string;
+  analyticsStoreId: string;
+  statusCards: InventoryAnalyticsStatusCards;
+  riskCards: InventoryAnalyticsRiskCards;
+  storeRows: InventoryAnalyticsStoreRow[];
+  employeeRows: InventoryAnalyticsEmployeeRow[];
+};
+
 export type InventoryBatchInput = {
   productId?: string;
   storeId?: string;

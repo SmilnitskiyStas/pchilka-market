@@ -3,10 +3,14 @@ import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql
 import { getDbPool } from '@/lib/db';
 import {
   normalizeInventoryBatchInput,
+  type InventoryAnalyticsEmployeeRow,
+  type InventoryAnalyticsMetrics,
+  type InventoryAnalyticsStoreRow,
   type InventoryBatchInput,
   type InventoryBatchOverviewMetrics,
   type InventoryBatchRecord
 } from '@/lib/inventory-batch-types';
+import { normalizeInventoryUserRole } from '@/lib/inventory-user-roles';
 
 type BatchRow = RowDataPacket & {
   id: number;
@@ -63,6 +67,52 @@ type BatchOverviewMetricsRow = RowDataPacket & {
   unassigned_count: number;
 };
 
+type BatchAnalyticsSummaryRow = RowDataPacket & {
+  stock_received: number | string | null;
+  stock_current: number | string | null;
+  total_batches: number;
+};
+
+type BatchAnalyticsPeriodRow = RowDataPacket & {
+  period_batches: number;
+  unique_risk_stores: number;
+  status_new: number | string | null;
+  status_checked: number | string | null;
+  status_writeoff: number | string | null;
+  status_discussion: number | string | null;
+  risk_overdue: number | string | null;
+  risk_critical: number | string | null;
+  risk_high: number | string | null;
+  risk_medium: number | string | null;
+  risk_safe: number | string | null;
+};
+
+type BatchAnalyticsStoreRow = RowDataPacket & {
+  id: number;
+  label: string | null;
+  batches: number;
+  overdue: number | string | null;
+  expiring: number | string | null;
+  attention: number | string | null;
+  current_quantity: number | string | null;
+};
+
+type BatchAnalyticsEmployeeRow = RowDataPacket & {
+  id: number;
+  name: string | null;
+  store_label: string | null;
+  role: string | null;
+  responsible_count: number;
+  attention: number | string | null;
+  completed: number | string | null;
+  overdue: number | string | null;
+  expiring: number | string | null;
+};
+
+type BatchAnalyticsUsersRow = RowDataPacket & {
+  total_users: number;
+};
+
 export type InventoryOpenBatchCodeRecord = {
   batchCode: string;
   itemCount: number;
@@ -81,6 +131,30 @@ function toIso(value: Date | string | null | undefined): string {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
+function normalizeDateFilter(value: string | null | undefined): string {
+  const normalized = String(value ?? '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
+}
+
+function completionRatio(completed: number, attention: number): number {
+  if (attention <= 0) return 0;
+  return Math.round((completed / attention) * 100);
+}
+
+function formatAnalyticsUserRole(role: string | null | undefined): string {
+  switch (normalizeInventoryUserRole(role)) {
+    case 'admin':
+      return 'Адміністратор';
+    case 'store_manager':
+      return 'Керівник магазину';
+    case 'manager':
+      return 'Менеджер';
+    case 'staff':
+    default:
+      return 'Працівник';
+  }
 }
 
 function mapRow(row: BatchRow): InventoryBatchRecord {
@@ -379,6 +453,252 @@ export async function getInventoryBatchOverviewMetricsFromDb(
     overdueCount: Number(row?.overdue_count ?? 0),
     needsActionCount: Number(row?.needs_action_count ?? 0),
     unassignedCount: Number(row?.unassigned_count ?? 0)
+  };
+}
+
+export async function getInventoryBatchAnalyticsMetricsFromDb(input?: {
+  storeId?: string | number | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+}): Promise<InventoryAnalyticsMetrics> {
+  const pool = getDbPool();
+  const normalizedStoreId = Number(input?.storeId);
+  const hasStoreFilter = Number.isFinite(normalizedStoreId) && normalizedStoreId > 0;
+  const firstDate = normalizeDateFilter(input?.dateFrom);
+  const secondDate = normalizeDateFilter(input?.dateTo);
+  const dateFrom = firstDate && secondDate && firstDate > secondDate ? secondDate : firstDate;
+  const dateTo = firstDate && secondDate && firstDate > secondDate ? firstDate : secondDate;
+  const asOfDate = dateTo || new Date().toISOString().slice(0, 10);
+  const baseWhereSql = hasStoreFilter ? 'WHERE pb.store_id = ?' : '';
+  const baseValues = hasStoreFilter ? [normalizedStoreId] : [];
+  const periodClauses: string[] = [];
+  const periodValues: Array<number | string> = [];
+
+  if (hasStoreFilter) {
+    periodClauses.push('pb.store_id = ?');
+    periodValues.push(normalizedStoreId);
+  }
+  if (dateFrom) {
+    periodClauses.push('pb.expiry_date >= ?');
+    periodValues.push(dateFrom);
+  }
+  if (dateTo) {
+    periodClauses.push('pb.expiry_date <= ?');
+    periodValues.push(dateTo);
+  }
+
+  const periodWhereSql = periodClauses.length > 0 ? `WHERE ${periodClauses.join(' AND ')}` : '';
+  const storeWhereSql = hasStoreFilter ? 'WHERE pb.store_id = ?' : '';
+  const userWhereSql = hasStoreFilter ? 'WHERE u.store_id = ?' : '';
+  const expiringSoonSql = `
+    DATEDIFF(pb.expiry_date, ?) >= 0
+      AND DATEDIFF(pb.expiry_date, ?) <= COALESCE(NULLIF(pb.notified_days, 0), 7)
+  `;
+  const isWriteoffSql = "(pb.check_status = 'writeoff' OR pb.action_taken = 'writeoff')";
+  const isDiscussionSql = "(pb.check_status = 'discussion_required' OR pb.discussion_required = 1)";
+  const attentionSql = `(pb.check_status = 'new' AND (DATEDIFF(pb.expiry_date, ?) < 0 OR (${expiringSoonSql})))`;
+
+  const [summaryRows, periodRows, storeRows, employeeRows, usersRows] = await Promise.all([
+    pool.query<BatchAnalyticsSummaryRow[]>(
+      `
+        SELECT
+          COALESCE(SUM(pb.quantity_received), 0) AS stock_received,
+          COALESCE(SUM(pb.quantity_current), 0) AS stock_current,
+          COUNT(*) AS total_batches
+        FROM product_batches pb
+        ${baseWhereSql}
+      `,
+      baseValues
+    ),
+    pool.query<BatchAnalyticsPeriodRow[]>(
+      `
+        SELECT
+          COUNT(*) AS period_batches,
+          COUNT(DISTINCT CASE
+            WHEN (DATEDIFF(pb.expiry_date, ?) < 0 OR (${expiringSoonSql})) AND NOT ${isWriteoffSql}
+            THEN pb.store_id ELSE NULL
+          END) AS unique_risk_stores,
+          SUM(CASE WHEN pb.check_status = 'new' THEN 1 ELSE 0 END) AS status_new,
+          SUM(CASE WHEN pb.check_status = 'checked' THEN 1 ELSE 0 END) AS status_checked,
+          SUM(CASE WHEN ${isWriteoffSql} THEN 1 ELSE 0 END) AS status_writeoff,
+          SUM(CASE WHEN ${isDiscussionSql} THEN 1 ELSE 0 END) AS status_discussion,
+          SUM(CASE WHEN DATEDIFF(pb.expiry_date, ?) < 0 AND NOT ${isWriteoffSql} THEN 1 ELSE 0 END) AS risk_overdue,
+          SUM(CASE WHEN DATEDIFF(pb.expiry_date, ?) BETWEEN 0 AND 1 AND NOT ${isWriteoffSql} THEN 1 ELSE 0 END) AS risk_critical,
+          SUM(CASE WHEN DATEDIFF(pb.expiry_date, ?) BETWEEN 2 AND 3 AND NOT ${isWriteoffSql} THEN 1 ELSE 0 END) AS risk_high,
+          SUM(CASE WHEN DATEDIFF(pb.expiry_date, ?) BETWEEN 4 AND 7 AND NOT ${isWriteoffSql} THEN 1 ELSE 0 END) AS risk_medium,
+          SUM(CASE WHEN DATEDIFF(pb.expiry_date, ?) > 7 AND NOT ${isWriteoffSql} THEN 1 ELSE 0 END) AS risk_safe
+        FROM product_batches pb
+        ${periodWhereSql}
+      `,
+      [asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, ...periodValues]
+    ),
+    pool.query<BatchAnalyticsStoreRow[]>(
+      `
+        SELECT
+          s.id,
+          CONCAT_WS(' | ', s.store_code, s.city, s.address_line) AS label,
+          COUNT(pb.id) AS batches,
+          COALESCE(SUM(pb.quantity_current), 0) AS current_quantity,
+          SUM(CASE
+            WHEN ${dateFrom ? 'pb.expiry_date >= ? AND' : ''} ${dateTo ? 'pb.expiry_date <= ? AND' : ''}
+              DATEDIFF(pb.expiry_date, ?) < 0 AND NOT ${isWriteoffSql}
+            THEN 1 ELSE 0
+          END) AS overdue,
+          SUM(CASE
+            WHEN ${dateFrom ? 'pb.expiry_date >= ? AND' : ''} ${dateTo ? 'pb.expiry_date <= ? AND' : ''}
+              ${expiringSoonSql} AND NOT ${isWriteoffSql}
+            THEN 1 ELSE 0
+          END) AS expiring,
+          SUM(CASE
+            WHEN ${dateFrom ? 'pb.expiry_date >= ? AND' : ''} ${dateTo ? 'pb.expiry_date <= ? AND' : ''}
+              ${attentionSql}
+            THEN 1 ELSE 0
+          END) AS attention
+        FROM product_batches pb
+        INNER JOIN stores s ON s.id = pb.store_id
+        ${storeWhereSql}
+        GROUP BY s.id, s.store_code, s.city, s.address_line
+        HAVING batches > 0
+        ORDER BY attention DESC, overdue DESC, batches DESC
+        LIMIT 8
+      `,
+      [
+        ...(dateFrom ? [dateFrom] : []),
+        ...(dateTo ? [dateTo] : []),
+        asOfDate,
+        ...(dateFrom ? [dateFrom] : []),
+        ...(dateTo ? [dateTo] : []),
+        asOfDate,
+        asOfDate,
+        ...(dateFrom ? [dateFrom] : []),
+        ...(dateTo ? [dateTo] : []),
+        asOfDate,
+        asOfDate,
+        asOfDate,
+        ...(hasStoreFilter ? [normalizedStoreId] : [])
+      ]
+    ),
+    pool.query<BatchAnalyticsEmployeeRow[]>(
+      `
+        SELECT
+          u.id,
+          CONCAT_WS(' ', u.surname, u.name) AS name,
+          CONCAT_WS(' | ', s.store_code, s.city, s.address_line) AS store_label,
+          u.role,
+          COUNT(pb.id) AS responsible_count,
+          SUM(CASE
+            WHEN ${dateFrom ? 'pb.expiry_date >= ? AND' : ''} ${dateTo ? 'pb.expiry_date <= ? AND' : ''}
+              (DATEDIFF(pb.expiry_date, ?) < 0 OR (${expiringSoonSql}) OR ${isDiscussionSql} OR pb.check_status = 'checked')
+            THEN 1 ELSE 0
+          END) AS attention,
+          SUM(CASE
+            WHEN ${dateFrom ? 'pb.expiry_date >= ? AND' : ''} ${dateTo ? 'pb.expiry_date <= ? AND' : ''}
+              (pb.check_status = 'checked' OR ${isWriteoffSql} OR ${isDiscussionSql})
+            THEN 1 ELSE 0
+          END) AS completed,
+          SUM(CASE
+            WHEN ${dateFrom ? 'pb.expiry_date >= ? AND' : ''} ${dateTo ? 'pb.expiry_date <= ? AND' : ''}
+              DATEDIFF(pb.expiry_date, ?) < 0 AND NOT ${isWriteoffSql}
+            THEN 1 ELSE 0
+          END) AS overdue,
+          SUM(CASE
+            WHEN ${dateFrom ? 'pb.expiry_date >= ? AND' : ''} ${dateTo ? 'pb.expiry_date <= ? AND' : ''}
+              ${expiringSoonSql} AND NOT ${isWriteoffSql}
+            THEN 1 ELSE 0
+          END) AS expiring
+        FROM users u
+        INNER JOIN product_batches pb ON pb.responsible_user_id = u.id
+        LEFT JOIN stores s ON s.id = u.store_id
+        ${userWhereSql}
+        GROUP BY u.id, u.surname, u.name, s.store_code, s.city, s.address_line, u.role
+        HAVING responsible_count > 0
+        ORDER BY attention DESC, overdue DESC, responsible_count DESC
+        LIMIT 8
+      `,
+      [
+        ...(dateFrom ? [dateFrom] : []),
+        ...(dateTo ? [dateTo] : []),
+        asOfDate,
+        asOfDate,
+        asOfDate,
+        ...(dateFrom ? [dateFrom] : []),
+        ...(dateTo ? [dateTo] : []),
+        ...(dateFrom ? [dateFrom] : []),
+        ...(dateTo ? [dateTo] : []),
+        asOfDate,
+        ...(dateFrom ? [dateFrom] : []),
+        ...(dateTo ? [dateTo] : []),
+        asOfDate,
+        asOfDate,
+        ...(hasStoreFilter ? [normalizedStoreId] : [])
+      ]
+    ),
+    pool.query<BatchAnalyticsUsersRow[]>(
+      `
+        SELECT COUNT(*) AS total_users
+        FROM users u
+        ${userWhereSql}
+      `,
+      hasStoreFilter ? [normalizedStoreId] : []
+    )
+  ]);
+
+  const summary = summaryRows[0][0];
+  const period = periodRows[0][0];
+  const stockReceived = Number(summary?.stock_received ?? 0);
+  const stockCurrent = Number(summary?.stock_current ?? 0);
+  const mappedStoreRows: InventoryAnalyticsStoreRow[] = storeRows[0].map((row) => ({
+    id: String(row.id),
+    label: row.label ?? '',
+    batches: Number(row.batches ?? 0),
+    overdue: Number(row.overdue ?? 0),
+    expiring: Number(row.expiring ?? 0),
+    attention: Number(row.attention ?? 0),
+    currentQuantity: Number(row.current_quantity ?? 0)
+  }));
+  const mappedEmployeeRows: InventoryAnalyticsEmployeeRow[] = employeeRows[0].map((row) => {
+    const attention = Number(row.attention ?? 0);
+    const completed = Number(row.completed ?? 0);
+    return {
+      id: row.id,
+      name: row.name ?? '',
+      storeLabel: row.store_label ?? '',
+      role: formatAnalyticsUserRole(row.role),
+      responsibleCount: Number(row.responsible_count ?? 0),
+      attention,
+      completed,
+      overdue: Number(row.overdue ?? 0),
+      expiring: Number(row.expiring ?? 0),
+      completionRatio: completionRatio(completed, attention)
+    };
+  });
+
+  return {
+    stockReceived,
+    stockCurrent,
+    stockDelta: stockReceived - stockCurrent,
+    uniqueRiskStoresCount: Number(period?.unique_risk_stores ?? 0),
+    totalBatches: Number(summary?.total_batches ?? 0),
+    periodBatches: Number(period?.period_batches ?? 0),
+    totalUsers: Number(usersRows[0][0]?.total_users ?? 0),
+    analyticsDateFrom: dateFrom,
+    analyticsDateTo: dateTo,
+    analyticsStoreId: hasStoreFilter ? String(normalizedStoreId) : '',
+    statusCards: {
+      new: Number(period?.status_new ?? 0),
+      checked: Number(period?.status_checked ?? 0),
+      writeoff: Number(period?.status_writeoff ?? 0),
+      discussion: Number(period?.status_discussion ?? 0)
+    },
+    riskCards: {
+      overdue: Number(period?.risk_overdue ?? 0),
+      critical: Number(period?.risk_critical ?? 0),
+      high: Number(period?.risk_high ?? 0),
+      medium: Number(period?.risk_medium ?? 0),
+      safe: Number(period?.risk_safe ?? 0)
+    },
+    storeRows: mappedStoreRows,
+    employeeRows: mappedEmployeeRows
   };
 }
 
