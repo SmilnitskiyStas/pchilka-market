@@ -121,6 +121,7 @@ export default function AdminNav() {
           { href: '/admin/inventory/tasks', label: 'Завдання' },
           { href: '/admin/inventory/employees', label: 'Працівники' },
           { href: '/admin/inventory/actions', label: 'Дії працівників' },
+          { href: '/admin/inventory/sales/import', label: 'FEFO-імпорт продажів' },
           { href: '/admin/inventory/notifications', label: 'Сповіщення' },
           { href: '/admin/network', label: 'Магазини' },
           { href: '/admin/inventory/analytics', label: 'Аналітика' }

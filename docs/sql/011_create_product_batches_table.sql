@@ -5,9 +5,9 @@ CREATE TABLE IF NOT EXISTS product_batches (
   store_id BIGINT UNSIGNED NOT NULL,
   batch_code VARCHAR(120) NULL,
 
-  quantity INT NOT NULL DEFAULT 0,
-  quantity_received INT NOT NULL DEFAULT 0,
-  quantity_current INT NOT NULL DEFAULT 0,
+  quantity DECIMAL(12,3) NOT NULL DEFAULT 0,
+  quantity_received DECIMAL(12,3) NOT NULL DEFAULT 0,
+  quantity_current DECIMAL(12,3) NOT NULL DEFAULT 0,
   batch_status VARCHAR(40) NOT NULL DEFAULT 'active',
 
   expiry_date DATE NOT NULL,

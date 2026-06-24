@@ -15,6 +15,7 @@ const inventoryRoutes: Record<string, { title: string; description: string }> = 
   'tasks': { title: 'Завдання', description: 'Тут буде окремий розділ для задач inventory.' },
   'employees': { title: 'Працівники', description: 'Тут буде список працівників та їх прив’язки до магазинів.' },
   'actions': { title: 'Дії працівників', description: 'Тут буде журнал дій працівників по inventory.' },
+  'sales/import': { title: 'FEFO-імпорт продажів', description: 'Dry-run і підтверджене списання продажів з касового Excel-звіту.' },
   'notifications': { title: 'Сповіщення', description: 'Тут буде історія та керування сповіщеннями.' },
   'stores': { title: 'Магазини', description: 'Тут буде окремий огляд мережі магазинів.' },
   'analytics': { title: 'Аналітика', description: 'Тут буде аналітика по партіях, реакції та руху товарів.' },

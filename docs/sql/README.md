@@ -19,3 +19,4 @@ Inventory / Telegram workflow sequence for existing databases:
 - `014_create_notification_logs_table.sql`
 - `017_add_product_batches_responsible_user.sql`
 - `018_add_product_batches_batch_code.sql`
+- `031_enable_fefo_sales_import.sql`
