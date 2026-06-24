@@ -7,6 +7,9 @@ import { createInventoryUserInDb, findInventoryUserByChatId } from '@/lib/invent
 
 export const runtime = 'nodejs';
 
+const INVALID_REGISTRATION_TOKEN_MESSAGE =
+  'Посилання недійсне або прострочене. Щоб створити нове посилання, відкрийте Telegram-бот і натисніть /start.';
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
@@ -21,13 +24,13 @@ export async function POST(request: Request) {
     const token = String(body?.token ?? '');
     const payload = parseInventoryRegistrationToken(token, settings.webhookSecret);
     if (!payload) {
-      return NextResponse.json({ ok: false, error: 'РќРµРґС–Р№СЃРЅРёР№ Р°Р±Рѕ РїСЂРѕСЃС‚СЂРѕС‡РµРЅРёР№ С‚РѕРєРµРЅ СЂРµС”СЃС‚СЂР°С†С–С—.' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: INVALID_REGISTRATION_TOKEN_MESSAGE }, { status: 400 });
     }
 
     const existingUser = await findInventoryUserByChatId(payload.chatId);
     if (existingUser) {
       return NextResponse.json(
-        { ok: false, error: 'РљРѕСЂРёСЃС‚СѓРІР°С‡ Р· С†РёРј Telegram СѓР¶Рµ Р·Р°СЂРµС”СЃС‚СЂРѕРІР°РЅРёР№.' },
+        { ok: false, error: 'Користувач з цим Telegram уже зареєстрований.' },
         { status: 409 }
       );
     }

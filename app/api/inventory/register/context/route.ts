@@ -8,6 +8,9 @@ import { listStoresFromDb } from '@/lib/stores-repository';
 
 export const runtime = 'nodejs';
 
+const INVALID_REGISTRATION_TOKEN_MESSAGE =
+  'Посилання недійсне або прострочене. Щоб створити нове посилання, відкрийте Telegram-бот і натисніть /start.';
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -16,7 +19,7 @@ export async function GET(request: Request) {
     const payload = parseInventoryRegistrationToken(token, settings.webhookSecret);
 
     if (!payload) {
-      return NextResponse.json({ ok: false, error: 'РќРµРґС–Р№СЃРЅРёР№ Р°Р±Рѕ РїСЂРѕСЃС‚СЂРѕС‡РµРЅРёР№ С‚РѕРєРµРЅ СЂРµС”СЃС‚СЂР°С†С–С—.' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: INVALID_REGISTRATION_TOKEN_MESSAGE }, { status: 400 });
     }
 
     const existingUser = await findInventoryUserByChatId(payload.chatId);
