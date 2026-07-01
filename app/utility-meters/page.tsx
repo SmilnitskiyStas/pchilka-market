@@ -1,0 +1,338 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import type { UtilityMeterPointRecord, UtilityMeterReadingHistoryItem } from '@/lib/utility-metering-types';
+
+type ContextPayload = {
+  ok?: boolean;
+  user?: {
+    id: number;
+    name: string;
+    surname: string;
+    storeCode?: string;
+    storeLabel: string;
+  };
+  meters?: UtilityMeterPointRecord[];
+  historyByMeterId?: Record<string, UtilityMeterReadingHistoryItem[]>;
+  error?: string;
+};
+
+type SubmitPayload = {
+  ok?: boolean;
+  calculation?: {
+    validationStatus: string;
+    validationMessages: string[];
+    consumption?: number;
+    amount?: number;
+  };
+  error?: string;
+};
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function monthFromDate(value: string) {
+  return value.slice(0, 7);
+}
+
+function updateDateMonth(currentDate: string, nextMonth: string) {
+  const currentDay = Number(currentDate.slice(8, 10)) || 1;
+  const [year, month] = nextMonth.split('-').map(Number);
+  const maxDay = new Date(year, month, 0).getDate();
+  const nextDay = String(Math.min(currentDay, maxDay)).padStart(2, '0');
+  return `${nextMonth}-${nextDay}`;
+}
+
+function formatNumber(value?: number) {
+  if (value == null || !Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 4 }).format(value);
+}
+
+function formatMoney(value?: number) {
+  if (value == null || !Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat('uk-UA', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
+}
+
+function getOwnerLabel(meter: UtilityMeterPointRecord) {
+  if (meter.ownerKind === 'tenant' && meter.tenantName) return meter.tenantName;
+  if (meter.ownerKind === 'shared') return 'Спільний лічильник';
+  if (meter.ownerKind === 'other' && meter.tenantName) return meter.tenantName;
+  return 'Магазин';
+}
+
+export default function UtilityMetersPage() {
+  const [token, setToken] = useState('');
+  const [payload, setPayload] = useState<ContextPayload>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedMeterId, setSelectedMeterId] = useState('');
+  const [readingDate, setReadingDate] = useState(todayIso());
+  const [readingValue, setReadingValue] = useState('');
+  const [previousValueOverride, setPreviousValueOverride] = useState('');
+  const [notes, setNotes] = useState('');
+  const [status, setStatus] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const loadContext = useCallback(
+    async (nextToken: string, preferredMeterId?: string) => {
+      setIsLoading(true);
+      try {
+        const response = await fetch(`/api/utility-meters/context?token=${encodeURIComponent(nextToken)}`, {
+          cache: 'no-store'
+        });
+        const nextPayload = (await response.json()) as ContextPayload;
+        setPayload(nextPayload);
+        const meterIds = new Set((nextPayload.meters ?? []).map((meter) => meter.id));
+        const fallbackMeterId = nextPayload.meters?.[0]?.id ?? '';
+        setSelectedMeterId(preferredMeterId && meterIds.has(preferredMeterId) ? preferredMeterId : fallbackMeterId);
+      } catch (error) {
+        setPayload({
+          ok: false,
+          error: error instanceof Error ? error.message : 'Не вдалося завантажити дані.'
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const nextToken = params.get('token') ?? '';
+    setToken(nextToken);
+    void loadContext(nextToken);
+  }, [loadContext]);
+
+  const selectedMeter = useMemo(
+    () => payload.meters?.find((meter) => meter.id === selectedMeterId),
+    [payload.meters, selectedMeterId]
+  );
+
+  const meterHistory = useMemo(
+    () => (selectedMeterId ? payload.historyByMeterId?.[selectedMeterId] ?? [] : []),
+    [payload.historyByMeterId, selectedMeterId]
+  );
+
+  const latestHistoryItem = meterHistory[0];
+  const readingMonth = monthFromDate(readingDate);
+
+  async function submitReading(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedMeterId) {
+      setStatus('Спочатку оберіть лічильник.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatus('');
+
+    try {
+      const response = await fetch('/api/utility-meters/readings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          meterPointId: selectedMeterId,
+          readingDate,
+          readingValue: Number(readingValue.replace(',', '.')),
+          previousValueOverride: previousValueOverride ? Number(previousValueOverride.replace(',', '.')) : undefined,
+          notes
+        })
+      });
+      const result = (await response.json()) as SubmitPayload;
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || 'Не вдалося зберегти показник.');
+      }
+
+      const details = result.calculation?.validationMessages?.length
+        ? ` Перевірка: ${result.calculation.validationMessages.join(' ')}`
+        : '';
+      setStatus(`Показник збережено.${details}`);
+      setReadingValue('');
+      setPreviousValueOverride('');
+      setNotes('');
+      await loadContext(token, selectedMeterId);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Не вдалося зберегти показник.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="min-h-screen w-full bg-slate-100 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+        <section className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Pchilka Market</p>
+          <h1 className="mt-1 text-2xl font-bold">Показники лічильників</h1>
+          {payload.user ? (
+            <p className="mt-2 text-sm text-slate-600">
+              {payload.user.surname} {payload.user.name}
+              {payload.user.storeCode ? `, ${payload.user.storeCode}` : ''} | {payload.user.storeLabel}
+            </p>
+          ) : null}
+        </section>
+
+        {isLoading ? (
+          <div className="rounded-lg bg-white p-4 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">Завантаження...</div>
+        ) : payload.error ? (
+          <div className="rounded-lg bg-red-50 p-4 text-sm font-medium text-red-800 ring-1 ring-red-200">{payload.error}</div>
+        ) : payload.meters?.length ? (
+          <form onSubmit={submitReading} className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <label className="block text-sm font-semibold text-slate-700" htmlFor="meter">
+              Лічильник
+            </label>
+            <select
+              id="meter"
+              value={selectedMeterId}
+              onChange={(event) => {
+                setSelectedMeterId(event.target.value);
+                setPreviousValueOverride('');
+                setStatus('');
+              }}
+              className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+            >
+              {payload.meters.map((meter) => (
+                <option key={meter.id} value={meter.id}>
+                  {meter.utilityLabel}
+                  {meter.meterNumber ? ` - ${meter.meterNumber}` : ''}
+                  {meter.tenantName ? ` (${meter.tenantName})` : ''}
+                </option>
+              ))}
+            </select>
+
+            {selectedMeter ? (
+              <div className="mt-3 grid gap-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700 sm:grid-cols-2">
+                <div>
+                  <div className="font-medium">{selectedMeter.addressLine || selectedMeter.storeLabel}</div>
+                  <div className="mt-1">{getOwnerLabel(selectedMeter)}</div>
+                </div>
+                <div className="space-y-1 sm:text-right">
+                  <div>Коефіцієнт: {formatNumber(selectedMeter.coefficient)}</div>
+                  <div>Початковий показник: {formatNumber(selectedMeter.initialReadingValue)}</div>
+                  <div>
+                    Останній показник:{' '}
+                    {latestHistoryItem ? formatNumber(latestHistoryItem.reading.readingValue) : 'ще не внесено'}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                Місяць
+                <input
+                  type="month"
+                  value={readingMonth}
+                  onChange={(event) => setReadingDate(updateDateMonth(readingDate, event.target.value))}
+                  className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                  required
+                />
+              </label>
+              <label className="block text-sm font-semibold text-slate-700">
+                Дата зняття показника
+                <input
+                  type="date"
+                  value={readingDate}
+                  onChange={(event) => setReadingDate(event.target.value)}
+                  className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                  required
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                Поточний показник
+                <input
+                  inputMode="decimal"
+                  value={readingValue}
+                  onChange={(event) => setReadingValue(event.target.value)}
+                  className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                  required
+                />
+              </label>
+              <label className="block text-sm font-semibold text-slate-700">
+                Початковий / попередній показник
+                <input
+                  inputMode="decimal"
+                  value={previousValueOverride}
+                  onChange={(event) => setPreviousValueOverride(event.target.value)}
+                  className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                  placeholder="Для першого або старого періоду"
+                />
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  Заповніть, якщо це перший показник або ви додаєте старі дані заднім числом.
+                </span>
+              </label>
+            </div>
+
+            <label className="mt-4 block text-sm font-semibold text-slate-700">
+              Коментар
+              <textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                className="mt-2 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                placeholder="За потреби додайте пояснення до показника"
+              />
+            </label>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="mt-4 w-full rounded-md bg-amber-500 px-4 py-3 text-base font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSubmitting ? 'Збереження...' : 'Зберегти показник'}
+            </button>
+
+            {status ? <div className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-800">{status}</div> : null}
+
+            <section className="mt-5 rounded-lg border border-slate-200 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">Останні показники</h2>
+                  <p className="mt-1 text-xs text-slate-500">Тут можна швидко перевірити, які місяці вже внесені.</p>
+                </div>
+              </div>
+
+              {meterHistory.length === 0 ? (
+                <div className="mt-3 text-sm text-slate-500">Для цього лічильника ще немає збереженої історії.</div>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {meterHistory.slice(0, 6).map((item) => (
+                    <div
+                      key={item.reading.id}
+                      className="flex flex-col gap-2 rounded-md border border-slate-200 px-3 py-3 text-sm text-slate-700 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div>
+                        <div className="font-medium">
+                          {item.reading.periodMonth.slice(0, 7)} | {item.reading.readingDate}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Попередній: {formatNumber(item.charge?.previousValue)} | Поточний: {formatNumber(item.reading.readingValue)}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-600 sm:text-right">
+                        <span>Споживання: {formatNumber(item.charge?.consumption)}</span>
+                        <span>Сума: {formatMoney(item.charge?.amount)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </form>
+        ) : (
+          <div className="rounded-lg bg-white p-4 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200">
+            Для цього магазину ще не налаштовано лічильники.
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
