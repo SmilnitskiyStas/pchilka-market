@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import {
   createUtilityMeterPointInDb,
+  createUtilityMeterReadingInDb,
   listUtilityMetersForStoreInDb,
   setUtilityMeterPointActiveStateInDb,
   updateUtilityMeterPointInDb
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
       meterNumber: body?.meterNumber,
       coefficient: body?.coefficient,
       initialReadingValue: body?.initialReadingValue,
+      defaultRate: body?.defaultRate,
       ownerKind: body?.ownerKind,
       tenantName: body?.tenantName,
       legalEntity: body?.legalEntity,
@@ -47,6 +49,21 @@ export async function POST(request: Request) {
       contractNumber: body?.contractNumber,
       areaSqM: body?.areaSqM
     });
+
+    if (
+      body?.initialReadingValue != null &&
+      typeof body?.initialReadingDate === 'string' &&
+      /^\d{4}-\d{2}-\d{2}$/.test(body.initialReadingDate)
+    ) {
+      await createUtilityMeterReadingInDb({
+        meterPointId: meter.id,
+        storeId: body.storeId,
+        readingDate: body.initialReadingDate,
+        readingValue: Number(body.initialReadingValue),
+        submittedByName: 'admin',
+        notes: 'Початковий показник'
+      });
+    }
 
     return NextResponse.json({ ok: true, meter });
   } catch (error) {
@@ -75,6 +92,7 @@ export async function PATCH(request: Request) {
             meterNumber: body?.meterNumber,
             coefficient: body?.coefficient,
             initialReadingValue: body?.initialReadingValue,
+            defaultRate: body?.defaultRate,
             ownerKind: body?.ownerKind,
             tenantName: body?.tenantName,
             legalEntity: body?.legalEntity,

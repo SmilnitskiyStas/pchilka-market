@@ -27,6 +27,7 @@ export type UtilityMeterPointRecord = {
   meterNumber: string;
   coefficient: number;
   initialReadingValue?: number;
+  defaultRate?: number;
   areaSqM?: number;
   sourceKey: string;
   isActive: boolean;
@@ -70,6 +71,19 @@ export type UtilityMeterReadingHistoryItem = {
   charge?: UtilityMeterChargeRecord;
 };
 
+export type UtilityMeterRateRecord = {
+  id: string;
+  meterPointId?: string;
+  storeId?: string;
+  utilityType: UtilityType;
+  periodMonth: string;
+  rate: number;
+  rateLabel: string;
+  includesVat: boolean;
+  meterLabel: string;
+  storeLabel: string;
+};
+
 export type UtilityMeterCreateInput = {
   storeId: string | number;
   utilityType: UtilityType;
@@ -77,6 +91,7 @@ export type UtilityMeterCreateInput = {
   meterNumber?: string;
   coefficient?: number;
   initialReadingValue?: number;
+  defaultRate?: number;
   ownerKind?: UtilityMeterOwnerKind;
   tenantName?: string;
   legalEntity?: string;
@@ -88,4 +103,15 @@ export type UtilityMeterCreateInput = {
 export type UtilityMeterUpdateInput = UtilityMeterCreateInput & {
   meterPointId: string | number;
   isActive?: boolean;
+};
+
+export type UtilityMeterRateInput = {
+  rateId?: string | number;
+  storeId?: string | number | null;
+  meterPointId?: string | number | null;
+  utilityType: UtilityType;
+  periodMonth: string;
+  rate: number;
+  rateLabel?: string;
+  includesVat?: boolean;
 };

@@ -80,6 +80,8 @@ type MeterFormState = {
   meterNumber: string;
   coefficient: string;
   initialReadingValue: string;
+  initialReadingDate: string;
+  defaultRate: string;
   ownerKind: UtilityMeterOwnerKind;
   tenantName: string;
   legalEntity: string;
@@ -105,12 +107,18 @@ const OWNER_KIND_OPTIONS: Array<{ value: UtilityMeterOwnerKind; label: string }>
   { value: 'other', label: 'Інше' }
 ];
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 const EMPTY_METER_FORM: MeterFormState = {
   utilityType: 'electricity_active',
   utilityLabel: '',
   meterNumber: '',
   coefficient: '1',
   initialReadingValue: '',
+  initialReadingDate: todayIso(),
+  defaultRate: '',
   ownerKind: 'store',
   tenantName: '',
   legalEntity: '',
@@ -126,6 +134,8 @@ function meterToFormState(meter: UtilityMeterPointRecord): MeterFormState {
     meterNumber: meter.meterNumber,
     coefficient: String(meter.coefficient ?? 1),
     initialReadingValue: meter.initialReadingValue == null ? '' : String(meter.initialReadingValue),
+    initialReadingDate: todayIso(),
+    defaultRate: meter.defaultRate == null ? '' : String(meter.defaultRate),
     ownerKind: meter.ownerKind,
     tenantName: meter.tenantName,
     legalEntity: meter.legalEntity,
@@ -219,12 +229,12 @@ export default function AdminUtilityMetersPage() {
     try {
       const response = await fetch('/api/admin/utility-meters/mappings', { cache: 'no-store' });
       const result = (await response.json()) as MeterMappingsPayload;
-      if (!response.ok || !result.ok) throw new Error(result.error || 'Не вдалося завантажити прив’язки лічильників.');
+      if (!response.ok || !result.ok) throw new Error(result.error || "Не вдалося завантажити прив'язки лічильників.");
       const groups = result.groups ?? [];
       setMappingGroups(groups);
       setMappingSelections(Object.fromEntries(groups.map((group) => [group.key, group.assignedStoreId])));
     } catch (error) {
-      setMappingError(error instanceof Error ? error.message : 'Не вдалося завантажити прив’язки лічильників.');
+      setMappingError(error instanceof Error ? error.message : "Не вдалося завантажити прив'язки лічильників.");
     }
   }
 
@@ -271,15 +281,15 @@ export default function AdminUtilityMetersPage() {
         body: JSON.stringify({ meterPointIds: group.meterPointIds, storeId: storeId || null })
       });
       const result = (await response.json()) as { ok?: boolean; updated?: number; error?: string };
-      if (!response.ok || !result.ok) throw new Error(result.error || 'Не вдалося зберегти прив’язку.');
+      if (!response.ok || !result.ok) throw new Error(result.error || "Не вдалося зберегти прив'язку.");
       setMappingStatus(
         storeId
-          ? `Прив’язано лічильників: ${result.updated ?? group.meterCount}.`
-          : `Відв’язано лічильників: ${result.updated ?? group.meterCount}.`
+          ? `Прив'язано лічильників: ${result.updated ?? group.meterCount}.`
+          : `Відв'язано лічильників: ${result.updated ?? group.meterCount}.`
       );
       await Promise.all([loadMappings(), loadReview(periodMonth, selectedStoreId)]);
     } catch (error) {
-      setMappingError(error instanceof Error ? error.message : 'Не вдалося зберегти прив’язку.');
+      setMappingError(error instanceof Error ? error.message : "Не вдалося зберегти прив'язку.");
     } finally {
       setSavingMappingKey('');
     }
@@ -336,6 +346,8 @@ export default function AdminUtilityMetersPage() {
           initialReadingValue: meterForm.initialReadingValue
             ? Number(meterForm.initialReadingValue.replace(',', '.'))
             : undefined,
+          initialReadingDate: meterForm.initialReadingValue ? meterForm.initialReadingDate : undefined,
+          defaultRate: meterForm.defaultRate ? Number(meterForm.defaultRate.replace(',', '.')) : undefined,
           ownerKind: meterForm.ownerKind,
           tenantName: meterForm.tenantName,
           legalEntity: meterForm.legalEntity,
@@ -515,15 +527,12 @@ export default function AdminUtilityMetersPage() {
             >
               {isLoading ? 'Оновлення...' : 'Оновити'}
             </button>
-            <button
-              type="button"
-              onClick={() => { void openReadingsForm(); }}
-              className="rounded-md bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={!selectedStoreId || isCreatingAccessLink}
-              title={selectedStoreId ? 'Відкрити форму внесення показників для вибраного магазину' : 'Спочатку оберіть магазин'}
+            <a
+              href="/admin/utility-meters/rates"
+              className="rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900"
             >
-              {isCreatingAccessLink ? 'Створення...' : 'Додати показники'}
-            </button>
+              Тарифи
+            </a>
             <div className="flex flex-wrap items-center gap-2">
               <a
                 href={documentHref}
@@ -555,7 +564,6 @@ export default function AdminUtilityMetersPage() {
               </button>
             </div>
           </div>
-          {accessLinkStatus ? <div className="mt-3 text-sm font-medium text-slate-700">{accessLinkStatus}</div> : null}
           {documentActionStatus ? <div className="mt-2 text-sm font-medium text-slate-700">{documentActionStatus}</div> : null}
         </section>
 
@@ -570,7 +578,7 @@ export default function AdminUtilityMetersPage() {
         <section className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
             <div>
-              <h2 className="text-lg font-bold">Прив’язка імпортованих лічильників</h2>
+              <h2 className="text-lg font-bold">Прив'язка імпортованих лічильників</h2>
               <p className="mt-1 text-sm text-slate-600">
                 Звірте вихідний код та адресу з Excel, потім виберіть відповідний магазин.
               </p>
@@ -625,7 +633,7 @@ export default function AdminUtilityMetersPage() {
                           }
                           className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
                         >
-                          <option value="">Не прив’язано</option>
+                          <option value="">Не прив'язано</option>
                           {activeStores.map((store) => (
                             <option key={store.id} value={store.id}>
                               {[store.storeCode, store.city, store.addressLine].filter(Boolean).join(' | ')}
@@ -643,7 +651,7 @@ export default function AdminUtilityMetersPage() {
                           disabled={isSaving || selection === group.assignedStoreId}
                           className="rounded-md bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          {isSaving ? 'Збереження...' : selection ? 'Прив’язати' : 'Відв’язати'}
+                          {isSaving ? 'Збереження...' : selection ? "Прив'язати" : "Відв'язати"}
                         </button>
                       </td>
                     </tr>
@@ -720,6 +728,14 @@ export default function AdminUtilityMetersPage() {
                     >
                       Оновити лічильники
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => { void openReadingsForm(); }}
+                      className="rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={isCreatingAccessLink}
+                    >
+                      {isCreatingAccessLink ? 'Створення...' : 'Додати показники'}
+                    </button>
                   </div>
                 ) : null}
               </div>
@@ -736,6 +752,9 @@ export default function AdminUtilityMetersPage() {
                     ) : null}
                     {metersStatus ? (
                       <div className="mb-3 rounded-md bg-green-50 p-3 text-sm font-medium text-green-800 ring-1 ring-green-200">{metersStatus}</div>
+                    ) : null}
+                    {accessLinkStatus ? (
+                      <div className="mb-3 rounded-md bg-amber-50 p-3 text-sm font-medium text-amber-800 ring-1 ring-amber-200">{accessLinkStatus}</div>
                     ) : null}
 
                     <div className="overflow-hidden rounded-lg border border-slate-200">
@@ -876,10 +895,40 @@ export default function AdminUtilityMetersPage() {
                               value={meterForm.initialReadingValue}
                               onChange={(event) => setMeterForm((current) => ({ ...current, initialReadingValue: event.target.value }))}
                               className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
-                              placeholder="Для першого внесення"
+                              placeholder="Необов'язково"
                             />
                           </label>
                         </div>
+
+                        {meterForm.initialReadingValue ? (
+                          <label className="block text-sm font-semibold text-slate-700">
+                            Дата початкового показника
+                            <input
+                              type="date"
+                              value={meterForm.initialReadingDate}
+                              onChange={(event) => setMeterForm((current) => ({ ...current, initialReadingDate: event.target.value }))}
+                              className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                              required
+                            />
+                            <span className="mt-1 block text-xs font-normal text-slate-500">
+                              Буде автоматично записано як перший показник для цього лічильника.
+                            </span>
+                          </label>
+                        ) : null}
+
+                        <label className="block text-sm font-semibold text-slate-700">
+                          Тариф (ціна за одиницю), грн
+                          <input
+                            inputMode="decimal"
+                            value={meterForm.defaultRate}
+                            onChange={(event) => setMeterForm((current) => ({ ...current, defaultRate: event.target.value }))}
+                            className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                            placeholder="Необов'язково"
+                          />
+                          <span className="mt-1 block text-xs font-normal text-slate-500">
+                            Використовується для розрахунку суми нарахування. Можна змінити пізніше.
+                          </span>
+                        </label>
 
                         <div className="grid gap-3 sm:grid-cols-2">
                           <label className="block text-sm font-semibold text-slate-700">
@@ -944,6 +993,10 @@ export default function AdminUtilityMetersPage() {
                           </label>
                         </div>
                       </div>
+
+                      {metersError ? (
+                        <div className="mt-4 rounded-md bg-red-50 p-3 text-sm font-medium text-red-800 ring-1 ring-red-200">{metersError}</div>
+                      ) : null}
 
                       <button
                         type="submit"

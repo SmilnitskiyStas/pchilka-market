@@ -11,6 +11,8 @@ import type {
   UtilityMeterPointRecord,
   UtilityMeterReadingRecord,
   UtilityMeterReadingHistoryItem,
+  UtilityMeterRateInput,
+  UtilityMeterRateRecord,
   UtilityMeterReviewItem,
   UtilityMeterUpdateInput,
   UtilityMeterOwnerKind,
@@ -33,6 +35,7 @@ type MeterPointRow = RowDataPacket & {
   meter_number: string | null;
   coefficient: string | number;
   initial_reading_value: string | number | null;
+  default_rate: string | number | null;
   area_sq_m: string | number | null;
   source_key: string;
   is_active: number;
@@ -77,6 +80,24 @@ type MeterMappingGroupRow = RowDataPacket & {
   meter_point_ids: string;
   meter_count: number;
   reading_count: number;
+};
+
+type RateRow = RowDataPacket & {
+  id: number;
+  meter_point_id: number | null;
+  store_id: number | null;
+  utility_type: UtilityType;
+  period_month: Date | string;
+  rate: string | number;
+  rate_label: string | null;
+  includes_vat: number;
+  meter_number: string | null;
+  utility_label: string | null;
+  tenant_name: string | null;
+  store_code: string | null;
+  store_name: string | null;
+  store_city: string | null;
+  address_line: string | null;
 };
 
 export type UtilityMeterMappingGroup = {
@@ -145,13 +166,18 @@ async function ensureUtilityMeteringSchema() {
       const [pointColumns] = await pool.query<Array<RowDataPacket & { Field: string }>>(
         "SHOW COLUMNS FROM utility_meter_points LIKE 'initial_reading_value'"
       );
-
       if (pointColumns.length === 0) {
         await pool.query(
-          `
-            ALTER TABLE utility_meter_points
-            ADD COLUMN initial_reading_value DECIMAL(14,4) NULL AFTER coefficient
-          `
+          "ALTER TABLE utility_meter_points ADD COLUMN initial_reading_value DECIMAL(14,4) NULL AFTER coefficient"
+        );
+      }
+
+      const [rateColumns] = await pool.query<Array<RowDataPacket & { Field: string }>>(
+        "SHOW COLUMNS FROM utility_meter_points LIKE 'default_rate'"
+      );
+      if (rateColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE utility_meter_points ADD COLUMN default_rate DECIMAL(18,6) NULL AFTER initial_reading_value"
         );
       }
     })().catch((error) => {
@@ -180,6 +206,7 @@ function mapMeterPoint(row: MeterPointRow): UtilityMeterPointRecord {
     meterNumber: row.meter_number ?? '',
     coefficient: Number(row.coefficient ?? 1),
     initialReadingValue: toNumberOrUndefined(row.initial_reading_value),
+    defaultRate: toNumberOrUndefined(row.default_rate),
     areaSqM: toNumberOrUndefined(row.area_sq_m),
     sourceKey: row.source_key,
     isActive: row.is_active === 1
@@ -229,6 +256,28 @@ function mapCharge(row?: ChargeRow): UtilityMeterChargeRecord | undefined {
     amount: toNumberOrUndefined(row.amount),
     validationStatus: row.validation_status,
     validationMessages
+  };
+}
+
+function mapUtilityMeterRate(row: RateRow): UtilityMeterRateRecord {
+  const meterLabelParts = [row.utility_label ?? '', row.meter_number ?? '', row.tenant_name ?? '']
+    .map((part) => String(part).trim())
+    .filter(Boolean);
+  const storeLabelParts = [row.store_code ?? '', row.store_name ?? row.store_city ?? '', row.address_line ?? '']
+    .map((part) => String(part).trim())
+    .filter(Boolean);
+
+  return {
+    id: String(row.id),
+    meterPointId: row.meter_point_id == null ? undefined : String(row.meter_point_id),
+    storeId: row.store_id == null ? undefined : String(row.store_id),
+    utilityType: row.utility_type,
+    periodMonth: toIsoDate(row.period_month),
+    rate: Number(row.rate),
+    rateLabel: row.rate_label ?? '',
+    includesVat: row.includes_vat === 1,
+    meterLabel: meterLabelParts.join(' | '),
+    storeLabel: storeLabelParts.join(' | ')
   };
 }
 
@@ -354,7 +403,12 @@ export async function createUtilityMeterPointInDb(input: UtilityMeterCreateInput
 
   const initialReadingValue = input.initialReadingValue == null ? null : Number(input.initialReadingValue);
   if (initialReadingValue !== null && (!Number.isFinite(initialReadingValue) || initialReadingValue < 0)) {
-    throw new Error('Початковий показник має бути невід’ємним числом.');
+    throw new Error("Початковий показник має бути невід'ємним числом.");
+  }
+
+  const defaultRate = input.defaultRate == null ? null : Number(input.defaultRate);
+  if (defaultRate !== null && (!Number.isFinite(defaultRate) || defaultRate < 0)) {
+    throw new Error("Тариф має бути невід'ємним числом.");
   }
 
   const areaSqM = input.areaSqM == null ? null : Number(input.areaSqM);
@@ -373,9 +427,9 @@ export async function createUtilityMeterPointInDb(input: UtilityMeterCreateInput
       INSERT INTO utility_meter_points (
         store_id, store_code, store_label, address_line, owner_kind, tenant_name, legal_entity,
         provider_name, contract_number, utility_type, utility_label, meter_number, coefficient, initial_reading_value,
-        area_sq_m, source_key, source_file, source_sheet, is_active
+        default_rate, area_sq_m, source_key, source_file, source_sheet, is_active
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1)
     `,
     [
       storeId,
@@ -392,6 +446,7 @@ export async function createUtilityMeterPointInDb(input: UtilityMeterCreateInput
       String(input.meterNumber ?? '').trim() || null,
       coefficient,
       initialReadingValue,
+      defaultRate,
       areaSqM,
       `manual:${storeId}:${randomUUID()}`
     ]
@@ -448,7 +503,12 @@ export async function updateUtilityMeterPointInDb(input: UtilityMeterUpdateInput
 
   const initialReadingValue = input.initialReadingValue == null ? null : Number(input.initialReadingValue);
   if (initialReadingValue !== null && (!Number.isFinite(initialReadingValue) || initialReadingValue < 0)) {
-    throw new Error('Початковий показник має бути невід’ємним числом.');
+    throw new Error("Початковий показник має бути невід'ємним числом.");
+  }
+
+  const defaultRate = input.defaultRate == null ? null : Number(input.defaultRate);
+  if (defaultRate !== null && (!Number.isFinite(defaultRate) || defaultRate < 0)) {
+    throw new Error("Тариф має бути невід'ємним числом.");
   }
 
   const areaSqM = input.areaSqM == null ? null : Number(input.areaSqM);
@@ -489,6 +549,7 @@ export async function updateUtilityMeterPointInDb(input: UtilityMeterUpdateInput
         meter_number = ?,
         coefficient = ?,
         initial_reading_value = ?,
+        default_rate = ?,
         area_sq_m = ?,
         is_active = ?
       WHERE id = ? AND store_id = ?
@@ -505,6 +566,7 @@ export async function updateUtilityMeterPointInDb(input: UtilityMeterUpdateInput
       String(input.meterNumber ?? '').trim() || null,
       coefficient,
       initialReadingValue,
+      defaultRate,
       areaSqM,
       input.isActive === false ? 0 : 1,
       meterPointId,
@@ -598,6 +660,221 @@ export async function listUtilityMetersForStoreInDb(input: {
   );
 
   return rows.map(mapMeterPoint);
+}
+
+export async function listUtilityMeterRatesInDb(input?: {
+  periodMonth?: string;
+  storeId?: string | number | null;
+  meterPointId?: string | number | null;
+}): Promise<UtilityMeterRateRecord[]> {
+  await ensureUtilityMeteringSchema();
+  const pool = getDbPool();
+  const conditions: string[] = [];
+  const params: Array<string | number> = [];
+
+  if (input?.periodMonth) {
+    conditions.push('r.period_month = ?');
+    params.push(input.periodMonth);
+  }
+  if (input?.storeId) {
+    conditions.push('(r.store_id = ? OR p.store_id = ?)');
+    params.push(Number(input.storeId), Number(input.storeId));
+  }
+  if (input?.meterPointId) {
+    conditions.push('r.meter_point_id = ?');
+    params.push(Number(input.meterPointId));
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const [rows] = await pool.query<RateRow[]>(
+    `
+      SELECT
+        r.*,
+        p.meter_number,
+        p.utility_label,
+        p.tenant_name,
+        s.store_code,
+        s.name AS store_name,
+        s.city AS store_city,
+        s.address_line
+      FROM utility_meter_rates r
+      LEFT JOIN utility_meter_points p ON p.id = r.meter_point_id
+      LEFT JOIN stores s ON s.id = COALESCE(r.store_id, p.store_id)
+      ${whereClause}
+      ORDER BY r.period_month DESC, s.store_code ASC, r.utility_type ASC, r.meter_point_id ASC, r.id DESC
+    `,
+    params
+  );
+
+  return rows.map(mapUtilityMeterRate);
+}
+
+export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): Promise<UtilityMeterRateRecord> {
+  await ensureUtilityMeteringSchema();
+  const utilityType = String(input.utilityType ?? '') as UtilityType;
+  if (!ALLOWED_UTILITY_TYPES.has(utilityType)) {
+    throw new Error('Оберіть коректний тип комунальної послуги.');
+  }
+
+  const periodMonth = String(input.periodMonth ?? '').trim();
+  if (!/^\d{4}-\d{2}-01$/.test(periodMonth)) {
+    throw new Error('Оберіть коректний місяць тарифу.');
+  }
+
+  const rate = Number(input.rate);
+  if (!Number.isFinite(rate) || rate < 0) {
+    throw new Error('Тариф має бути невід’ємним числом.');
+  }
+
+  const meterPointId =
+    input.meterPointId == null || input.meterPointId === '' ? null : Number(input.meterPointId);
+  const storeId = input.storeId == null || input.storeId === '' ? null : Number(input.storeId);
+  if (meterPointId === null && storeId === null) {
+    throw new Error('Оберіть магазин або конкретний лічильник.');
+  }
+  if (meterPointId !== null && (!Number.isInteger(meterPointId) || meterPointId <= 0)) {
+    throw new Error('Оберіть коректний лічильник.');
+  }
+  if (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0)) {
+    throw new Error('Оберіть коректний магазин.');
+  }
+
+  const pool = getDbPool();
+  let effectiveStoreId = storeId;
+  if (meterPointId !== null) {
+    const [meterRows] = await pool.query<MeterPointRow[]>(
+      `
+        SELECT *
+        FROM utility_meter_points
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [meterPointId]
+    );
+    const meter = meterRows[0] ? mapMeterPoint(meterRows[0]) : null;
+    if (!meter) {
+      throw new Error('Лічильник не знайдено.');
+    }
+    if (!effectiveStoreId && meter.storeId) {
+      effectiveStoreId = Number(meter.storeId);
+    }
+  }
+
+  if (effectiveStoreId !== null) {
+    const store = await findStoreByIdInDb(effectiveStoreId);
+    if (!store) {
+      throw new Error('Магазин не знайдено.');
+    }
+  }
+
+  const rateLabel = String(input.rateLabel ?? '').trim() || null;
+  const includesVat = input.includesVat === false ? 0 : 1;
+
+  if (input.rateId) {
+    const rateId = Number(input.rateId);
+    if (!Number.isInteger(rateId) || rateId <= 0) {
+      throw new Error('Некоректний тариф.');
+    }
+
+    await pool.query(
+      `
+        UPDATE utility_meter_rates
+        SET
+          meter_point_id = ?,
+          store_id = ?,
+          utility_type = ?,
+          period_month = ?,
+          rate = ?,
+          rate_label = ?,
+          includes_vat = ?
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [meterPointId, effectiveStoreId, utilityType, periodMonth, rate, rateLabel, includesVat, rateId]
+    );
+
+    const [rows] = await pool.query<RateRow[]>(
+      `
+        SELECT
+          r.*,
+          p.meter_number,
+          p.utility_label,
+          p.tenant_name,
+          s.store_code,
+          s.name AS store_name,
+          s.city AS store_city,
+          s.address_line
+        FROM utility_meter_rates r
+        LEFT JOIN utility_meter_points p ON p.id = r.meter_point_id
+        LEFT JOIN stores s ON s.id = COALESCE(r.store_id, p.store_id)
+        WHERE r.id = ?
+        LIMIT 1
+      `,
+      [rateId]
+    );
+    if (!rows[0]) throw new Error('Не вдалося оновити тариф.');
+    return mapUtilityMeterRate(rows[0]);
+  }
+
+  await pool.query(
+    `
+      INSERT INTO utility_meter_rates (
+        meter_point_id, store_id, utility_type, period_month, rate, rate_label, includes_vat
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        rate = VALUES(rate),
+        rate_label = VALUES(rate_label),
+        includes_vat = VALUES(includes_vat)
+    `,
+    [meterPointId, effectiveStoreId, utilityType, periodMonth, rate, rateLabel, includesVat]
+  );
+
+  const [rows] = await pool.query<RateRow[]>(
+    `
+      SELECT
+        r.*,
+        p.meter_number,
+        p.utility_label,
+        p.tenant_name,
+        s.store_code,
+        s.name AS store_name,
+        s.city AS store_city,
+        s.address_line
+      FROM utility_meter_rates r
+      LEFT JOIN utility_meter_points p ON p.id = r.meter_point_id
+      LEFT JOIN stores s ON s.id = COALESCE(r.store_id, p.store_id)
+      WHERE ((r.meter_point_id <=> ?) AND (r.store_id <=> ?) AND r.utility_type = ? AND r.period_month = ?)
+      LIMIT 1
+    `,
+    [meterPointId, effectiveStoreId, utilityType, periodMonth]
+  );
+  if (!rows[0]) throw new Error('Не вдалося зберегти тариф.');
+  return mapUtilityMeterRate(rows[0]);
+}
+
+export async function deleteUtilityMeterRateInDb(input: { rateId: string | number }) {
+  await ensureUtilityMeteringSchema();
+  const rateId = Number(input.rateId);
+  if (!Number.isInteger(rateId) || rateId <= 0) {
+    throw new Error('Некоректний тариф.');
+  }
+
+  const pool = getDbPool();
+  const [result] = await pool.query<ResultSetHeader>(
+    `
+      DELETE FROM utility_meter_rates
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [rateId]
+  );
+
+  if (result.affectedRows === 0) {
+    throw new Error('Тариф не знайдено.');
+  }
+
+  return { deleted: true };
 }
 
 export async function listUtilityMeterReviewInDb(input: {
@@ -875,7 +1152,7 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
         : input.baselineValue ?? input.point.initialReadingValue,
     currentValue: Number(reading.reading_value),
     coefficient: input.point.coefficient,
-    rate: rateRows[0] ? Number(rateRows[0].rate) : undefined,
+    rate: rateRows[0] ? Number(rateRows[0].rate) : input.point.defaultRate,
     recentConsumptions: recentRows.map((row) => Number(row.consumption)).filter(Number.isFinite)
   });
 
@@ -943,7 +1220,7 @@ export async function createUtilityMeterReadingInDb(input: {
   const previousValueOverride =
     input.previousValueOverride == null ? undefined : Number(input.previousValueOverride);
   if (previousValueOverride !== undefined && (!Number.isFinite(previousValueOverride) || previousValueOverride < 0)) {
-    throw new Error('Початковий або попередній показник має бути невід’ємним числом.');
+    throw new Error("Початковий або попередній показник має бути невід'ємним числом.");
   }
 
   const periodMonth = periodMonthFromDate(input.readingDate);
