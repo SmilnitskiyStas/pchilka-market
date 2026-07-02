@@ -103,6 +103,10 @@ export default function AdminUtilityMeterRatesPage() {
     () => activeStores.find((store) => store.id === selectedStoreId) ?? null,
     [activeStores, selectedStoreId]
   );
+  const selectedMeter = useMemo(
+    () => meters.find((meter) => meter.id === form.meterPointId) ?? null,
+    [meters, form.meterPointId]
+  );
 
   async function loadStores() {
     const response = await fetch('/api/admin/utility-meters/stores', { cache: 'no-store' });
@@ -159,6 +163,12 @@ export default function AdminUtilityMeterRatesPage() {
       setError(nextError instanceof Error ? nextError.message : 'Не вдалося завантажити лічильники.');
     });
   }, [selectedStoreId, periodMonth]);
+
+  useEffect(() => {
+    if (form.scope !== 'meter' || !selectedMeter) return;
+    if (form.utilityType === selectedMeter.utilityType) return;
+    setForm((current) => ({ ...current, utilityType: selectedMeter.utilityType }));
+  }, [form.scope, form.utilityType, selectedMeter]);
 
   function resetForm(nextPeriodMonth = periodMonth) {
     setEditingRateId('');
@@ -347,6 +357,7 @@ export default function AdminUtilityMeterRatesPage() {
                   value={form.utilityType}
                   onChange={(event) => setForm((current) => ({ ...current, utilityType: event.target.value as UtilityType }))}
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                  disabled={form.scope === 'meter' && Boolean(selectedMeter)}
                 >
                   {UTILITY_TYPE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -364,7 +375,11 @@ export default function AdminUtilityMeterRatesPage() {
                     setForm((current) => ({
                       ...current,
                       scope: event.target.value as 'store' | 'meter',
-                      meterPointId: event.target.value === 'store' ? '' : current.meterPointId
+                      meterPointId: event.target.value === 'store' ? '' : current.meterPointId,
+                      utilityType:
+                        event.target.value === 'meter' && current.meterPointId
+                          ? (meters.find((meter) => meter.id === current.meterPointId)?.utilityType ?? current.utilityType)
+                          : current.utilityType
                     }))
                   }
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
@@ -379,7 +394,14 @@ export default function AdminUtilityMeterRatesPage() {
                   Лічильник
                   <select
                     value={form.meterPointId}
-                    onChange={(event) => setForm((current) => ({ ...current, meterPointId: event.target.value }))}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        meterPointId: event.target.value,
+                        utilityType:
+                          meters.find((meter) => meter.id === event.target.value)?.utilityType ?? current.utilityType
+                      }))
+                    }
                     className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
                     required
                   >
@@ -390,6 +412,11 @@ export default function AdminUtilityMeterRatesPage() {
                       </option>
                     ))}
                   </select>
+                  {selectedMeter ? (
+                    <div className="mt-2 text-xs font-medium text-slate-500">
+                      Тип послуги для цього лічильника буде використано автоматично.
+                    </div>
+                  ) : null}
                 </label>
               ) : null}
 

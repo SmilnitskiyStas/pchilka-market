@@ -768,7 +768,7 @@ async function recalculateUtilityChargesForRateScopeInDb(input: {
 
 export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): Promise<UtilityMeterRateRecord> {
   await ensureUtilityMeteringSchema();
-  const utilityType = String(input.utilityType ?? '') as UtilityType;
+  let utilityType = String(input.utilityType ?? '') as UtilityType;
   if (!ALLOWED_UTILITY_TYPES.has(utilityType)) {
     throw new Error('Оберіть коректний тип комунальної послуги.');
   }
@@ -812,6 +812,7 @@ export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): 
     if (!meter) {
       throw new Error('Лічильник не знайдено.');
     }
+    utilityType = meter.utilityType;
     if (!effectiveStoreId && meter.storeId) {
       effectiveStoreId = Number(meter.storeId);
     }
