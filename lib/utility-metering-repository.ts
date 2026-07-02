@@ -130,7 +130,6 @@ function toIsoDate(value: Date | string | null | undefined) {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   return String(value).slice(0, 10);
 }
-
 function toNumberOrUndefined(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === '') return undefined;
   const parsed = Number(value);
@@ -709,6 +708,64 @@ export async function listUtilityMeterRatesInDb(input?: {
   return rows.map(mapUtilityMeterRate);
 }
 
+async function recalculateUtilityChargesForRateScopeInDb(input: {
+  periodMonth: string;
+  utilityType: UtilityType;
+  storeId?: number | null;
+  meterPointId?: number | null;
+}) {
+  const pool = getDbPool();
+  const conn = await pool.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const conditions = ['p.utility_type = ?', 'r.period_month >= ?'];
+    const params: Array<string | number> = [input.utilityType, input.periodMonth];
+
+    if (input.meterPointId != null) {
+      conditions.push('p.id = ?');
+      params.push(input.meterPointId);
+    } else if (input.storeId != null) {
+      conditions.push('p.store_id = ?');
+      params.push(input.storeId);
+    }
+
+    const [rows] = await conn.query<Array<MeterPointRow & { reading_id: number }>>(
+      `
+        SELECT
+          p.*,
+          r.id AS reading_id
+        FROM utility_meter_readings r
+        INNER JOIN utility_meter_points p ON p.id = r.meter_point_id
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY p.id ASC, r.reading_date ASC, r.id ASC
+      `,
+      params
+    );
+
+    for (const row of rows) {
+      const point = mapMeterPoint(row);
+      const pointStoreId = Number(point.storeId ?? input.storeId ?? 0);
+      if (!Number.isInteger(pointStoreId) || pointStoreId <= 0) continue;
+
+      await calculateAndSaveUtilityChargeForReadingInDb(conn, {
+        point,
+        storeId: pointStoreId,
+        readingId: Number(row.reading_id)
+      });
+    }
+
+    await conn.commit();
+    return { recalculated: rows.length };
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
 export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): Promise<UtilityMeterRateRecord> {
   await ensureUtilityMeteringSchema();
   const utilityType = String(input.utilityType ?? '') as UtilityType;
@@ -813,6 +870,12 @@ export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): 
       [rateId]
     );
     if (!rows[0]) throw new Error('Не вдалося оновити тариф.');
+    await recalculateUtilityChargesForRateScopeInDb({
+      periodMonth,
+      utilityType,
+      storeId: effectiveStoreId,
+      meterPointId
+    });
     return mapUtilityMeterRate(rows[0]);
   }
 
@@ -850,6 +913,12 @@ export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): 
     [meterPointId, effectiveStoreId, utilityType, periodMonth]
   );
   if (!rows[0]) throw new Error('Не вдалося зберегти тариф.');
+  await recalculateUtilityChargesForRateScopeInDb({
+    periodMonth,
+    utilityType,
+    storeId: effectiveStoreId,
+    meterPointId
+  });
   return mapUtilityMeterRate(rows[0]);
 }
 
@@ -861,6 +930,20 @@ export async function deleteUtilityMeterRateInDb(input: { rateId: string | numbe
   }
 
   const pool = getDbPool();
+  const [existingRows] = await pool.query<RateRow[]>(
+    `
+      SELECT *
+      FROM utility_meter_rates
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [rateId]
+  );
+  const existingRate = existingRows[0];
+  if (!existingRate) {
+    throw new Error('Тариф не знайдено.');
+  }
+
   const [result] = await pool.query<ResultSetHeader>(
     `
       DELETE FROM utility_meter_rates
@@ -874,9 +957,15 @@ export async function deleteUtilityMeterRateInDb(input: { rateId: string | numbe
     throw new Error('Тариф не знайдено.');
   }
 
+  await recalculateUtilityChargesForRateScopeInDb({
+    periodMonth: toIsoDate(existingRate.period_month),
+    utilityType: existingRate.utility_type,
+    storeId: existingRate.store_id,
+    meterPointId: existingRate.meter_point_id
+  });
+
   return { deleted: true };
 }
-
 export async function listUtilityMeterReviewInDb(input: {
   periodMonth: string;
   storeId?: string | number | null;
