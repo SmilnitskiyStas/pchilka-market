@@ -8,6 +8,7 @@ export type UtilityChargeInput = {
   rate?: number | null;
   expectedAmount?: number | null;
   recentConsumptions?: number[];
+  periodMonth?: string | null;
 };
 
 export type UtilityChargeCalculation = {
@@ -42,6 +43,13 @@ export function roundMoney(value: number) {
 
 function finiteNumber(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function formatPeriodMonthLabel(value: string | null | undefined) {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})/.exec(value);
+  if (!match) return value;
+  return `${match[1]}-${match[2]}`;
 }
 
 export function calculateUtilityCharge(input: UtilityChargeInput): UtilityChargeCalculation {
@@ -85,7 +93,12 @@ export function calculateUtilityCharge(input: UtilityChargeInput): UtilityCharge
   }
 
   if (rate === undefined && input.utilityType !== 'other') {
-    validationMessages.push('Не знайдено тариф для періоду.');
+    const periodLabel = formatPeriodMonthLabel(input.periodMonth);
+    validationMessages.push(
+      periodLabel
+        ? `Не знайдено тариф для періоду ${periodLabel}. Додайте тариф для цього лічильника або магазину на цей місяць чи раніше.`
+        : 'Не знайдено тариф для періоду.'
+    );
   }
 
   const amount = consumption !== undefined && consumption >= 0 && rate !== undefined ? roundMoney(consumption * rate) : undefined;

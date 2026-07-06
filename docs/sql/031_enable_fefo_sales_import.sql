@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS inventory_sale_import_rows (
   sale_source VARCHAR(80) NOT NULL DEFAULT 'pos-xlsx',
   external_sale_id VARCHAR(255) NOT NULL,
   file_name VARCHAR(255) NULL,
-  row_number INT NOT NULL DEFAULT 0,
+  `row_number` INT NOT NULL DEFAULT 0,
   store_label VARCHAR(255) NULL,
   cash_register VARCHAR(80) NULL,
   receipt_number VARCHAR(80) NULL,

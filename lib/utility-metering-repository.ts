@@ -1243,7 +1243,8 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
     currentValue: Number(reading.reading_value),
     coefficient: input.point.coefficient,
     rate: rateRows[0] ? Number(rateRows[0].rate) : input.point.defaultRate,
-    recentConsumptions: recentRows.map((row) => Number(row.consumption)).filter(Number.isFinite)
+    recentConsumptions: recentRows.map((row) => Number(row.consumption)).filter(Number.isFinite),
+    periodMonth: toIsoDate(reading.period_month)
   });
 
   await conn.query(

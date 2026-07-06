@@ -44,6 +44,38 @@ type BatchesPayload = {
   error?: string;
 };
 type AnalyticsPayload = { ok?: boolean; metrics?: InventoryAnalyticsMetrics; error?: string };
+type StoreAssortmentSummary = {
+  totalRows: number;
+  presentRows: number;
+  matchedRows: number;
+  unmatchedRows: number;
+  completionPercent: number;
+  quantityTotal: number;
+};
+type StoreAssortmentItem = {
+  id: string;
+  storeId: string;
+  productId: string;
+  article: string;
+  barcode: string;
+  productName: string;
+  unitsOfMeasurement: string;
+  quantity: number | null;
+  isPresent: boolean;
+  matchStatus: 'matched' | 'unmatched';
+  sourceKind: 'import' | 'manual';
+  notes: string;
+  importedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+type StoreAssortmentPayload = {
+  ok?: boolean;
+  items?: StoreAssortmentItem[];
+  item?: StoreAssortmentItem;
+  summary?: StoreAssortmentSummary;
+  error?: string;
+};
 type DuplicateBatchConflict = {
   id: string;
   productName: string;
@@ -876,6 +908,23 @@ export default function AdminInventoryManager({
   const [analyticsStoreId, setAnalyticsStoreId] = useState('');
   const [analyticsDateFrom, setAnalyticsDateFrom] = useState('');
   const [analyticsDateTo, setAnalyticsDateTo] = useState('');
+  const [storeAssortmentItems, setStoreAssortmentItems] = useState<StoreAssortmentItem[]>([]);
+  const [storeAssortmentSummary, setStoreAssortmentSummary] = useState<StoreAssortmentSummary | null>(null);
+  const [storeAssortmentQuery, setStoreAssortmentQuery] = useState('');
+  const [storeAssortmentPresentFilter, setStoreAssortmentPresentFilter] = useState<'all' | 'present' | 'missing'>('all');
+  const [storeAssortmentMatchFilter, setStoreAssortmentMatchFilter] = useState<'all' | 'matched' | 'unmatched'>('all');
+  const [storeAssortmentImportFile, setStoreAssortmentImportFile] = useState<File | null>(null);
+  const [isLoadingStoreAssortment, setIsLoadingStoreAssortment] = useState(false);
+  const [isImportingStoreAssortment, setIsImportingStoreAssortment] = useState(false);
+  const [savingStoreAssortmentItemId, setSavingStoreAssortmentItemId] = useState('');
+  const [storeAssortmentQuantityDrafts, setStoreAssortmentQuantityDrafts] = useState<Record<string, string>>({});
+  const [storeAssortmentPresenceDrafts, setStoreAssortmentPresenceDrafts] = useState<Record<string, boolean>>({});
+  const [storeAssortmentNoteDrafts, setStoreAssortmentNoteDrafts] = useState<Record<string, string>>({});
+  const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
+  const [catalogSearchResults, setCatalogSearchResults] = useState<InventoryProductRecord[]>([]);
+  const [selectedCatalogProductId, setSelectedCatalogProductId] = useState('');
+  const [manualStoreProductQuantity, setManualStoreProductQuantity] = useState('');
+  const [isSavingManualStoreProduct, setIsSavingManualStoreProduct] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
@@ -906,6 +955,213 @@ export default function AdminInventoryManager({
       setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити список товарів.');
     } finally {
       setIsLoadingProducts(false);
+    }
+  }
+
+  function syncStoreAssortmentDrafts(items: StoreAssortmentItem[]) {
+    setStoreAssortmentQuantityDrafts(
+      Object.fromEntries(items.map((item) => [item.id, item.quantity == null ? '' : String(item.quantity)]))
+    );
+    setStoreAssortmentPresenceDrafts(Object.fromEntries(items.map((item) => [item.id, item.isPresent])));
+    setStoreAssortmentNoteDrafts(Object.fromEntries(items.map((item) => [item.id, item.notes || ''])));
+  }
+
+  async function loadStoreAssortment(options?: {
+    storeId?: string;
+    query?: string;
+    present?: 'all' | 'present' | 'missing';
+    status?: 'all' | 'matched' | 'unmatched';
+  }) {
+    const storeId = options?.storeId ?? analyticsStoreId;
+    if (!storeId) {
+      setStoreAssortmentItems([]);
+      setStoreAssortmentSummary(null);
+      syncStoreAssortmentDrafts([]);
+      return;
+    }
+
+    setIsLoadingStoreAssortment(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('storeId', storeId);
+      const nextQuery = options?.query ?? storeAssortmentQuery;
+      const nextPresent = options?.present ?? storeAssortmentPresentFilter;
+      const nextStatus = options?.status ?? storeAssortmentMatchFilter;
+      if (nextQuery.trim()) params.set('q', nextQuery.trim());
+      if (nextPresent !== 'all') params.set('present', nextPresent);
+      if (nextStatus !== 'all') params.set('status', nextStatus);
+
+      const response = await fetch(`/api/admin/inventory/store-assortment?${params.toString()}`, { cache: 'no-store' });
+      const payload = (await response.json()) as StoreAssortmentPayload;
+      if (!response.ok || !payload.ok || !Array.isArray(payload.items)) {
+        throw new Error(payload.error || 'Не вдалося завантажити асортимент магазину.');
+      }
+
+      setStoreAssortmentItems(payload.items);
+      setStoreAssortmentSummary(payload.summary ?? null);
+      syncStoreAssortmentDrafts(payload.items);
+    } catch (loadError) {
+      setStoreAssortmentItems([]);
+      setStoreAssortmentSummary(null);
+      syncStoreAssortmentDrafts([]);
+      setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити асортимент магазину.');
+    } finally {
+      setIsLoadingStoreAssortment(false);
+    }
+  }
+
+  async function searchCatalogProducts(query: string) {
+    const trimmed = query.trim();
+    setSelectedCatalogProductId('');
+
+    if (trimmed.length < 2) {
+      setCatalogSearchResults([]);
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams();
+      params.set('q', trimmed);
+      params.set('page', '1');
+      params.set('limit', '12');
+      const response = await fetch(`/api/admin/inventory/products?${params.toString()}`, { cache: 'no-store' });
+      const payload = (await response.json()) as ProductsPayload;
+      if (!response.ok || !payload.ok || !Array.isArray(payload.products)) {
+        throw new Error(payload.error || 'Не вдалося знайти товари каталогу.');
+      }
+      setCatalogSearchResults(payload.products);
+    } catch (searchError) {
+      setCatalogSearchResults([]);
+      setError(searchError instanceof Error ? searchError.message : 'Не вдалося знайти товари каталогу.');
+    }
+  }
+
+  async function handleStoreAssortmentImport() {
+    if (!analyticsStoreId) {
+      setError('Спершу вибери магазин для асортименту.');
+      return;
+    }
+    if (!storeAssortmentImportFile) {
+      setError('Вибери файл Excel для імпорту.');
+      return;
+    }
+
+    setIsImportingStoreAssortment(true);
+    setError('');
+    setSuccess('');
+    try {
+      const formData = new FormData();
+      formData.set('storeId', analyticsStoreId);
+      formData.set('file', storeAssortmentImportFile);
+
+      const response = await fetch('/api/admin/inventory/store-assortment', {
+        method: 'POST',
+        body: formData
+      });
+      const payload = (await response.json()) as StoreAssortmentPayload & {
+        summary?: StoreAssortmentSummary & { importedCount?: number; matchedCount?: number; unmatchedCount?: number };
+      };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Не вдалося імпортувати асортимент магазину.');
+      }
+
+      setStoreAssortmentImportFile(null);
+      setSuccess('Файл асортименту успішно імпортовано.');
+      await loadStoreAssortment({ storeId: analyticsStoreId });
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : 'Не вдалося імпортувати асортимент магазину.');
+    } finally {
+      setIsImportingStoreAssortment(false);
+    }
+  }
+
+  async function saveStoreAssortmentItem(itemId: string) {
+    if (!analyticsStoreId) return;
+
+    const quantityRaw = (storeAssortmentQuantityDrafts[itemId] ?? '').trim();
+    const quantity = quantityRaw ? Number(quantityRaw.replace(',', '.')) : null;
+    if (quantityRaw && !Number.isFinite(quantity)) {
+      setError('Кількість товару має бути числом.');
+      return;
+    }
+
+    setSavingStoreAssortmentItemId(itemId);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await fetch('/api/admin/inventory/store-assortment', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storeId: analyticsStoreId,
+          itemId,
+          quantity,
+          isPresent: Boolean(storeAssortmentPresenceDrafts[itemId]),
+          notes: storeAssortmentNoteDrafts[itemId] ?? ''
+        })
+      });
+      const payload = (await response.json()) as StoreAssortmentPayload;
+      if (!response.ok || !payload.ok || !payload.item) {
+        throw new Error(payload.error || 'Не вдалося зберегти товар магазину.');
+      }
+
+      setStoreAssortmentItems((prev) => prev.map((item) => (item.id === payload.item?.id ? (payload.item as StoreAssortmentItem) : item)));
+      setStoreAssortmentSummary(payload.summary ?? null);
+      setSuccess('Товар магазину оновлено.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Не вдалося зберегти товар магазину.');
+    } finally {
+      setSavingStoreAssortmentItemId('');
+    }
+  }
+
+  async function addManualStoreProduct() {
+    if (!analyticsStoreId) {
+      setError('Спершу вибери магазин для асортименту.');
+      return;
+    }
+    if (!selectedCatalogProductId) {
+      setError('Вибери товар каталогу для додавання у магазин.');
+      return;
+    }
+
+    const quantity = manualStoreProductQuantity.trim()
+      ? Number(manualStoreProductQuantity.trim().replace(',', '.'))
+      : null;
+    if (manualStoreProductQuantity.trim() && !Number.isFinite(quantity)) {
+      setError('Кількість товару має бути числом.');
+      return;
+    }
+
+    setIsSavingManualStoreProduct(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await fetch('/api/admin/inventory/store-assortment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storeId: analyticsStoreId,
+          productId: selectedCatalogProductId,
+          quantity,
+          isPresent: true
+        })
+      });
+      const payload = (await response.json()) as StoreAssortmentPayload;
+      if (!response.ok || !payload.ok || !payload.item) {
+        throw new Error(payload.error || 'Не вдалося додати товар у магазин.');
+      }
+
+      setManualStoreProductQuantity('');
+      setCatalogSearchQuery('');
+      setCatalogSearchResults([]);
+      setSelectedCatalogProductId('');
+      setSuccess('Товар додано до асортименту магазину.');
+      await loadStoreAssortment({ storeId: analyticsStoreId });
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Не вдалося додати товар у магазин.');
+    } finally {
+      setIsSavingManualStoreProduct(false);
     }
   }
 
@@ -1326,6 +1582,26 @@ export default function AdminInventoryManager({
       cancelled = true;
     };
   }, [activeSection, analyticsDateFrom, analyticsDateTo, analyticsStoreId]);
+
+  useEffect(() => {
+    if (activeSection !== 'analytics') return;
+    void loadStoreAssortment();
+  }, [activeSection, analyticsStoreId, storeAssortmentQuery, storeAssortmentPresentFilter, storeAssortmentMatchFilter]);
+
+  useEffect(() => {
+    if (activeSection !== 'analytics') return;
+    const trimmed = catalogSearchQuery.trim();
+    if (trimmed.length < 2) {
+      setCatalogSearchResults([]);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void searchCatalogProducts(trimmed);
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeSection, catalogSearchQuery]);
 
   useEffect(() => {
     void loadProducts();
@@ -4137,6 +4413,282 @@ export default function AdminInventoryManager({
               </div>
             )}
           </div>
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand">Store assortment</p>
+              <h3 className="mt-1 text-lg font-bold text-slate-900">Заповненість товарів по магазину</h3>
+              <p className="mt-2 max-w-3xl text-sm text-slate-600">
+                Тут ми працюємо вже не з усім каталогом, а з фактичним асортиментом конкретного магазину:
+                імпортуємо файл, позначаємо присутні товари і бачимо, який відсоток позицій уже привʼязано до програми.
+              </p>
+            </div>
+            {analyticsStoreId ? (
+              <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                Магазин:{' '}
+                {(() => {
+                  const store = stores.find((entry) => String(entry.id) === analyticsStoreId);
+                  return store ? storeLabel(store) : 'не знайдено';
+                })()}
+              </span>
+            ) : null}
+          </div>
+
+          {!analyticsStoreId ? (
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
+              Вибери магазин у верхньому фільтрі аналітики, щоб завантажити асортимент, позначати товари магазину і
+              бачити відсоток заповненості.
+            </div>
+          ) : (
+            <>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Усього рядків</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{storeAssortmentSummary?.totalRows ?? 0}</p>
+                  <p className="mt-1 text-xs text-slate-500">Усі знайдені позиції магазину</p>
+                </article>
+                <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Присутні у магазині</p>
+                  <p className="mt-2 text-2xl font-bold text-slate-900">{storeAssortmentSummary?.presentRows ?? 0}</p>
+                  <p className="mt-1 text-xs text-slate-500">Активні товари поточного асортименту</p>
+                </article>
+                <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Вже в програмі</p>
+                  <p className="mt-2 text-2xl font-bold text-emerald-700">{storeAssortmentSummary?.matchedRows ?? 0}</p>
+                  <p className="mt-1 text-xs text-slate-500">Позиції, що співпали з каталогом `Products`</p>
+                </article>
+                <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Заповненість</p>
+                  <p className="mt-2 text-2xl font-bold text-brand">{storeAssortmentSummary?.completionPercent ?? 0}%</p>
+                  <p className="mt-1 text-xs text-slate-500">Частка присутніх товарів, уже привʼязаних до каталогу</p>
+                </article>
+              </div>
+
+              <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-900">Завантажити товари магазину</h4>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Підтримується `.xlsx` файл з колонками на кшталт артикул, штрихкод, назва, одиниця, кількість.
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                      Кількість: {storeAssortmentSummary?.quantityTotal ?? 0}
+                    </span>
+                  </div>
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <input
+                      type="file"
+                      accept=".xlsx"
+                      onChange={(event) => setStoreAssortmentImportFile(event.target.files?.[0] ?? null)}
+                      className="block w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleStoreAssortmentImport()}
+                      disabled={isImportingStoreAssortment || !storeAssortmentImportFile}
+                      className="rounded-xl bg-brand px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isImportingStoreAssortment ? 'Імпорт...' : 'Завантажити файл'}
+                    </button>
+                  </div>
+                  {storeAssortmentImportFile ? (
+                    <p className="mt-3 text-xs text-slate-500">Обрано файл: {storeAssortmentImportFile.name}</p>
+                  ) : null}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900">Додати товар магазину вручну</h4>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Знайди товар у каталозі `Products` і познач його як присутній у вибраному магазині.
+                    </p>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    <input
+                      value={catalogSearchQuery}
+                      onChange={(event) => setCatalogSearchQuery(event.target.value)}
+                      placeholder="Пошук по назві, артикулу або штрихкоду"
+                      className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+                    />
+                    {catalogSearchResults.length > 0 ? (
+                      <div className="max-h-48 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+                        {catalogSearchResults.map((product) => (
+                          <button
+                            key={product.id}
+                            type="button"
+                            onClick={() => setSelectedCatalogProductId(String(product.id))}
+                            className={`block w-full rounded-xl border px-3 py-2 text-left transition ${
+                              selectedCatalogProductId === String(product.id)
+                                ? 'border-brand bg-white'
+                                : 'border-transparent bg-white hover:border-slate-300'
+                            }`}
+                          >
+                            <p className="text-sm font-semibold text-slate-900">{product.productName}</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Артикул: {product.article || '—'} • Штрихкод: {product.barcode || product.barcodes?.[0] || '—'}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : catalogSearchQuery.trim().length >= 2 ? (
+                      <p className="text-xs text-slate-500">Нічого не знайдено в каталозі.</p>
+                    ) : null}
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        value={manualStoreProductQuantity}
+                        onChange={(event) => setManualStoreProductQuantity(event.target.value)}
+                        placeholder="Кількість"
+                        className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void addManualStoreProduct()}
+                        disabled={isSavingManualStoreProduct || !selectedCatalogProductId}
+                        className="rounded-xl border border-slate-300 bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isSavingManualStoreProduct ? 'Додаю...' : 'Додати в магазин'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(180px,220px)_minmax(180px,220px)_auto]">
+                  <input
+                    value={storeAssortmentQuery}
+                    onChange={(event) => setStoreAssortmentQuery(event.target.value)}
+                    placeholder="Пошук по назві, артикулу або штрихкоду"
+                    className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+                  />
+                  <select
+                    value={storeAssortmentPresentFilter}
+                    onChange={(event) => setStoreAssortmentPresentFilter(event.target.value as 'all' | 'present' | 'missing')}
+                    className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+                  >
+                    <option value="all">Усі товари магазину</option>
+                    <option value="present">Лише присутні</option>
+                    <option value="missing">Приховані / відсутні</option>
+                  </select>
+                  <select
+                    value={storeAssortmentMatchFilter}
+                    onChange={(event) => setStoreAssortmentMatchFilter(event.target.value as 'all' | 'matched' | 'unmatched')}
+                    className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+                  >
+                    <option value="all">Усі статуси</option>
+                    <option value="matched">Лише привʼязані</option>
+                    <option value="unmatched">Лише не привʼязані</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void loadStoreAssortment()}
+                    className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Оновити
+                  </button>
+                </div>
+
+                {isLoadingStoreAssortment ? (
+                  <p className="mt-4 text-sm text-slate-600">Завантажую асортимент магазину...</p>
+                ) : storeAssortmentItems.length === 0 ? (
+                  <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+                    Для цього магазину ще немає асортименту. Завантаж файл або додай перший товар вручну.
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {storeAssortmentItems.map((item) => {
+                      const isSavingRow = savingStoreAssortmentItemId === item.id;
+                      const selectedCatalogProduct = selectedCatalogProductId && item.productId === selectedCatalogProductId;
+                      return (
+                        <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h4 className="text-sm font-semibold text-slate-900">{item.productName || 'Без назви'}</h4>
+                                <span
+                                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                    item.matchStatus === 'matched'
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : 'bg-amber-100 text-amber-700'
+                                  }`}
+                                >
+                                  {item.matchStatus === 'matched' ? 'У програмі' : 'Не привʼязано'}
+                                </span>
+                                <span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                                  {item.sourceKind === 'import' ? 'Імпорт' : 'Вручну'}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Артикул: {item.article || '—'} • Штрихкод: {item.barcode || '—'} • Од.: {item.unitsOfMeasurement || '—'}
+                              </p>
+                            </div>
+                            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(storeAssortmentPresenceDrafts[item.id])}
+                                onChange={(event) =>
+                                  setStoreAssortmentPresenceDrafts((prev) => ({ ...prev, [item.id]: event.target.checked }))
+                                }
+                                className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
+                              />
+                              Є в магазині
+                            </label>
+                          </div>
+
+                          <div className="mt-4 grid gap-3 lg:grid-cols-[140px_minmax(220px,1fr)_auto]">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.001"
+                              value={storeAssortmentQuantityDrafts[item.id] ?? ''}
+                              onChange={(event) =>
+                                setStoreAssortmentQuantityDrafts((prev) => ({ ...prev, [item.id]: event.target.value }))
+                              }
+                              placeholder="Кількість"
+                              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+                            />
+                            <input
+                              value={storeAssortmentNoteDrafts[item.id] ?? ''}
+                              onChange={(event) =>
+                                setStoreAssortmentNoteDrafts((prev) => ({ ...prev, [item.id]: event.target.value }))
+                              }
+                              placeholder="Нотатка по товару магазину"
+                              className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void saveStoreAssortmentItem(item.id)}
+                              disabled={isSavingRow}
+                              className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isSavingRow ? 'Зберігаю...' : 'Зберегти'}
+                            </button>
+                          </div>
+
+                          {item.matchStatus === 'unmatched' ? (
+                            <p className="mt-3 text-xs text-amber-700">
+                              Ця позиція ще не співпала з каталогом `Products`. Її можна враховувати в асортименті, але вона
+                              не потрапляє в заповненість як “товар уже додано до програми”.
+                            </p>
+                          ) : null}
+                          {selectedCatalogProduct ? (
+                            <p className="mt-3 text-xs text-slate-500">Обраний зараз у блоці ручного додавання товар каталогу збігається з цією позицією.</p>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </section>
       ) : null}
