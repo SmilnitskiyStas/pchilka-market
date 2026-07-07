@@ -4,6 +4,9 @@ import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin
 import {
   createUtilityMeterPointInDb,
   createUtilityMeterReadingInDb,
+  findUtilityMeterPointInDb,
+  listUtilityMeterRatesInDb,
+  listUtilityMeterReadingHistoryByMeterIdsInDb,
   listUtilityMetersForStoreInDb,
   setUtilityMeterPointActiveStateInDb,
   updateUtilityMeterPointInDb
@@ -16,7 +19,29 @@ export async function GET(request: Request) {
 
   try {
     const url = new URL(request.url);
+    const meterPointId = url.searchParams.get('meterPointId') ?? '';
     const storeId = url.searchParams.get('storeId') ?? '';
+
+    if (meterPointId) {
+      const meter = await findUtilityMeterPointInDb({ meterPointId });
+      if (!meter) {
+        return NextResponse.json({ ok: false, error: 'Лічильник не знайдено.' }, { status: 404 });
+      }
+
+      const historyByMeterId = await listUtilityMeterReadingHistoryByMeterIdsInDb({
+        meterPointIds: [meterPointId],
+        limitPerMeter: 60
+      });
+      const rates = await listUtilityMeterRatesInDb({ meterPointId });
+
+      return NextResponse.json({
+        ok: true,
+        meter,
+        history: historyByMeterId[String(meterPointId)] ?? [],
+        rates
+      });
+    }
+
     if (!storeId) {
       return NextResponse.json({ ok: false, error: 'Оберіть магазин.' }, { status: 400 });
     }

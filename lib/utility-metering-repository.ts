@@ -681,6 +681,27 @@ export async function listUtilityMetersForStoreInDb(input: {
   return rows.map(mapMeterPoint);
 }
 
+export async function findUtilityMeterPointInDb(input: {
+  meterPointId: string | number;
+}): Promise<UtilityMeterPointRecord | null> {
+  await ensureUtilityMeteringSchema();
+  const meterPointId = Number(input.meterPointId);
+  if (!Number.isFinite(meterPointId) || meterPointId <= 0) return null;
+
+  const pool = getDbPool();
+  const [rows] = await pool.query<MeterPointRow[]>(
+    `
+      SELECT *
+      FROM utility_meter_points
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [meterPointId]
+  );
+
+  return rows[0] ? mapMeterPoint(rows[0]) : null;
+}
+
 export async function listUtilityMeterRatesInDb(input?: {
   periodMonth?: string;
   storeId?: string | number | null;

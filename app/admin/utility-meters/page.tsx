@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 import type {
@@ -71,6 +72,25 @@ type MeterPointsPayload = {
   ok?: boolean;
   meters?: UtilityMeterPointRecord[];
   meter?: UtilityMeterPointRecord;
+  error?: string;
+};
+
+type UtilityMeterRateView = {
+  id: string;
+  meterPointId?: string;
+  storeId?: string;
+  utilityType: UtilityType;
+  periodMonth: string;
+  rate: number;
+  rateLabel: string;
+  includesVat: boolean;
+  meterLabel: string;
+  storeLabel: string;
+};
+
+type RatesPayload = {
+  ok?: boolean;
+  rates?: UtilityMeterRateView[];
   error?: string;
 };
 
@@ -184,6 +204,8 @@ export default function AdminUtilityMetersPage() {
   const [editingMeterId, setEditingMeterId] = useState('');
   const [updatingMeterId, setUpdatingMeterId] = useState('');
   const [isMeterFormOpen, setIsMeterFormOpen] = useState(false);
+  const [storeRates, setStoreRates] = useState<UtilityMeterRateView[]>([]);
+  const [isLoadingRates, setIsLoadingRates] = useState(false);
 
   const monthInputValue = useMemo(() => periodMonth.slice(0, 7), [periodMonth]);
   const activeStores = useMemo(() => stores.filter((store) => store.isActive), [stores]);
@@ -195,6 +217,9 @@ export default function AdminUtilityMetersPage() {
     () => storeMeters.find((meter) => meter.id === editingMeterId) ?? null,
     [storeMeters, editingMeterId]
   );
+  const activeStoreMeters = useMemo(() => storeMeters.filter((meter) => meter.isActive), [storeMeters]);
+  const hasConfiguredMeters = activeStoreMeters.length > 0;
+  const hasRatesForSelectedPeriod = storeRates.length > 0;
 
   async function loadStores() {
     try {
@@ -262,12 +287,43 @@ export default function AdminUtilityMetersPage() {
     }
   }
 
+  async function loadStoreRates(storeId: string, nextPeriod = periodMonth) {
+    if (!storeId) {
+      setStoreRates([]);
+      return;
+    }
+
+    setIsLoadingRates(true);
+    try {
+      const params = new URLSearchParams({ storeId, periodMonth: nextPeriod });
+      const response = await fetch(`/api/admin/utility-meters/rates?${params.toString()}`, {
+        cache: 'no-store'
+      });
+      const result = (await response.json()) as RatesPayload;
+      if (!response.ok || !result.ok) throw new Error(result.error || 'Не вдалося завантажити тарифи.');
+      setStoreRates(result.rates ?? []);
+    } catch {
+      setStoreRates([]);
+    } finally {
+      setIsLoadingRates(false);
+    }
+  }
+
   useEffect(() => {
     void loadStores();
     void loadReview();
     void loadMappings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!selectedStoreId) {
+      setStoreRates([]);
+      return;
+    }
+
+    void loadStoreRates(selectedStoreId, periodMonth);
+  }, [periodMonth, selectedStoreId]);
 
   async function saveMapping(group: MeterMappingGroup) {
     const storeId = mappingSelections[group.key] ?? '';
@@ -304,6 +360,7 @@ export default function AdminUtilityMetersPage() {
     setIsMeterFormOpen(false);
     void loadReview(periodMonth, storeId);
     void loadStoreMeters(storeId);
+    void loadStoreRates(storeId, periodMonth);
   }
 
   function startEditMeter(meter: UtilityMeterPointRecord) {
@@ -408,7 +465,17 @@ export default function AdminUtilityMetersPage() {
 
   async function openReadingsForm() {
     if (!selectedStoreId) {
-      setAccessLinkStatus('Оберіть магазин, для якого потрібно додати показники.');
+      setAccessLinkStatus('Спочатку оберіть магазин.');
+      return;
+    }
+
+    if (!hasConfiguredMeters) {
+      setAccessLinkStatus('Спочатку додайте хоча б один активний лічильник для цього магазину.');
+      return;
+    }
+
+    if (!hasRatesForSelectedPeriod) {
+      setAccessLinkStatus(`Спочатку додайте тариф для вибраного періоду ${periodMonth.slice(0, 7)}.`);
       return;
     }
 
@@ -426,7 +493,11 @@ export default function AdminUtilityMetersPage() {
       }
 
       window.open(result.url, '_blank', 'noopener,noreferrer');
-      setAccessLinkStatus(result.user?.name ? `Посилання створено для ${result.user.name}.` : 'Посилання створено.');
+      setAccessLinkStatus(
+        result.user?.name
+          ? `Відкрито персональне посилання на форму внесення показників для ${result.user.name}.`
+          : 'Відкрито персональне посилання на форму внесення показників.'
+      );
     } catch (error) {
       setAccessLinkStatus(error instanceof Error ? error.message : 'Не вдалося створити посилання для внесення показників.');
     } finally {
@@ -475,6 +546,13 @@ export default function AdminUtilityMetersPage() {
     periodMonth,
     ...(selectedStoreId ? { storeId: selectedStoreId } : {})
   }).toString()}`;
+  const ratesHref = `/admin/utility-meters/rates?${new URLSearchParams({
+    ...(selectedStoreId ? { storeId: selectedStoreId } : {}),
+    periodMonth
+  }).toString()}`;
+  const addMeterDisabled = !selectedStoreId;
+  const addRateDisabled = !selectedStoreId || !hasConfiguredMeters;
+  const addReadingsDisabled = !selectedStoreId || !hasConfiguredMeters || !hasRatesForSelectedPeriod || isCreatingAccessLink;
 
   return (
     <main className="min-h-screen w-full bg-slate-50 px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
@@ -709,38 +787,54 @@ export default function AdminUtilityMetersPage() {
                     Створюйте власні лічильники для вибраного магазину. Після створення вони одразу будуть доступні у формі внесення показників.
                   </p>
                 </div>
-                {selectedStoreId ? (
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingMeterId('');
-                        setMeterForm(EMPTY_METER_FORM);
-                        setMetersError('');
-                        setMetersStatus('');
-                        setIsMeterFormOpen(true);
-                      }}
-                      className="rounded-md bg-slate-950 px-3 py-2 text-sm font-semibold text-white"
-                    >
-                      Додати лічильник
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { void loadStoreMeters(selectedStoreId); }}
-                      className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
-                    >
-                      Оновити лічильники
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { void openReadingsForm(); }}
-                      className="rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={isCreatingAccessLink}
-                    >
-                      {isCreatingAccessLink ? 'Створення...' : 'Додати показники'}
-                    </button>
-                  </div>
-                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingMeterId('');
+                      setMeterForm(EMPTY_METER_FORM);
+                      setMetersError('');
+                      setMetersStatus('');
+                      setIsMeterFormOpen(true);
+                    }}
+                    disabled={addMeterDisabled}
+                    className="rounded-md bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    1. Додати лічильник
+                  </button>
+                  <a
+                    href={addRateDisabled ? undefined : ratesHref}
+                    aria-disabled={addRateDisabled}
+                    onClick={(event) => {
+                      if (addRateDisabled) {
+                        event.preventDefault();
+                      }
+                    }}
+                    className={`rounded-md px-3 py-2 text-sm font-semibold ${
+                      addRateDisabled
+                        ? 'cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400'
+                        : 'border border-slate-300 bg-white text-slate-900'
+                    }`}
+                  >
+                    2. Додати тариф
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => { if (selectedStoreId) void loadStoreMeters(selectedStoreId); }}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+                    disabled={!selectedStoreId}
+                  >
+                    Оновити лічильники
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void openReadingsForm(); }}
+                    className="rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={addReadingsDisabled}
+                  >
+                    {isCreatingAccessLink ? 'Створення...' : '3. Додати показники'}
+                  </button>
+                </div>
               </div>
 
               {!selectedStore ? (
@@ -749,6 +843,23 @@ export default function AdminUtilityMetersPage() {
                 </div>
               ) : (
                 <div className="mt-4 flex flex-col gap-5">
+                  <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <div className="font-semibold text-slate-900">Порядок дій</div>
+                    <div className="mt-1">
+                      1. Створіть лічильник. 2. Додайте тариф для періоду {periodMonth.slice(0, 7)}. 3. Після цього відкривайте форму внесення показників.
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                      <span className={hasConfiguredMeters ? 'font-semibold text-green-700' : 'font-semibold text-amber-700'}>
+                        Крок 1: {hasConfiguredMeters ? 'виконано' : 'очікує'}
+                      </span>
+                      <span className={hasRatesForSelectedPeriod ? 'font-semibold text-green-700' : 'font-semibold text-amber-700'}>
+                        Крок 2: {hasRatesForSelectedPeriod ? 'виконано' : isLoadingRates ? 'перевірка...' : 'очікує'}
+                      </span>
+                      <span className={!addReadingsDisabled ? 'font-semibold text-green-700' : 'font-semibold text-slate-500'}>
+                        Крок 3: {!addReadingsDisabled ? 'доступний' : 'заблоковано'}
+                      </span>
+                    </div>
+                  </div>
                   <div className="min-w-0">
                     {metersError ? (
                       <div className="mb-3 rounded-md bg-red-50 p-3 text-sm font-medium text-red-800 ring-1 ring-red-200">{metersError}</div>
@@ -779,7 +890,12 @@ export default function AdminUtilityMetersPage() {
                               return (
                                 <tr key={meter.id} className={meter.isActive ? '' : 'opacity-60'}>
                                   <td className="px-3 py-3 align-top">
-                                    <div className="font-medium">{meter.utilityLabel}</div>
+                                    <Link
+                                      href={`/admin/utility-meters/meters/${meter.id}`}
+                                      className="font-medium text-slate-900 underline-offset-2 hover:underline"
+                                    >
+                                      {meter.utilityLabel}
+                                    </Link>
                                     <div className="text-xs text-slate-500">{meter.meterNumber || 'Без номера'}</div>
                                   </td>
                                   <td className="px-3 py-3 align-top text-slate-700">{typeLabel}</td>
