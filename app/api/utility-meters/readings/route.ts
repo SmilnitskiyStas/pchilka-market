@@ -13,6 +13,7 @@ export async function POST(request: Request) {
     const meterPointId = String(body?.meterPointId ?? '');
     const readingDate = String(body?.readingDate ?? '');
     const readingValue = Number(body?.readingValue);
+    const clientMutationId = typeof body?.clientMutationId === 'string' ? body.clientMutationId : '';
     const previousValueOverride =
       body?.previousValueOverride == null || body?.previousValueOverride === ''
         ? undefined
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
       storeCode: store?.storeCode,
       readingDate,
       readingValue,
+      clientMutationId,
       previousValueOverride,
       submittedByUserId: user.id,
       submittedByName: `${user.surname} ${user.name}`.trim(),

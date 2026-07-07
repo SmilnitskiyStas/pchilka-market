@@ -47,6 +47,7 @@ type ReadingRow = RowDataPacket & {
   period_month: Date | string;
   reading_date: Date | string;
   reading_value: string | number;
+  client_mutation_id: string | null;
   previous_reading_id: number | null;
   submitted_by_user_id: number | null;
   submitted_by_name: string | null;
@@ -179,6 +180,24 @@ async function ensureUtilityMeteringSchema() {
           "ALTER TABLE utility_meter_points ADD COLUMN default_rate DECIMAL(18,6) NULL AFTER initial_reading_value"
         );
       }
+
+      const [readingMutationColumns] = await pool.query<Array<RowDataPacket & { Field: string }>>(
+        "SHOW COLUMNS FROM utility_meter_readings LIKE 'client_mutation_id'"
+      );
+      if (readingMutationColumns.length === 0) {
+        await pool.query(
+          "ALTER TABLE utility_meter_readings ADD COLUMN client_mutation_id VARCHAR(64) NULL AFTER reading_value"
+        );
+      }
+
+      const [readingMutationIndexes] = await pool.query<Array<RowDataPacket & { Key_name: string }>>(
+        "SHOW INDEX FROM utility_meter_readings WHERE Key_name = 'uniq_utility_meter_readings_client_mutation_id'"
+      );
+      if (readingMutationIndexes.length === 0) {
+        await pool.query(
+          "ALTER TABLE utility_meter_readings ADD UNIQUE KEY uniq_utility_meter_readings_client_mutation_id (client_mutation_id)"
+        );
+      }
     })().catch((error) => {
       utilityMeteringSchemaPromise = null;
       throw error;
@@ -220,6 +239,7 @@ function mapReading(row?: ReadingRow): UtilityMeterReadingRecord | undefined {
     periodMonth: toIsoDate(row.period_month),
     readingDate: toIsoDate(row.reading_date),
     readingValue: Number(row.reading_value),
+    clientMutationId: row.client_mutation_id ?? undefined,
     previousReadingId: row.previous_reading_id == null ? undefined : String(row.previous_reading_id),
     submittedByUserId: row.submitted_by_user_id == null ? undefined : String(row.submitted_by_user_id),
     submittedByName: row.submitted_by_name ?? '',
@@ -1102,50 +1122,54 @@ export async function listUtilityMeterReadingHistoryByMeterIdsInDb(input: {
         amount: string | number | null;
         validation_status: UtilityMeterChargeRecord['validationStatus'] | null;
         validation_messages: string | string[] | null;
+      } & {
+        client_mutation_id: string | null;
       }
     >
   >(
     `
-      SELECT *
-      FROM (
-        SELECT
-          r.id,
-          r.meter_point_id,
-          r.period_month AS reading_period_month,
-          r.reading_date,
-          r.reading_value,
-          r.previous_reading_id,
-          r.submitted_by_user_id,
-          r.submitted_by_name,
-          r.source_kind,
-          r.status,
-          c.id AS charge_id,
-          c.meter_point_id AS charge_meter_point_id,
-          c.reading_id,
-          c.period_month AS charge_period_month,
-          c.previous_value,
-          c.current_value,
-          c.consumption,
-          c.coefficient AS charge_coefficient,
-          c.rate,
-          c.amount,
-          c.validation_status,
-          c.validation_messages,
-          ROW_NUMBER() OVER (PARTITION BY r.meter_point_id ORDER BY r.reading_date DESC, r.id DESC) AS rn
-        FROM utility_meter_readings r
-        LEFT JOIN utility_meter_charges c ON c.reading_id = r.id
-        WHERE r.meter_point_id IN (${placeholders})
-      ) ranked
-      WHERE rn <= ?
+      SELECT
+        r.id,
+        r.meter_point_id,
+        r.period_month AS reading_period_month,
+        r.reading_date,
+        r.reading_value,
+        r.client_mutation_id,
+        r.previous_reading_id,
+        r.submitted_by_user_id,
+        r.submitted_by_name,
+        r.source_kind,
+        r.status,
+        c.id AS charge_id,
+        c.meter_point_id AS charge_meter_point_id,
+        c.reading_id,
+        c.period_month AS charge_period_month,
+        c.previous_value,
+        c.current_value,
+        c.consumption,
+        c.coefficient AS charge_coefficient,
+        c.rate,
+        c.amount,
+        c.validation_status,
+        c.validation_messages
+      FROM utility_meter_readings r
+      LEFT JOIN utility_meter_charges c ON c.reading_id = r.id
+      WHERE r.meter_point_id IN (${placeholders})
       ORDER BY meter_point_id ASC, reading_date DESC, id DESC
     `,
-    [...meterPointIds, limitPerMeter]
+    meterPointIds
   );
 
   const historyByMeterId: Record<string, UtilityMeterReadingHistoryItem[]> = {};
+  const countsByMeterId: Record<string, number> = {};
 
   for (const row of rows) {
     const meterPointId = String(row.meter_point_id);
+    const currentCount = countsByMeterId[meterPointId] ?? 0;
+    if (currentCount >= limitPerMeter) {
+      continue;
+    }
+    countsByMeterId[meterPointId] = currentCount + 1;
     historyByMeterId[meterPointId] ??= [];
     historyByMeterId[meterPointId].push({
       reading: mapReading({
@@ -1297,6 +1321,7 @@ export async function createUtilityMeterReadingInDb(input: {
   storeCode?: string;
   readingDate: string;
   readingValue: number;
+  clientMutationId?: string;
   previousValueOverride?: number | null;
   submittedByUserId?: string | number | null;
   submittedByName?: string;
@@ -1307,6 +1332,11 @@ export async function createUtilityMeterReadingInDb(input: {
   if (!Number.isFinite(meterPointId) || meterPointId <= 0) throw new Error('Некоректний лічильник.');
   if (!Number.isFinite(storeId) || storeId <= 0) throw new Error('Некоректний магазин.');
   if (!Number.isFinite(Number(input.readingValue))) throw new Error('Показник має бути числом.');
+
+  const clientMutationId = String(input.clientMutationId ?? '').trim();
+  if (clientMutationId && clientMutationId.length > 64) {
+    throw new Error('Некоректний ідентифікатор локального запису.');
+  }
 
   const previousValueOverride =
     input.previousValueOverride == null ? undefined : Number(input.previousValueOverride);
@@ -1349,16 +1379,41 @@ export async function createUtilityMeterReadingInDb(input: {
         pointFresh.initialReadingValue = previousValueOverride;
       }
 
+      if (clientMutationId) {
+        const [existingRows] = await conn.query<ReadingRow[]>(
+          `
+            SELECT *
+            FROM utility_meter_readings
+            WHERE client_mutation_id = ?
+            LIMIT 1
+          `,
+          [clientMutationId]
+        );
+        const existingReading = existingRows[0];
+        if (existingReading) {
+          const calculationExisting = await calculateAndSaveUtilityChargeForReadingInDb(conn, {
+            point: pointFresh,
+            storeId,
+            readingId: existingReading.id,
+            baselineValue: previousValueOverride
+          });
+
+          await conn.commit();
+          return { periodMonth: toIsoDate(existingReading.period_month), calculation: calculationExisting };
+        }
+      }
+
       const [readingResultFresh] = await conn.query<ResultSetHeader>(
         `
           INSERT INTO utility_meter_readings (
-            meter_point_id, period_month, reading_date, reading_value, previous_reading_id,
+            meter_point_id, period_month, reading_date, reading_value, client_mutation_id, previous_reading_id,
             submitted_by_user_id, submitted_by_name, source_kind, notes, status
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, 'submitted')
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, 'submitted')
           ON DUPLICATE KEY UPDATE
             reading_date = VALUES(reading_date),
             reading_value = VALUES(reading_value),
+            client_mutation_id = COALESCE(utility_meter_readings.client_mutation_id, VALUES(client_mutation_id)),
             previous_reading_id = VALUES(previous_reading_id),
             submitted_by_user_id = VALUES(submitted_by_user_id),
             submitted_by_name = VALUES(submitted_by_name),
@@ -1370,6 +1425,7 @@ export async function createUtilityMeterReadingInDb(input: {
           periodMonth,
           input.readingDate,
           Number(input.readingValue),
+          clientMutationId || null,
           null,
           input.submittedByUserId ? Number(input.submittedByUserId) : null,
           input.submittedByName ?? null,

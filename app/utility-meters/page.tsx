@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { readLocalDraft, removeLocalDraft, writeLocalDraft } from '@/lib/client-local-drafts';
 import type { UtilityMeterPointRecord, UtilityMeterReadingHistoryItem } from '@/lib/utility-metering-types';
 
 type ContextPayload = {
@@ -27,6 +28,32 @@ type SubmitPayload = {
     amount?: number;
   };
   error?: string;
+};
+
+type HealthPayload = {
+  ok?: boolean;
+  error?: string;
+};
+
+type UtilityMeterDraft = {
+  clientMutationId: string;
+  selectedMeterId: string;
+  readingDate: string;
+  readingValue: string;
+  previousValueOverride: string;
+  notes: string;
+};
+
+type PendingUtilityMeterReading = {
+  id: string;
+  clientMutationId: string;
+  token: string;
+  meterPointId: string;
+  readingDate: string;
+  readingValue: number;
+  previousValueOverride?: number;
+  notes: string;
+  createdAt: string;
 };
 
 function todayIso() {
@@ -65,6 +92,13 @@ function getOwnerLabel(meter: UtilityMeterPointRecord) {
   return 'Магазин';
 }
 
+function buildLocalId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 export default function UtilityMetersPage() {
   const [token, setToken] = useState('');
   const [payload, setPayload] = useState<ContextPayload>({});
@@ -75,31 +109,39 @@ export default function UtilityMetersPage() {
   const [previousValueOverride, setPreviousValueOverride] = useState('');
   const [notes, setNotes] = useState('');
   const [status, setStatus] = useState('');
+  const [draftStatus, setDraftStatus] = useState('');
+  const [syncStatus, setSyncStatus] = useState('');
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isCheckingSync, setIsCheckingSync] = useState(false);
+  const [isSyncingPending, setIsSyncingPending] = useState(false);
+  const [syncProcessed, setSyncProcessed] = useState(0);
+  const [syncTotal, setSyncTotal] = useState(0);
+  const [isServerReachable, setIsServerReachable] = useState<boolean | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [clientMutationId, setClientMutationId] = useState(buildLocalId());
+  const lastDraftKeyRef = useRef('');
+  const isSyncingOutboxRef = useRef(false);
 
-  const loadContext = useCallback(
-    async (nextToken: string, preferredMeterId?: string) => {
-      setIsLoading(true);
-      try {
-        const response = await fetch(`/api/utility-meters/context?token=${encodeURIComponent(nextToken)}`, {
-          cache: 'no-store'
-        });
-        const nextPayload = (await response.json()) as ContextPayload;
-        setPayload(nextPayload);
-        const meterIds = new Set((nextPayload.meters ?? []).map((meter) => meter.id));
-        const fallbackMeterId = nextPayload.meters?.[0]?.id ?? '';
-        setSelectedMeterId(preferredMeterId && meterIds.has(preferredMeterId) ? preferredMeterId : fallbackMeterId);
-      } catch (error) {
-        setPayload({
-          ok: false,
-          error: error instanceof Error ? error.message : 'Не вдалося завантажити дані.'
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    []
-  );
+  const loadContext = useCallback(async (nextToken: string, preferredMeterId?: string) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/utility-meters/context?token=${encodeURIComponent(nextToken)}`, {
+        cache: 'no-store'
+      });
+      const nextPayload = (await response.json()) as ContextPayload;
+      setPayload(nextPayload);
+      const meterIds = new Set((nextPayload.meters ?? []).map((meter) => meter.id));
+      const fallbackMeterId = nextPayload.meters?.[0]?.id ?? '';
+      setSelectedMeterId(preferredMeterId && meterIds.has(preferredMeterId) ? preferredMeterId : fallbackMeterId);
+    } catch (error) {
+      setPayload({
+        ok: false,
+        error: error instanceof Error ? error.message : 'Не вдалося завантажити дані.'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -121,6 +163,257 @@ export default function UtilityMetersPage() {
   const latestHistoryItem = meterHistory[0];
   const readingMonth = monthFromDate(readingDate);
 
+  const draftStorageKey = useMemo(() => {
+    if (!token || !selectedMeterId) return '';
+    return `utility-meter-draft:${token}:${selectedMeterId}`;
+  }, [selectedMeterId, token]);
+
+  const outboxStorageKey = useMemo(() => {
+    if (!token) return '';
+    return `utility-meter-outbox:${token}`;
+  }, [token]);
+
+  const readPendingQueue = useCallback(() => {
+    if (!outboxStorageKey) return [] as PendingUtilityMeterReading[];
+    return readLocalDraft<PendingUtilityMeterReading[]>(outboxStorageKey) ?? [];
+  }, [outboxStorageKey]);
+
+  const writePendingQueue = useCallback(
+    (items: PendingUtilityMeterReading[]) => {
+      if (!outboxStorageKey) return;
+      if (items.length === 0) {
+        removeLocalDraft(outboxStorageKey);
+      } else {
+        writeLocalDraft(outboxStorageKey, items);
+      }
+      setPendingCount(items.length);
+    },
+    [outboxStorageKey]
+  );
+
+  const postReading = useCallback(
+    async (input: {
+      token: string;
+      meterPointId: string;
+      readingDate: string;
+      readingValue: number;
+      clientMutationId: string;
+      previousValueOverride?: number;
+      notes: string;
+    }) => {
+      const response = await fetch('/api/utility-meters/readings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input)
+      });
+
+      let result: SubmitPayload | null = null;
+      try {
+        result = (await response.json()) as SubmitPayload;
+      } catch {
+        result = null;
+      }
+
+      return { response, result };
+    },
+    []
+  );
+
+  const checkServerReady = useCallback(async () => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return false;
+    }
+
+    try {
+      const response = await fetch('/api/health/db', {
+        cache: 'no-store'
+      });
+      const result = (await response.json()) as HealthPayload;
+      return response.ok && Boolean(result.ok);
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const flushPendingReadings = useCallback(async () => {
+    if (!outboxStorageKey || isSyncingOutboxRef.current) return;
+
+    const queue = readPendingQueue();
+    if (queue.length === 0) {
+      setPendingCount(0);
+      setSyncProcessed(0);
+      setSyncTotal(0);
+      setIsCheckingSync(false);
+      setIsSyncingPending(false);
+      setIsServerReachable(null);
+      return;
+    }
+
+    isSyncingOutboxRef.current = true;
+    setIsCheckingSync(true);
+    setIsServerReachable(null);
+    setSyncProcessed(0);
+    setSyncTotal(queue.length);
+    setSyncStatus(`Знайдено локальні записи: ${queue.length}. Перевіряю доступність сервера...`);
+
+    const serverReady = await checkServerReady();
+    setIsCheckingSync(false);
+    setIsServerReachable(serverReady);
+
+    if (!serverReady) {
+      setSyncStatus('Сервер тимчасово недоступний. Локальні записи залишаються на пристрої та будуть відправлені автоматично.');
+      isSyncingOutboxRef.current = false;
+      return;
+    }
+
+    const remaining: PendingUtilityMeterReading[] = [];
+    let syncedCount = 0;
+    let processedCount = 0;
+    let blockedCount = 0;
+
+    setIsSyncingPending(true);
+    setSyncStatus(`Починаю синхронізацію локальних записів: 0/${queue.length}.`);
+
+    try {
+      for (const item of queue) {
+        try {
+          const { response, result } = await postReading({
+            token: item.token,
+            meterPointId: item.meterPointId,
+            readingDate: item.readingDate,
+            readingValue: item.readingValue,
+            clientMutationId: item.clientMutationId,
+            previousValueOverride: item.previousValueOverride,
+            notes: item.notes
+          });
+
+          if (response.ok && result?.ok) {
+            syncedCount += 1;
+          } else {
+            remaining.push(item);
+            if (response.status < 500) {
+              blockedCount += 1;
+            }
+          }
+        } catch {
+          remaining.push(item);
+        } finally {
+          processedCount += 1;
+          setSyncProcessed(processedCount);
+          setSyncStatus(`Синхронізую локальні записи: ${processedCount}/${queue.length}.`);
+        }
+      }
+    } finally {
+      writePendingQueue(remaining);
+      isSyncingOutboxRef.current = false;
+      setIsSyncingPending(false);
+    }
+
+    if (syncedCount > 0) {
+      setSyncStatus(
+        remaining.length > 0
+          ? blockedCount > 0
+            ? `Синхронізовано ${syncedCount}. Ще залишилось ${remaining.length} записів: частина потребує перевірки даних.`
+            : `Синхронізовано ${syncedCount}. Ще очікують відправки: ${remaining.length}.`
+          : `Усі локальні записи синхронізовано: ${syncedCount}.`
+      );
+      await loadContext(token, selectedMeterId || undefined);
+      return;
+    }
+
+    setSyncStatus(
+      remaining.length > 0
+        ? blockedCount > 0
+          ? `Локальні записи поки не передані: ${remaining.length}. Перевірте дані або повторіть синхронізацію пізніше.`
+          : `Локальні записи ще очікують відправки: ${remaining.length}.`
+        : ''
+    );
+  }, [checkServerReady, loadContext, outboxStorageKey, postReading, readPendingQueue, selectedMeterId, token, writePendingQueue]);
+
+  const enqueuePendingReading = useCallback(
+    (item: Omit<PendingUtilityMeterReading, 'id' | 'createdAt'>) => {
+      const queue = readPendingQueue();
+      writePendingQueue([
+        ...queue,
+        {
+          id: buildLocalId(),
+          createdAt: new Date().toISOString(),
+          ...item
+        }
+      ]);
+    },
+    [readPendingQueue, writePendingQueue]
+  );
+
+  useEffect(() => {
+    if (!outboxStorageKey) {
+      setPendingCount(0);
+      return;
+    }
+    setPendingCount(readPendingQueue().length);
+  }, [outboxStorageKey, readPendingQueue]);
+
+  useEffect(() => {
+    if (!draftStorageKey || lastDraftKeyRef.current === draftStorageKey) return;
+
+    lastDraftKeyRef.current = draftStorageKey;
+    const savedDraft = readLocalDraft<UtilityMeterDraft>(draftStorageKey);
+
+    if (savedDraft) {
+      setClientMutationId(savedDraft.clientMutationId || buildLocalId());
+      setReadingDate(savedDraft.readingDate || todayIso());
+      setReadingValue(savedDraft.readingValue || '');
+      setPreviousValueOverride(savedDraft.previousValueOverride || '');
+      setNotes(savedDraft.notes || '');
+      setDraftStatus('Чернетку відновлено з цього пристрою.');
+      return;
+    }
+
+    setClientMutationId(buildLocalId());
+    setReadingDate(todayIso());
+    setReadingValue('');
+    setPreviousValueOverride('');
+    setNotes('');
+    setDraftStatus('');
+  }, [draftStorageKey]);
+
+  useEffect(() => {
+    if (!draftStorageKey || isLoading) return;
+
+    const hasDraftData = Boolean(readingValue.trim() || previousValueOverride.trim() || notes.trim() || readingDate !== todayIso());
+    if (!hasDraftData) {
+      removeLocalDraft(draftStorageKey);
+      return;
+    }
+
+    writeLocalDraft<UtilityMeterDraft>(draftStorageKey, {
+      clientMutationId,
+      selectedMeterId,
+      readingDate,
+      readingValue,
+      previousValueOverride,
+      notes
+    });
+
+    if (!isSubmitting) {
+      setDraftStatus('Чернетка зберігається на цьому пристрої.');
+    }
+  }, [clientMutationId, draftStorageKey, isLoading, isSubmitting, notes, previousValueOverride, readingDate, readingValue, selectedMeterId]);
+
+  useEffect(() => {
+    if (!token) return;
+    void flushPendingReadings();
+  }, [flushPendingReadings, token]);
+
+  useEffect(() => {
+    function handleOnline() {
+      void flushPendingReadings();
+    }
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [flushPendingReadings]);
+
   async function submitReading(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedMeterId) {
@@ -130,39 +423,75 @@ export default function UtilityMetersPage() {
 
     setIsSubmitting(true);
     setStatus('');
+    setSyncStatus('');
+
+    const normalizedReadingValue = Number(readingValue.replace(',', '.'));
+    const normalizedPreviousValue = previousValueOverride ? Number(previousValueOverride.replace(',', '.')) : undefined;
 
     try {
-      const response = await fetch('/api/utility-meters/readings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
-          meterPointId: selectedMeterId,
-          readingDate,
-          readingValue: Number(readingValue.replace(',', '.')),
-          previousValueOverride: previousValueOverride ? Number(previousValueOverride.replace(',', '.')) : undefined,
-          notes
-        })
+      const { response, result } = await postReading({
+        token,
+        meterPointId: selectedMeterId,
+        readingDate,
+        readingValue: normalizedReadingValue,
+        clientMutationId,
+        previousValueOverride: normalizedPreviousValue,
+        notes
       });
-      const result = (await response.json()) as SubmitPayload;
-      if (!response.ok || !result.ok) {
-        throw new Error(result.error || 'Не вдалося зберегти показник.');
+
+      if (!response.ok || !result?.ok) {
+        if (response.status >= 500) {
+          throw new Error('__QUEUE_READING__');
+        }
+        throw new Error(result?.error || 'Не вдалося зберегти показник.');
       }
 
       const details = result.calculation?.validationMessages?.length
         ? ` Перевірка: ${result.calculation.validationMessages.join(' ')}`
         : '';
       setStatus(`Показник збережено.${details}`);
+      if (draftStorageKey) {
+        removeLocalDraft(draftStorageKey);
+      }
+      setDraftStatus('Локальну чернетку очищено після успішного збереження.');
       setReadingValue('');
       setPreviousValueOverride('');
       setNotes('');
+      setClientMutationId(buildLocalId());
       await loadContext(token, selectedMeterId);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Не вдалося зберегти показник.');
+      const message = error instanceof Error ? error.message : 'Не вдалося зберегти показник.';
+
+      if (message === '__QUEUE_READING__' || message === 'Failed to fetch') {
+        enqueuePendingReading({
+          clientMutationId,
+          token,
+          meterPointId: selectedMeterId,
+          readingDate,
+          readingValue: normalizedReadingValue,
+          previousValueOverride: normalizedPreviousValue,
+          notes
+        });
+        if (draftStorageKey) {
+          removeLocalDraft(draftStorageKey);
+        }
+        setReadingValue('');
+        setPreviousValueOverride('');
+        setNotes('');
+        setClientMutationId(buildLocalId());
+        setStatus('Сайт тимчасово недоступний. Показник збережено локально і буде надіслано автоматично.');
+        setDraftStatus('Локальну чернетку перенесено в чергу очікування.');
+        setSyncStatus('Є локальні записи, що очікують автоматичної синхронізації.');
+      } else {
+        setStatus(message);
+      }
     } finally {
       setIsSubmitting(false);
     }
   }
+
+  const syncPercent = syncTotal > 0 ? Math.round((syncProcessed / syncTotal) * 100) : 0;
+  const showSyncPanel = isCheckingSync || isSyncingPending || pendingCount > 0 || Boolean(syncStatus);
 
   return (
     <main className="min-h-screen w-full bg-slate-100 px-4 py-5 text-slate-950 sm:px-6 lg:px-8">
@@ -194,6 +523,7 @@ export default function UtilityMetersPage() {
                 setSelectedMeterId(event.target.value);
                 setPreviousValueOverride('');
                 setStatus('');
+                setSyncStatus('');
               }}
               className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
             >
@@ -215,11 +545,49 @@ export default function UtilityMetersPage() {
                 <div className="space-y-1 sm:text-right">
                   <div>Коефіцієнт: {formatNumber(selectedMeter.coefficient)}</div>
                   <div>Початковий показник: {formatNumber(selectedMeter.initialReadingValue)}</div>
+                  <div>Останній показник: {latestHistoryItem ? formatNumber(latestHistoryItem.reading.readingValue) : 'ще не внесено'}</div>
+                </div>
+              </div>
+            ) : null}
+
+            {showSyncPanel ? (
+              <div className="mt-4 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                <div className="flex items-start justify-between gap-3">
                   <div>
-                    Останній показник:{' '}
-                    {latestHistoryItem ? formatNumber(latestHistoryItem.reading.readingValue) : 'ще не внесено'}
+                    <div className="font-semibold">Синхронізація з пристрою</div>
+                    <div className="mt-1">
+                      {syncStatus ||
+                        (pendingCount > 0
+                          ? `Локально очікують відправки записів: ${pendingCount}.`
+                          : 'Локальних записів, які очікують відправки, немає.')}
+                    </div>
+                  </div>
+                  <div className="text-right text-xs">
+                    {isCheckingSync
+                      ? 'Перевірка сервера...'
+                      : isSyncingPending
+                        ? 'Триває синхронізація'
+                        : isServerReachable === false
+                          ? 'Сервер недоступний'
+                          : isServerReachable === true
+                            ? 'Сервер доступний'
+                            : ''}
                   </div>
                 </div>
+
+                {syncTotal > 0 ? (
+                  <div className="mt-3">
+                    <div className="mb-1 flex items-center justify-between text-xs text-blue-800">
+                      <span>Прогрес передавання</span>
+                      <span>
+                        {syncProcessed}/{syncTotal}
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-blue-100">
+                      <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${syncPercent}%` }} />
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -291,6 +659,9 @@ export default function UtilityMetersPage() {
             </button>
 
             {status ? <div className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-800">{status}</div> : null}
+            {draftStatus ? (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{draftStatus}</div>
+            ) : null}
 
             <section className="mt-5 rounded-lg border border-slate-200 p-4">
               <div className="flex items-center justify-between gap-3">

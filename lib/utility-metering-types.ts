@@ -39,6 +39,7 @@ export type UtilityMeterReadingRecord = {
   periodMonth: string;
   readingDate: string;
   readingValue: number;
+  clientMutationId?: string;
   previousReadingId?: string;
   submittedByUserId?: string;
   submittedByName: string;
