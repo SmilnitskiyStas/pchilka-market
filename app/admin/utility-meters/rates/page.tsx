@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { UtilityMeterPointRecord, UtilityMeterRateRecord, UtilityType } from '@/lib/utility-metering-types';
@@ -72,6 +73,11 @@ function monthInputValue(value: string) {
   return value.slice(0, 7);
 }
 
+function normalizePeriodMonth(value: string | null) {
+  if (value && /^\d{4}-\d{2}-01$/.test(value)) return value;
+  return currentPeriodMonth();
+}
+
 function getStoreLabel(store: StoreView) {
   return [store.storeCode, store.name || store.addressLine].filter(Boolean).join(' · ') || `Магазин #${store.id}`;
 }
@@ -85,12 +91,15 @@ function formatRate(value: number) {
 }
 
 export default function AdminUtilityMeterRatesPage() {
+  const searchParams = useSearchParams();
+  const initialStoreId = searchParams.get('storeId') ?? '';
+  const initialPeriodMonth = normalizePeriodMonth(searchParams.get('periodMonth'));
   const [stores, setStores] = useState<StoreView[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState('');
-  const [periodMonth, setPeriodMonth] = useState(currentPeriodMonth());
+  const [selectedStoreId, setSelectedStoreId] = useState(initialStoreId);
+  const [periodMonth, setPeriodMonth] = useState(initialPeriodMonth);
   const [meters, setMeters] = useState<UtilityMeterPointRecord[]>([]);
   const [rates, setRates] = useState<UtilityMeterRateRecord[]>([]);
-  const [form, setForm] = useState<RateFormState>(EMPTY_FORM);
+  const [form, setForm] = useState<RateFormState>({ ...EMPTY_FORM, periodMonth: initialPeriodMonth });
   const [editingRateId, setEditingRateId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);

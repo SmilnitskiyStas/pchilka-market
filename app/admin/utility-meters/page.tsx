@@ -528,7 +528,10 @@ export default function AdminUtilityMetersPage() {
               {isLoading ? 'Оновлення...' : 'Оновити'}
             </button>
             <a
-              href="/admin/utility-meters/rates"
+              href={`/admin/utility-meters/rates?${new URLSearchParams({
+                ...(selectedStoreId ? { storeId: selectedStoreId } : {}),
+                periodMonth
+              }).toString()}`}
               className="rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900"
             >
               Тарифи
