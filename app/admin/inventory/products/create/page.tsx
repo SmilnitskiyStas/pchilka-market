@@ -4,7 +4,7 @@ import AdminInventoryManager from '@/components/admin/admin-inventory-manager';
 
 export const metadata: Metadata = {
   title: 'Створити товар | Інвентар | Pchilka Market',
-  description: 'Створення товару та партії в inventory-модулі.'
+  description: 'Створення товару в inventory-модулі без додавання партії.'
 };
 
 export default function AdminInventoryProductsCreatePage() {

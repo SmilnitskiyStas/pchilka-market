@@ -70,6 +70,11 @@ function buildIdentityHash(input: { article?: string; barcode?: string; productN
   return createHash('sha256').update(`article:${article}|name:${productName}`).digest('hex');
 }
 
+function calculateCompletionPercent(matchedRows: number, presentRows: number) {
+  if (presentRows <= 0) return 0;
+  return Number(((matchedRows / presentRows) * 100).toFixed(2));
+}
+
 async function ensureStoreInventoryAssortmentSchema() {
   if (!storeInventoryAssortmentSchemaPromise) {
     storeInventoryAssortmentSchemaPromise = (async () => {
@@ -307,7 +312,7 @@ export async function getStoreInventoryAssortmentSummaryFromDb(storeId: number):
     presentRows,
     matchedRows,
     unmatchedRows: Number(row?.unmatched_rows ?? 0),
-    completionPercent: presentRows > 0 ? Math.round((matchedRows / presentRows) * 100) : 0,
+    completionPercent: calculateCompletionPercent(matchedRows, presentRows),
     quantityTotal: Number(row?.quantity_total ?? 0)
   };
 }
@@ -315,11 +320,23 @@ export async function getStoreInventoryAssortmentSummaryFromDb(storeId: number):
 export async function importStoreInventoryAssortmentFromRows(
   storeId: number,
   rows: InventoryStoreAssortmentImportRow[]
-): Promise<{ importedCount: number; matchedCount: number; unmatchedCount: number }> {
+): Promise<{
+  parsedRows: number;
+  uniqueRows: number;
+  duplicateRows: number;
+  importedCount: number;
+  matchedCount: number;
+  unmatchedCount: number;
+}> {
   await ensureStoreInventoryAssortmentSchema();
 
   const connection = await getDbPool().getConnection();
   const importToken = randomUUID();
+  const uniqueIdentityHashes = new Set<string>();
+
+  for (const row of rows) {
+    uniqueIdentityHashes.add(buildIdentityHash(row));
+  }
 
   try {
     await connection.beginTransaction();
@@ -351,13 +368,15 @@ export async function importStoreInventoryAssortmentFromRows(
     connection.release();
   }
 
-  const items = await listStoreInventoryAssortmentFromDb(storeId, { present: 'all', status: 'all', limit: 2000 });
-  const presentItems = items.filter((item) => item.isPresent);
+  const summary = await getStoreInventoryAssortmentSummaryFromDb(storeId);
 
   return {
-    importedCount: presentItems.length,
-    matchedCount: presentItems.filter((item) => item.matchStatus === 'matched').length,
-    unmatchedCount: presentItems.filter((item) => item.matchStatus === 'unmatched').length
+    parsedRows: rows.length,
+    uniqueRows: uniqueIdentityHashes.size,
+    duplicateRows: Math.max(0, rows.length - uniqueIdentityHashes.size),
+    importedCount: summary.presentRows,
+    matchedCount: summary.matchedRows,
+    unmatchedCount: summary.unmatchedRows
   };
 }
 

@@ -52,6 +52,14 @@ type StoreAssortmentSummary = {
   completionPercent: number;
   quantityTotal: number;
 };
+type StoreAssortmentImportSummary = {
+  parsedRows?: number;
+  uniqueRows?: number;
+  duplicateRows?: number;
+  importedCount?: number;
+  matchedCount?: number;
+  unmatchedCount?: number;
+};
 type StoreAssortmentItem = {
   id: string;
   storeId: string;
@@ -69,6 +77,14 @@ type StoreAssortmentItem = {
   createdAt: string;
   updatedAt: string;
 };
+
+function formatStoreAssortmentCompletion(value?: number | null) {
+  const percent = Number(value ?? 0);
+  if (!Number.isFinite(percent)) return '0%';
+  if (percent <= 0) return '0%';
+  if (percent >= 100) return '100%';
+  return `${Math.min(percent, 99.9).toFixed(1)}%`;
+}
 type StoreAssortmentPayload = {
   ok?: boolean;
   items?: StoreAssortmentItem[];
@@ -1058,18 +1074,27 @@ export default function AdminInventoryManager({
         method: 'POST',
         body: formData
       });
-      const payload = (await response.json()) as StoreAssortmentPayload & {
-        summary?: StoreAssortmentSummary & { importedCount?: number; matchedCount?: number; unmatchedCount?: number };
-      };
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || 'Не вдалося імпортувати асортимент магазину.');
-      }
+        const payload = (await response.json()) as StoreAssortmentPayload & {
+          summary?: StoreAssortmentSummary & StoreAssortmentImportSummary;
+        };
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || 'Не вдалося імпортувати асортимент магазину.');
+        }
 
-      setStoreAssortmentImportFile(null);
-      setSuccess('Файл асортименту успішно імпортовано.');
-      await loadStoreAssortment({ storeId: analyticsStoreId });
-    } catch (importError) {
-      setError(importError instanceof Error ? importError.message : 'Не вдалося імпортувати асортимент магазину.');
+        setStoreAssortmentImportFile(null);
+        const parsedRows = Number(payload.summary?.parsedRows ?? 0);
+        const uniqueRows = Number(payload.summary?.uniqueRows ?? 0);
+        const duplicateRows = Number(payload.summary?.duplicateRows ?? 0);
+        const matchedCount = Number(payload.summary?.matchedCount ?? 0);
+        const unmatchedCount = Number(payload.summary?.unmatchedCount ?? 0);
+        setSuccess(
+          parsedRows > 0
+            ? `Файл імпортовано: зчитано ${parsedRows} рядків, унікальних позицій ${uniqueRows}, дублікати ${duplicateRows}, співпало з каталогом ${matchedCount}, без прив'язки ${unmatchedCount}.`
+            : 'Файл асортименту успішно імпортовано.'
+        );
+        await loadStoreAssortment({ storeId: analyticsStoreId });
+      } catch (importError) {
+        setError(importError instanceof Error ? importError.message : 'Не вдалося імпортувати асортимент магазину.');
     } finally {
       setIsImportingStoreAssortment(false);
     }
@@ -2304,6 +2329,35 @@ export default function AdminInventoryManager({
     await submitIntake();
   }
 
+  async function handleCreateProduct(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    setIsCreatingIntake(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await fetch('/api/admin/inventory/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product: productForm })
+      });
+      const payload = (await response.json()) as ProductsPayload & { product?: InventoryProductRecord };
+
+      if (!response.ok || !payload.ok || !payload.product) {
+        throw new Error(payload.error || 'Не вдалося створити товар.');
+      }
+
+      setProductForm(initialProductForm);
+      await loadProducts({ page: 1 });
+      setSuccess(`Товар "${payload.product.productName}" успішно створено.`);
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : 'Не вдалося створити товар.');
+    } finally {
+      setIsCreatingIntake(false);
+    }
+  }
+
   function upsertBatchInState(batch: InventoryBatchRecord) {
     setBatches((prev) => {
       const next = prev.some((item) => item.id === batch.id)
@@ -3514,21 +3568,23 @@ export default function AdminInventoryManager({
       ) : null}
 
       {activeSection === 'intake' ? (
-      <section id="product-create" className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Додати товар і партію</h2>
-            <p className="mt-1 text-sm text-slate-600">Одна форма створює товар і одразу першу партію по ньому.</p>
+        <section id="product-create" className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Створити товар</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Тут створюється лише картка товару в каталозі. Партії додаються окремо в наступному кроці.
+              </p>
+            </div>
+            <p className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+              Товарів у каталозі: {productsTotalCount}
+            </p>
           </div>
-          <p className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-            Товарів: {productsTotalCount} • Партій: {batches.length}
-          </p>
-        </div>
 
-        <form onSubmit={handleCreateIntake} className="mt-4 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 xl:grid-cols-2">
-          <div className="space-y-3">
-            <h3 className="text-base font-semibold text-slate-900">Дані товару</h3>
-            <input value={String(productForm.article ?? '')} onChange={(e) => setProductForm((prev) => ({ ...prev, article: e.target.value }))} placeholder="Артикул *" className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
+          <form onSubmit={handleCreateProduct} className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="space-y-3">
+              <h3 className="text-base font-semibold text-slate-900">Дані товару</h3>
+              <input value={String(productForm.article ?? '')} onChange={(e) => setProductForm((prev) => ({ ...prev, article: e.target.value }))} placeholder="Артикул *" className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
             <input value={String(productForm.barcode ?? '')} onChange={(e) => setProductForm((prev) => ({ ...prev, barcode: e.target.value }))} placeholder="Штрихкоди через кому" className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
             <input value={String(productForm.productName ?? '')} onChange={(e) => setProductForm((prev) => ({ ...prev, productName: e.target.value }))} placeholder="Назва товару *" className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
             <div className="grid gap-3 md:grid-cols-2">
@@ -3537,42 +3593,18 @@ export default function AdminInventoryManager({
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <input type="number" min={1} max={90} value={Number(productForm.notifiedDaysDefault ?? 7)} onChange={(e) => setProductForm((prev) => ({ ...prev, notifiedDaysDefault: Number(e.target.value || 7) }))} placeholder="Днів до сповіщення" className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
-              <label className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-800">
-                <input type="checkbox" checked={productForm.isActive !== false} onChange={(e) => setProductForm((prev) => ({ ...prev, isActive: e.target.checked }))} className="h-4 w-4" />
-                Активний товар
-              </label>
+                <label className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-800">
+                  <input type="checkbox" checked={productForm.isActive !== false} onChange={(e) => setProductForm((prev) => ({ ...prev, isActive: e.target.checked }))} className="h-4 w-4" />
+                  Активний товар
+                </label>
+              </div>
+              <div className="flex justify-end">
+                <button type="submit" disabled={isCreatingIntake} className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+                  {isCreatingIntake ? 'Збереження...' : 'Зберегти товар'}
+                </button>
+              </div>
             </div>
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-base font-semibold text-slate-900">Перша партія</h3>
-            <select value={String(batchForm.storeId ?? '')} onChange={(e) => setBatchForm((prev) => ({ ...prev, storeId: e.target.value }))} className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand">
-              <option value="">Оберіть магазин *</option>
-              {stores.filter((store) => store.isActive).map((store) => (
-                <option key={store.id} value={store.id}>{storeLabel(store)}</option>
-              ))}
-            </select>
-            <input
-              value={String(batchForm.batchCode ?? '')}
-              onChange={(e) => setBatchForm((prev) => ({ ...prev, batchCode: e.target.value }))}
-              placeholder="Код партії поставки"
-              className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
-            />
-            <div className="grid gap-3 md:grid-cols-2">
-              <input type="number" min={1} value={Number(batchForm.quantity ?? 1)} onChange={(e) => setBatchForm((prev) => ({ ...prev, quantity: Number(e.target.value || 0) }))} placeholder="Кількість *" className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
-              <input type="number" min={1} max={90} value={batchNotifyOverride} onChange={(e) => setBatchNotifyOverride(e.target.value)} placeholder="Окремі дні до сповіщення" className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <input type="date" value={String(batchForm.expiryDate ?? '')} onChange={(e) => setBatchForm((prev) => ({ ...prev, expiryDate: e.target.value }))} className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
-              <input type="date" value={String(batchForm.deliveryDate ?? '')} onChange={(e) => setBatchForm((prev) => ({ ...prev, deliveryDate: e.target.value }))} className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
-            </div>
-            <div className="flex justify-end">
-              <button type="submit" disabled={isCreatingIntake} className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
-                {isCreatingIntake ? 'Збереження...' : 'Додати товар і партію'}
-              </button>
-            </div>
-          </div>
-        </form>
+          </form>
       </section>
       ) : null}
 
@@ -4457,11 +4489,13 @@ export default function AdminInventoryManager({
                 <article className="rounded-2xl border border-slate-200 bg-white p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Вже в програмі</p>
                   <p className="mt-2 text-2xl font-bold text-emerald-700">{storeAssortmentSummary?.matchedRows ?? 0}</p>
-                  <p className="mt-1 text-xs text-slate-500">Позиції, що співпали з каталогом `Products`</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Позиції, що співпали з каталогом `Products` із {storeAssortmentSummary?.presentRows ?? 0} присутніх
+                  </p>
                 </article>
                 <article className="rounded-2xl border border-slate-200 bg-white p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Заповненість</p>
-                  <p className="mt-2 text-2xl font-bold text-brand">{storeAssortmentSummary?.completionPercent ?? 0}%</p>
+                  <p className="mt-2 text-2xl font-bold text-brand">{formatStoreAssortmentCompletion(storeAssortmentSummary?.completionPercent)}</p>
                   <p className="mt-1 text-xs text-slate-500">Частка присутніх товарів, уже привʼязаних до каталогу</p>
                 </article>
               </div>
