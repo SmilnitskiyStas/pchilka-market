@@ -3584,6 +3584,8 @@ export default function AdminInventoryManager({
           <form onSubmit={handleCreateProduct} className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900">Дані товару</h3>
+              {error ? <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p> : null}
+              {success ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{success}</p> : null}
               <input value={String(productForm.article ?? '')} onChange={(e) => setProductForm((prev) => ({ ...prev, article: e.target.value }))} placeholder="Артикул *" className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
             <input value={String(productForm.barcode ?? '')} onChange={(e) => setProductForm((prev) => ({ ...prev, barcode: e.target.value }))} placeholder="Штрихкоди через кому" className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
             <input value={String(productForm.productName ?? '')} onChange={(e) => setProductForm((prev) => ({ ...prev, productName: e.target.value }))} placeholder="Назва товару *" className="w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />

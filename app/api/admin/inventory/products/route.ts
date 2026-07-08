@@ -13,6 +13,23 @@ import { normalizeInventoryProductInput } from '@/lib/inventory-product-types';
 
 export const runtime = 'nodejs';
 
+function resolveProductsRouteErrorStatus(message: string) {
+  if (
+    message.includes('Товар уже існує в базі') ||
+    message.includes('Штрихкод') ||
+    message.includes('already exists') ||
+    message.includes('already belongs')
+  ) {
+    return 409;
+  }
+
+  if (message.includes('Товар не знайдено') || message.includes('Invalid product id')) {
+    return 404;
+  }
+
+  return 500;
+}
+
 export async function GET(request: Request) {
   if (!isAdminRequestAuthorized(request)) {
     return unauthorizedAdminResponse();
@@ -43,8 +60,8 @@ export async function GET(request: Request) {
     ]);
     return NextResponse.json({ ok: true, products, totalCount, categories, page: safePage, limit: safeLimit });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown DB error';
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Не вдалося завантажити товари.';
+    return NextResponse.json({ ok: false, error: message }, { status: resolveProductsRouteErrorStatus(message) });
   }
 }
 
@@ -58,13 +75,13 @@ export async function POST(request: Request) {
     const normalized = normalizeInventoryProductInput((body?.product ?? {}) as Record<string, unknown>);
 
     if (!normalized.article) {
-      return NextResponse.json({ ok: false, error: 'Артикул є обов’язковим.' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'Артикул є обовʼязковим.' }, { status: 400 });
     }
     if (!normalized.productName) {
-      return NextResponse.json({ ok: false, error: 'Назва товару є обов’язковою.' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'Назва товару є обовʼязковою.' }, { status: 400 });
     }
     if (!normalized.unitsOfMeasurement) {
-      return NextResponse.json({ ok: false, error: 'Одиниця виміру є обов’язковою.' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'Одиниця виміру є обовʼязковою.' }, { status: 400 });
     }
 
     const duplicate = await findInventoryProductDuplicateInDb({
@@ -75,7 +92,7 @@ export async function POST(request: Request) {
     });
     if (duplicate) {
       return NextResponse.json(
-        { ok: false, error: `РўРѕРІР°СЂ СѓР¶Рµ С–СЃРЅСѓС” РІ Р±Р°Р·С–: ${duplicate.productName}.` },
+        { ok: false, error: `Товар уже існує в базі: ${duplicate.productName}.` },
         { status: 409 }
       );
     }
@@ -83,7 +100,7 @@ export async function POST(request: Request) {
     const product = await createInventoryProductInDb(normalized);
     return NextResponse.json({ ok: true, product });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown DB error';
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Не вдалося створити товар.';
+    return NextResponse.json({ ok: false, error: message }, { status: resolveProductsRouteErrorStatus(message) });
   }
 }
