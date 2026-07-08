@@ -866,11 +866,47 @@ export async function updateInventoryProductApprovalInDb(
   const beforeSnapshot = product as Record<string, unknown>;
   let nextRecord = product;
   const trimmedNote = input.note?.trim() || '';
+  let reviewProductId = input.productId;
 
   if (input.product) {
+    const normalizedInput = normalizeInventoryProductInput(input.product);
+    const duplicate = await findInventoryProductDuplicateInDb(
+      {
+        article: normalizedInput.article,
+        barcode: normalizedInput.barcode,
+        productName: normalizedInput.productName,
+        unitsOfMeasurement: normalizedInput.unitsOfMeasurement
+      },
+      db
+    );
+
+    let targetProductId = input.productId;
+    if (duplicate && Number(duplicate.id) !== input.productId) {
+      const canAutoMergeManualDuplicate = await hasManualInventoryProductCreationInDb(input.productId, db);
+      if (!canAutoMergeManualDuplicate) {
+        throw new Error(`РўРѕРІР°СЂ СѓР¶Рµ С–СЃРЅСѓС” РІ Р±Р°Р·С–: ${duplicate.productName}.`);
+      }
+
+      await mergeInventoryProductsInDb(
+        {
+          sourceProductId: input.productId,
+          targetProductId: Number(duplicate.id),
+          changeSource: 'admin_product_review',
+          changedBy: input.changedBy,
+          changeNote:
+            trimmedNote ||
+            `Merged manual duplicate product #${input.productId} into product #${duplicate.id} during approval workflow.`
+        },
+        db
+      );
+
+      targetProductId = Number(duplicate.id);
+      reviewProductId = targetProductId;
+    }
+
     nextRecord = await updateInventoryProductInDb(
-      input.productId,
-      input.product,
+      targetProductId,
+      normalizedInput,
       db,
       {
         changeSource: 'admin_product_review',
@@ -912,7 +948,7 @@ export async function updateInventoryProductApprovalInDb(
   try {
     await createInventoryProductApprovalReviewInDb(
       {
-        productId: input.productId,
+        productId: reviewProductId,
         action: input.action,
         oldValues: beforeSnapshot,
         newValues: nextRecord as Record<string, unknown>,
@@ -923,7 +959,7 @@ export async function updateInventoryProductApprovalInDb(
     );
   } catch (error) {
     console.error('Failed to write product approval review audit record', {
-      productId: input.productId,
+      productId: reviewProductId,
       action: input.action,
       error
     });
