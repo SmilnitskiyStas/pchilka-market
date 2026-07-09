@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { writeInventoryAuthDebugLog } from '@/lib/inventory-auth-debug';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
 import { processInventoryTelegramUpdate } from '@/lib/inventory-telegram-bot';
 
@@ -8,6 +9,7 @@ export const runtime = 'nodejs';
 export async function POST(request: Request) {
   try {
     const settings = await getInventoryTelegramSettingsFromDb();
+    const userAgent = request.headers.get('user-agent')?.trim() ?? '';
 
     if (!settings.enabled) {
       return NextResponse.json({ ok: false, error: 'Telegram inventory integration is disabled.' }, { status: 503 });
@@ -15,6 +17,14 @@ export async function POST(request: Request) {
 
     const secret = request.headers.get('x-telegram-bot-api-secret-token')?.trim() ?? '';
     if (!settings.webhookSecret || secret !== settings.webhookSecret) {
+      await writeInventoryAuthDebugLog({
+        actionType: 'inventory_telegram_webhook_rejected',
+        meta: {
+          reason: !settings.webhookSecret ? 'missing_webhook_secret' : 'secret_mismatch',
+          hasIncomingSecret: Boolean(secret),
+          userAgent
+        }
+      });
       return NextResponse.json({ ok: false, error: 'Invalid webhook secret.' }, { status: 401 });
     }
 

@@ -343,6 +343,19 @@ type InventoryNotificationLogDetailPayload = {
   log?: InventoryNotificationLogView | null;
   error?: string;
 };
+type InventoryAuthDebugLogView = {
+  id: number;
+  createdAt: string;
+  userId: number | null;
+  storeId: number | null;
+  actionType: string;
+  comment: string;
+  userName: string;
+  userSurname: string;
+  storeLabel: string;
+  meta: Record<string, unknown> | null;
+};
+type InventoryAuthDebugLogsPayload = { ok?: boolean; items?: InventoryAuthDebugLogView[]; error?: string };
 type InventoryExpiryTaskView = {
   id: number;
   batchId: number;
@@ -697,6 +710,37 @@ function formatNotificationLogType(type: string) {
   }
 }
 
+function formatInventoryAuthDebugActionType(type: string) {
+  switch (type) {
+    case 'inventory_telegram_webhook_rejected':
+      return 'Webhook відхилив запит';
+    case 'inventory_telegram_start_received':
+      return 'Отримано /start';
+    case 'inventory_telegram_start_existing_user':
+      return 'Надіслано intake-посилання';
+    case 'inventory_telegram_start_registration_link_sent':
+      return 'Надіслано посилання на реєстрацію';
+    case 'inventory_telegram_start_send_failed':
+      return 'Помилка відправки в Telegram';
+    case 'inventory_intake_context_access_granted':
+      return 'Intake доступ дозволено';
+    case 'inventory_intake_context_invalid_token':
+      return 'Intake токен недійсний';
+    case 'inventory_intake_context_user_not_found':
+      return 'Користувача не знайдено';
+    case 'inventory_intake_context_user_inactive':
+      return 'Користувача деактивовано';
+    case 'inventory_intake_context_user_missing_store':
+      return 'У користувача немає магазину';
+    case 'inventory_intake_context_store_not_found':
+      return 'Магазин користувача недоступний';
+    case 'inventory_intake_context_unexpected_error':
+      return 'Неочікувана помилка intake';
+    default:
+      return type || 'Невідома подія';
+  }
+}
+
 function formatProductApprovalStatus(status: string) {
   switch (status) {
     case 'pending':
@@ -888,10 +932,12 @@ export default function AdminInventoryManager({
   const [notificationsDebug, setNotificationsDebug] = useState<InventoryNotificationDebugItem[]>([]);
   const [notificationLogs, setNotificationLogs] = useState<InventoryNotificationLogView[]>([]);
   const [manualBroadcastLogs, setManualBroadcastLogs] = useState<InventoryNotificationLogView[]>([]);
+  const [authDebugLogs, setAuthDebugLogs] = useState<InventoryAuthDebugLogView[]>([]);
   const [selectedNotificationLog, setSelectedNotificationLog] = useState<InventoryNotificationLogView | null>(null);
   const [isLoadingSelectedNotificationLog, setIsLoadingSelectedNotificationLog] = useState(false);
   const [isLoadingNotificationLogs, setIsLoadingNotificationLogs] = useState(false);
   const [isLoadingManualBroadcastLogs, setIsLoadingManualBroadcastLogs] = useState(false);
+  const [isLoadingAuthDebugLogs, setIsLoadingAuthDebugLogs] = useState(false);
   const [notificationLogsPage, setNotificationLogsPage] = useState(1);
   const [notificationLogsPageSize, setNotificationLogsPageSize] = useState(50);
   const [notificationLogsTotalCount, setNotificationLogsTotalCount] = useState(0);
@@ -1457,6 +1503,26 @@ export default function AdminInventoryManager({
     }
   }
 
+  async function loadAuthDebugLogs() {
+    setIsLoadingAuthDebugLogs(true);
+    try {
+      const response = await fetch('/api/admin/inventory/auth-debug?limit=100', {
+        cache: 'no-store'
+      });
+      const payload = (await response.json()) as InventoryAuthDebugLogsPayload;
+      if (!response.ok || !payload.ok || !Array.isArray(payload.items)) {
+        throw new Error(payload.error || 'Не вдалося завантажити лог доступу Telegram/intake.');
+      }
+
+      setAuthDebugLogs(payload.items);
+    } catch (loadError) {
+      setAuthDebugLogs([]);
+      setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити лог доступу Telegram/intake.');
+    } finally {
+      setIsLoadingAuthDebugLogs(false);
+    }
+  }
+
   async function loadSelectedNotificationLog(notificationLogId: number) {
     if (!Number.isFinite(notificationLogId) || notificationLogId <= 0) {
       setSelectedNotificationLog(null);
@@ -1486,7 +1552,7 @@ export default function AdminInventoryManager({
     async function load() {
       setIsLoading(true);
       try {
-        const [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13] = await Promise.all([
+        const [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14] = await Promise.all([
           fetch('/api/admin/inventory/readiness', { cache: 'no-store' }),
           fetch('/api/admin/inventory/settings', { cache: 'no-store' }),
           fetch('/api/admin/inventory/products', { cache: 'no-store' }),
@@ -1499,7 +1565,8 @@ export default function AdminInventoryManager({
           fetch('/api/admin/inventory/import-review?status=pending&limit=100', { cache: 'no-store' }),
           fetch('/api/admin/inventory/products/import?latest=1', { cache: 'no-store' }),
           fetch(`/api/admin/inventory/notifications?limit=${notificationLogsPageSize}&page=1&dateFrom=${encodeURIComponent(notificationsDateFrom)}&dateTo=${encodeURIComponent(notificationsDateTo)}`, { cache: 'no-store' }),
-          fetch('/api/admin/inventory/notifications?type=inventory_manual_broadcast&limit=100&page=1', { cache: 'no-store' })
+          fetch('/api/admin/inventory/notifications?type=inventory_manual_broadcast&limit=100&page=1', { cache: 'no-store' }),
+          fetch('/api/admin/inventory/auth-debug?limit=100', { cache: 'no-store' })
         ]);
 
         const p1 = (await r1.json()) as ReadinessPayload;
@@ -1515,6 +1582,7 @@ export default function AdminInventoryManager({
         const p11 = (await r11.json()) as ProductImportPayload;
         const p12 = (await r12.json()) as InventoryNotificationLogsPayload;
         const p13 = (await r13.json()) as InventoryNotificationLogsPayload;
+        const p14 = (await r14.json()) as InventoryAuthDebugLogsPayload;
 
         if (!r1.ok || !p1.ok || !p1.readiness) throw new Error(p1.error || 'Не вдалося перевірити готовність inventory-модуля.');
         if (!r2.ok || !p2.ok) throw new Error(p2.error || 'Не вдалося завантажити Telegram-налаштування.');
@@ -1541,6 +1609,7 @@ export default function AdminInventoryManager({
           setImportSummary(r11.ok && p11.ok ? p11.importLog?.summary ?? null : null);
           setNotificationLogs(r12.ok && p12.ok && Array.isArray(p12.logs) ? p12.logs : []);
           setManualBroadcastLogs(r13.ok && p13.ok && Array.isArray(p13.logs) ? p13.logs : []);
+          setAuthDebugLogs(r14.ok && p14.ok && Array.isArray(p14.items) ? p14.items : []);
           setNotificationLogsTotalCount(r12.ok && p12.ok ? Number(p12.totalCount ?? p12.logs?.length ?? 0) : 0);
           setNotificationLogsPage(r12.ok && p12.ok ? Number(p12.page ?? 1) : 1);
           setNotificationLogsPageSize(r12.ok && p12.ok ? Number(p12.limit ?? notificationLogsPageSize) : notificationLogsPageSize);
@@ -5240,6 +5309,57 @@ export default function AdminInventoryManager({
             ) : (
               <p className="mt-4 text-sm text-slate-500">
                 {isLoadingManualBroadcastLogs ? 'Завантаження історії...' : 'Ще немає жодної ручної Telegram-розсилки.'}
+              </p>
+            )}
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Лог доступу Telegram та intake</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Тут видно `/start`, відмови webhook, помилки токена і причини, через які працівника не пустило в `inventory/intake`.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void loadAuthDebugLogs();
+                }}
+                disabled={isLoadingAuthDebugLogs}
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+              >
+                {isLoadingAuthDebugLogs ? 'Оновлення...' : 'Оновити лог'}
+              </button>
+            </div>
+            {authDebugLogs.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {authDebugLogs.map((log) => (
+                  <div key={log.id} className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">{formatInventoryAuthDebugActionType(log.actionType)}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {log.storeLabel || 'Магазин не визначено'}
+                          {(log.userSurname || log.userName) ? ` • ${[log.userSurname, log.userName].filter(Boolean).join(' ')}` : ''}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                        {formatDate(log.createdAt)}
+                      </span>
+                    </div>
+                    {log.meta ? (
+                      <pre className="mt-3 whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
+                        {JSON.stringify(log.meta, null, 2)}
+                      </pre>
+                    ) : (
+                      <p className="mt-3 text-xs text-slate-500">{log.comment || 'Без додаткових деталей.'}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-500">
+                {isLoadingAuthDebugLogs ? 'Завантаження логу...' : 'Ще немає жодного запису по Telegram/intake доступу.'}
               </p>
             )}
           </div>

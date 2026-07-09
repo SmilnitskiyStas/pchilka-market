@@ -1,4 +1,5 @@
 import { createInventoryRegistrationToken } from '@/lib/inventory-registration-token';
+import { writeInventoryAuthDebugLog } from '@/lib/inventory-auth-debug';
 import {
   handleInventoryDiscussionCallback,
   handleInventoryDiscussionTextMessage
@@ -91,30 +92,88 @@ export async function processInventoryTelegramUpdate(update: TelegramUpdate) {
   );
 
   const existingUser = await findInventoryUserByChatId(chatId);
+  await writeInventoryAuthDebugLog({
+    actionType: 'inventory_telegram_start_received',
+    userId: existingUser?.id ?? null,
+    storeId: existingUser?.storeId ?? null,
+    meta: {
+      chatId,
+      text,
+      username: String(message?.from?.username ?? ''),
+      firstName: String(message?.from?.first_name ?? ''),
+      lastName: String(message?.from?.last_name ?? ''),
+      hasExistingUser: Boolean(existingUser),
+      publicBaseUrl: settings.publicBaseUrl
+    }
+  });
+
   if (existingUser) {
     const intakeUrl = buildInventoryIntakeUrl(settings.publicBaseUrl, token);
-    await sendInventoryTelegramMessage({
-      botToken: settings.botToken,
-      chatId,
-      text:
-        `Ви вже зареєстровані в системі як ${existingUser.surname} ${existingUser.name}.\n` +
-        'Натисніть кнопку нижче, щоб перейти до внесення нової партії товару.',
-      buttonText: 'Додати товар',
-      buttonUrl: intakeUrl
-    });
+
+    try {
+      await sendInventoryTelegramMessage({
+        botToken: settings.botToken,
+        chatId,
+        text:
+          `Ви вже зареєстровані в системі як ${existingUser.surname} ${existingUser.name}.\n` +
+          'Натисніть кнопку нижче, щоб перейти до внесення нової партії товару.',
+        buttonText: 'Додати товар',
+        buttonUrl: intakeUrl
+      });
+      await writeInventoryAuthDebugLog({
+        actionType: 'inventory_telegram_start_existing_user',
+        userId: existingUser.id,
+        storeId: existingUser.storeId,
+        meta: {
+          chatId,
+          intakeUrl
+        }
+      });
+    } catch (error) {
+      await writeInventoryAuthDebugLog({
+        actionType: 'inventory_telegram_start_send_failed',
+        userId: existingUser.id,
+        storeId: existingUser.storeId,
+        meta: {
+          chatId,
+          stage: 'existing_user_intake_link',
+          message: error instanceof Error ? error.message : String(error)
+        }
+      });
+      throw error;
+    }
 
     return { handled: true, reason: 'intake_link_sent' as const, intakeUrl };
   }
 
   const registrationUrl = buildRegistrationUrl(settings.publicBaseUrl, token);
 
-  await sendInventoryTelegramMessage({
-    botToken: settings.botToken,
-    chatId,
-    text: 'Ви ще не зареєстровані в системі. Натисніть кнопку нижче, щоб відкрити форму реєстрації.',
-    buttonText: 'Зареєструватися',
-    buttonUrl: registrationUrl
-  });
+  try {
+    await sendInventoryTelegramMessage({
+      botToken: settings.botToken,
+      chatId,
+      text: 'Ви ще не зареєстровані в системі. Натисніть кнопку нижче, щоб відкрити форму реєстрації.',
+      buttonText: 'Зареєструватися',
+      buttonUrl: registrationUrl
+    });
+    await writeInventoryAuthDebugLog({
+      actionType: 'inventory_telegram_start_registration_link_sent',
+      meta: {
+        chatId,
+        registrationUrl
+      }
+    });
+  } catch (error) {
+    await writeInventoryAuthDebugLog({
+      actionType: 'inventory_telegram_start_send_failed',
+      meta: {
+        chatId,
+        stage: 'registration_link',
+        message: error instanceof Error ? error.message : String(error)
+      }
+    });
+    throw error;
+  }
 
   return { handled: true, reason: 'registration_link_sent' as const, registrationUrl };
 }
