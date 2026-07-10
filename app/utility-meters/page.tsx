@@ -666,23 +666,23 @@ export default function UtilityMetersPage() {
                   value={previousValueOverride}
                   onChange={(event) => setPreviousValueOverride(event.target.value)}
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
-                  placeholder="Для першого або старого періоду"
+                  placeholder="0 за замовчуванням"
                 />
-                {previousReading ? (
+                {previousValueOverride.trim() ? (
                   <span className="mt-1 block text-xs font-normal text-slate-600">
-                    Для розрахунку буде автоматично використано показник {formatNumber(previousReading.readingValue)} за {formatPeriodMonth(previousReading.periodMonth)} ({previousReading.readingDate}). Залиште поле порожнім.
+                    Для розрахунку буде використано введений попередній показник: {previousValueOverride}.
+                  </span>
+                ) : previousReading ? (
+                  <span className="mt-1 block text-xs font-normal text-slate-600">
+                    Для розрахунку буде автоматично використано показник {formatNumber(previousReading.readingValue)} з бази за {formatPeriodMonth(previousReading.periodMonth)} ({previousReading.readingDate}).
                   </span>
                 ) : selectedMeter?.initialReadingValue != null ? (
                   <span className="mt-1 block text-xs font-normal text-slate-600">
-                    Попередніх показників ще немає. Для розрахунку буде використано початковий показник лічильника: {formatNumber(selectedMeter.initialReadingValue)}. Залиште поле порожнім.
-                  </span>
-                ) : previousValueOverride.trim() ? (
-                  <span className="mt-1 block text-xs font-normal text-slate-600">
-                    Введене значення буде використано як початковий показник для розрахунку.
+                    Попередніх показників ще немає. Для розрахунку буде використано початковий показник з бази: {formatNumber(selectedMeter.initialReadingValue)}.
                   </span>
                 ) : (
-                  <span className="mt-1 block text-xs font-normal text-amber-700">
-                    Це перший показник. Залиште поле порожнім: розрахунок споживання та суми не буде сформований, бо немає попередніх даних.
+                  <span className="mt-1 block text-xs font-normal text-slate-600">
+                    У базі немає попереднього показника. Якщо залишити поле порожнім, для розрахунку буде використано 0.
                   </span>
                 )}
               </label>

@@ -1264,6 +1264,17 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
     throw new Error('Не знайдено показник для перерахунку.');
   }
 
+  const [existingChargeRows] = await conn.query<ChargeRow[]>(
+    `
+      SELECT previous_value
+      FROM utility_meter_charges
+      WHERE reading_id = ?
+      LIMIT 1
+    `,
+    [reading.id]
+  );
+  const savedPreviousValue = toNumberOrUndefined(existingChargeRows[0]?.previous_value);
+
   const readingDate = toIsoDate(reading.reading_date);
   const [previousRows] = await conn.query<ReadingRow[]>(
     `
@@ -1310,9 +1321,9 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
   const calculation = calculateUtilityCharge({
     utilityType: input.point.utilityType,
     previousValue:
-      previous?.reading_value != null
-        ? Number(previous.reading_value)
-        : input.baselineValue ?? input.point.initialReadingValue,
+      input.baselineValue ??
+      savedPreviousValue ??
+      (previous?.reading_value != null ? Number(previous.reading_value) : input.point.initialReadingValue ?? 0),
     currentValue: Number(reading.reading_value),
     coefficient: input.point.coefficient,
     rate: rateRows[0] ? Number(rateRows[0].rate) : input.point.defaultRate,
@@ -1415,18 +1426,6 @@ export async function createUtilityMeterReadingInDb(input: {
       );
       const pointFresh = pointRowsFresh[0] ? mapMeterPoint(pointRowsFresh[0]) : null;
       if (!pointFresh) throw new Error('Лічильник не знайдено для цього магазину.');
-
-      if (previousValueOverride !== undefined && pointFresh.initialReadingValue !== previousValueOverride) {
-        await conn.query(
-          `
-            UPDATE utility_meter_points
-            SET initial_reading_value = ?
-            WHERE id = ?
-          `,
-          [previousValueOverride, meterPointId]
-        );
-        pointFresh.initialReadingValue = previousValueOverride;
-      }
 
       if (clientMutationId) {
         const [existingRows] = await conn.query<ReadingRow[]>(
