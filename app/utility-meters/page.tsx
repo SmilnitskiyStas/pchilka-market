@@ -85,6 +85,14 @@ function formatMoney(value?: number) {
   }).format(value);
 }
 
+function formatPeriodMonth(value: string) {
+  const [year, month] = value.slice(0, 7).split('-').map(Number);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return value;
+  return new Intl.DateTimeFormat('uk-UA', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
+    new Date(Date.UTC(year, month - 1, 1))
+  );
+}
+
 function getOwnerKindLabel(ownerKind: UtilityMeterPointRecord['ownerKind']) {
   if (ownerKind === 'tenant') return 'Орендар';
   if (ownerKind === 'shared') return 'Спільний';
@@ -180,6 +188,7 @@ export default function UtilityMetersPage() {
   );
 
   const latestHistoryItem = meterHistory[0];
+  const previousReading = latestHistoryItem?.reading;
   const readingMonth = monthFromDate(readingDate);
 
   const draftStorageKey = useMemo(() => {
@@ -659,9 +668,23 @@ export default function UtilityMetersPage() {
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
                   placeholder="Для першого або старого періоду"
                 />
-                <span className="mt-1 block text-xs font-normal text-slate-500">
-                  Заповніть, якщо це перший показник або ви додаєте старі дані заднім числом.
-                </span>
+                {previousReading ? (
+                  <span className="mt-1 block text-xs font-normal text-slate-600">
+                    Для розрахунку буде автоматично використано показник {formatNumber(previousReading.readingValue)} за {formatPeriodMonth(previousReading.periodMonth)} ({previousReading.readingDate}). Залиште поле порожнім.
+                  </span>
+                ) : selectedMeter?.initialReadingValue != null ? (
+                  <span className="mt-1 block text-xs font-normal text-slate-600">
+                    Попередніх показників ще немає. Для розрахунку буде використано початковий показник лічильника: {formatNumber(selectedMeter.initialReadingValue)}. Залиште поле порожнім.
+                  </span>
+                ) : previousValueOverride.trim() ? (
+                  <span className="mt-1 block text-xs font-normal text-slate-600">
+                    Введене значення буде використано як початковий показник для розрахунку.
+                  </span>
+                ) : (
+                  <span className="mt-1 block text-xs font-normal text-amber-700">
+                    Це перший показник. Залиште поле порожнім: розрахунок споживання та суми не буде сформований, бо немає попередніх даних.
+                  </span>
+                )}
               </label>
             </div>
 
