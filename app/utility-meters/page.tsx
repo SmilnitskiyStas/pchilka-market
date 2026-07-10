@@ -85,11 +85,30 @@ function formatMoney(value?: number) {
   }).format(value);
 }
 
-function getOwnerLabel(meter: UtilityMeterPointRecord) {
-  if (meter.ownerKind === 'tenant' && meter.tenantName) return meter.tenantName;
-  if (meter.ownerKind === 'shared') return 'Спільний лічильник';
-  if (meter.ownerKind === 'other' && meter.tenantName) return meter.tenantName;
+function getOwnerKindLabel(ownerKind: UtilityMeterPointRecord['ownerKind']) {
+  if (ownerKind === 'tenant') return 'Орендар';
+  if (ownerKind === 'shared') return 'Спільний';
+  if (ownerKind === 'other') return 'Інше';
   return 'Магазин';
+}
+
+function getMeterOwnerLabel(meter: UtilityMeterPointRecord) {
+  return [getOwnerKindLabel(meter.ownerKind), meter.tenantName, meter.legalEntity].filter(Boolean).join(' · ');
+}
+
+function getMeterLocationLabel(meter: UtilityMeterPointRecord) {
+  return [meter.storeLabel || meter.storeCode, meter.addressLine].filter(Boolean).join(' · ');
+}
+
+function getMeterLabel(meter: UtilityMeterPointRecord) {
+  return [
+    meter.utilityLabel,
+    meter.meterNumber ? `№${meter.meterNumber}` : '',
+    getMeterOwnerLabel(meter),
+    getMeterLocationLabel(meter)
+  ]
+    .filter(Boolean)
+    .join(' | ');
 }
 
 function buildLocalId() {
@@ -529,18 +548,24 @@ export default function UtilityMetersPage() {
             >
               {payload.meters.map((meter) => (
                 <option key={meter.id} value={meter.id}>
-                  {meter.utilityLabel}
-                  {meter.meterNumber ? ` - ${meter.meterNumber}` : ''}
-                  {meter.tenantName ? ` (${meter.tenantName})` : ''}
+                  {getMeterLabel(meter)}
                 </option>
               ))}
             </select>
 
             {selectedMeter ? (
               <div className="mt-3 grid gap-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700 sm:grid-cols-2">
-                <div>
-                  <div className="font-medium">{selectedMeter.addressLine || selectedMeter.storeLabel}</div>
-                  <div className="mt-1">{getOwnerLabel(selectedMeter)}</div>
+                <div className="space-y-1">
+                  <div>
+                    <span className="font-semibold">Лічильник:</span> {selectedMeter.utilityLabel}
+                    {selectedMeter.meterNumber ? ` · №${selectedMeter.meterNumber}` : ''}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Хто використовує:</span> {getMeterOwnerLabel(selectedMeter)}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Місце:</span> {getMeterLocationLabel(selectedMeter) || 'Не вказано'}
+                  </div>
                 </div>
                 <div className="space-y-1 sm:text-right">
                   <div>Коефіцієнт: {formatNumber(selectedMeter.coefficient)}</div>
