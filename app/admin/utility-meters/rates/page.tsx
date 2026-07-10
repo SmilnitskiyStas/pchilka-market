@@ -82,8 +82,30 @@ function getStoreLabel(store: StoreView) {
   return [store.storeCode, store.name || store.addressLine].filter(Boolean).join(' · ') || `Магазин #${store.id}`;
 }
 
+function getOwnerKindLabel(ownerKind: UtilityMeterPointRecord['ownerKind']) {
+  if (ownerKind === 'tenant') return 'Орендар';
+  if (ownerKind === 'shared') return 'Спільний';
+  if (ownerKind === 'other') return 'Інше';
+  return 'Магазин';
+}
+
+function getMeterOwnerLabel(meter: UtilityMeterPointRecord) {
+  return [getOwnerKindLabel(meter.ownerKind), meter.tenantName, meter.legalEntity].filter(Boolean).join(' · ');
+}
+
+function getMeterLocationLabel(meter: UtilityMeterPointRecord) {
+  return [meter.storeLabel || meter.storeCode, meter.addressLine].filter(Boolean).join(' · ');
+}
+
 function getMeterLabel(meter: UtilityMeterPointRecord) {
-  return [meter.utilityLabel, meter.meterNumber, meter.tenantName].filter(Boolean).join(' | ');
+  return [
+    meter.utilityLabel,
+    meter.meterNumber ? `№${meter.meterNumber}` : '',
+    getMeterOwnerLabel(meter),
+    getMeterLocationLabel(meter)
+  ]
+    .filter(Boolean)
+    .join(' | ');
 }
 
 function formatRate(value: number) {
@@ -422,8 +444,16 @@ export default function AdminUtilityMeterRatesPage() {
                     ))}
                   </select>
                   {selectedMeter ? (
-                    <div className="mt-2 text-xs font-medium text-slate-500">
-                      Тип послуги для цього лічильника буде використано автоматично.
+                    <div className="mt-2 rounded-md bg-slate-50 p-3 text-xs text-slate-600 ring-1 ring-slate-200">
+                      <div>
+                        <span className="font-semibold text-slate-700">Хто використовує:</span> {getMeterOwnerLabel(selectedMeter)}
+                      </div>
+                      <div className="mt-1">
+                        <span className="font-semibold text-slate-700">Місце:</span> {getMeterLocationLabel(selectedMeter) || 'Не вказано'}
+                      </div>
+                      <div className="mt-1 font-medium text-slate-500">
+                        Тип послуги для цього лічильника буде використано автоматично.
+                      </div>
                     </div>
                   ) : null}
                 </label>
@@ -517,6 +547,12 @@ export default function AdminUtilityMeterRatesPage() {
                             <>
                               <div className="font-medium">Лічильник</div>
                               <div className="mt-1 text-xs text-slate-500">{rate.meterLabel || 'Без назви'}</div>
+                              {rate.meterOwnerLabel ? (
+                                <div className="mt-1 text-xs text-slate-500">Власник: {rate.meterOwnerLabel}</div>
+                              ) : null}
+                              {rate.meterLocationLabel ? (
+                                <div className="mt-1 text-xs text-slate-500">Місце: {rate.meterLocationLabel}</div>
+                              ) : null}
                             </>
                           ) : (
                             <>

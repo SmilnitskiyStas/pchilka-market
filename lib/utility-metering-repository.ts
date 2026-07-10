@@ -94,7 +94,11 @@ type RateRow = RowDataPacket & {
   includes_vat: number;
   meter_number: string | null;
   utility_label: string | null;
+  owner_kind: UtilityMeterOwnerKind | null;
   tenant_name: string | null;
+  legal_entity: string | null;
+  point_store_label: string | null;
+  point_address_line: string | null;
   store_code: string | null;
   store_name: string | null;
   store_city: string | null;
@@ -282,6 +286,16 @@ function mapUtilityMeterRate(row: RateRow): UtilityMeterRateRecord {
   const meterLabelParts = [row.utility_label ?? '', row.meter_number ?? '', row.tenant_name ?? '']
     .map((part) => String(part).trim())
     .filter(Boolean);
+  const meterOwnerParts = [
+    row.owner_kind === 'tenant' ? 'Орендар' : row.owner_kind === 'shared' ? 'Спільний' : row.owner_kind === 'other' ? 'Інше' : 'Магазин',
+    row.tenant_name ?? '',
+    row.legal_entity ?? ''
+  ]
+    .map((part) => String(part).trim())
+    .filter(Boolean);
+  const meterLocationParts = [row.point_store_label ?? '', row.point_address_line ?? '']
+    .map((part) => String(part).trim())
+    .filter(Boolean);
   const storeLabelParts = [row.store_code ?? '', row.store_name ?? row.store_city ?? '', row.address_line ?? '']
     .map((part) => String(part).trim())
     .filter(Boolean);
@@ -296,7 +310,9 @@ function mapUtilityMeterRate(row: RateRow): UtilityMeterRateRecord {
     rateLabel: row.rate_label ?? '',
     includesVat: row.includes_vat === 1,
     meterLabel: meterLabelParts.join(' | '),
-    storeLabel: storeLabelParts.join(' | ')
+    storeLabel: storeLabelParts.join(' | '),
+    meterOwnerLabel: meterOwnerParts.join(' | '),
+    meterLocationLabel: meterLocationParts.join(' | ')
   };
 }
 
@@ -732,7 +748,11 @@ export async function listUtilityMeterRatesInDb(input?: {
         r.*,
         p.meter_number,
         p.utility_label,
+        p.owner_kind,
         p.tenant_name,
+        p.legal_entity,
+        p.store_label AS point_store_label,
+        p.address_line AS point_address_line,
         s.store_code,
         s.name AS store_name,
         s.city AS store_city,
@@ -898,7 +918,11 @@ export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): 
           r.*,
           p.meter_number,
           p.utility_label,
+          p.owner_kind,
           p.tenant_name,
+          p.legal_entity,
+          p.store_label AS point_store_label,
+          p.address_line AS point_address_line,
           s.store_code,
           s.name AS store_name,
           s.city AS store_city,
@@ -941,7 +965,11 @@ export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): 
         r.*,
         p.meter_number,
         p.utility_label,
+        p.owner_kind,
         p.tenant_name,
+        p.legal_entity,
+        p.store_label AS point_store_label,
+        p.address_line AS point_address_line,
         s.store_code,
         s.name AS store_name,
         s.city AS store_city,

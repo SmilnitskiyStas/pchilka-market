@@ -83,6 +83,8 @@ export type UtilityMeterRateRecord = {
   includesVat: boolean;
   meterLabel: string;
   storeLabel: string;
+  meterOwnerLabel?: string;
+  meterLocationLabel?: string;
 };
 
 export type UtilityMeterCreateInput = {
