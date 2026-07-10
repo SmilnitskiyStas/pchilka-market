@@ -179,6 +179,17 @@ function getStoreLabel(store: StoreView) {
   return [store.storeCode, store.name || store.addressLine].filter(Boolean).join(' · ') || `Магазин #${store.id}`;
 }
 
+function getOwnerKindLabel(ownerKind: UtilityMeterOwnerKind) {
+  if (ownerKind === 'tenant') return 'Орендар';
+  if (ownerKind === 'shared') return 'Спільний';
+  if (ownerKind === 'other') return 'Інше';
+  return 'Магазин';
+}
+
+function getMeterOwnerLabel(meter: UtilityMeterPointRecord) {
+  return [getOwnerKindLabel(meter.ownerKind), meter.tenantName, meter.legalEntity].filter(Boolean).join(' · ');
+}
+
 export default function AdminUtilityMetersPage() {
   const [periodMonth, setPeriodMonth] = useState(currentPeriodMonth());
   const [selectedStoreId, setSelectedStoreId] = useState('');
@@ -891,7 +902,7 @@ export default function AdminUtilityMetersPage() {
                                   </td>
                                   <td className="px-3 py-3 align-top text-slate-700">{typeLabel}</td>
                                   <td className="px-3 py-3 align-top text-slate-700">
-                                    {meter.ownerKind === 'tenant' ? meter.tenantName || 'Орендар' : 'Магазин'}
+                                    {getMeterOwnerLabel(meter)}
                                   </td>
                                   <td className="px-3 py-3 align-top text-slate-700">{meter.coefficient}</td>
                                   <td className="px-3 py-3 align-top">
@@ -1177,7 +1188,7 @@ export default function AdminUtilityMetersPage() {
                           <div className="font-medium">{item.utilityLabel}</div>
                           <div className="text-xs text-slate-500">{item.meterNumber || 'Без номера'}</div>
                         </td>
-                        <td className="px-3 py-3 align-top">{item.tenantName || 'Магазин'}</td>
+                        <td className="px-3 py-3 align-top">{getMeterOwnerLabel(item)}</td>
                         <td className="px-3 py-3 align-top">{item.reading ? item.reading.readingValue : 'Не подано'}</td>
                         <td className="px-3 py-3 align-top">{item.charge?.consumption ?? '—'}</td>
                         <td className="px-3 py-3 align-top">{money(item.charge?.amount)}</td>
