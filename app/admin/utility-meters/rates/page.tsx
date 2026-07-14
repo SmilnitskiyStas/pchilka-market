@@ -138,6 +138,10 @@ export default function AdminUtilityMeterRatesPage() {
     () => meters.find((meter) => meter.id === form.meterPointId) ?? null,
     [meters, form.meterPointId]
   );
+  const metersForSelectedUtility = useMemo(
+    () => meters.filter((meter) => meter.utilityType === form.utilityType),
+    [meters, form.utilityType]
+  );
 
   async function loadStores() {
     const response = await fetch('/api/admin/utility-meters/stores', { cache: 'no-store' });
@@ -386,7 +390,19 @@ export default function AdminUtilityMeterRatesPage() {
                 Тип послуги
                 <select
                   value={form.utilityType}
-                  onChange={(event) => setForm((current) => ({ ...current, utilityType: event.target.value as UtilityType }))}
+                  onChange={(event) => {
+                    const utilityType = event.target.value as UtilityType;
+                    setForm((current) => ({
+                      ...current,
+                      utilityType,
+                      meterPointId:
+                        current.scope === 'meter' &&
+                        current.meterPointId &&
+                        meters.find((meter) => meter.id === current.meterPointId)?.utilityType !== utilityType
+                          ? ''
+                          : current.meterPointId
+                    }));
+                  }}
                   className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
                   disabled={form.scope === 'meter' && Boolean(selectedMeter)}
                 >
@@ -406,7 +422,12 @@ export default function AdminUtilityMeterRatesPage() {
                     setForm((current) => ({
                       ...current,
                       scope: event.target.value as 'store' | 'meter',
-                      meterPointId: event.target.value === 'store' ? '' : current.meterPointId,
+                      meterPointId:
+                        event.target.value === 'store'
+                          ? ''
+                          : meters.find((meter) => meter.id === current.meterPointId)?.utilityType === current.utilityType
+                            ? current.meterPointId
+                            : '',
                       utilityType:
                         event.target.value === 'meter' && current.meterPointId
                           ? (meters.find((meter) => meter.id === current.meterPointId)?.utilityType ?? current.utilityType)
@@ -437,7 +458,7 @@ export default function AdminUtilityMeterRatesPage() {
                     required
                   >
                     <option value="">Оберіть лічильник</option>
-                    {meters.map((meter) => (
+                    {metersForSelectedUtility.map((meter) => (
                       <option key={meter.id} value={meter.id}>
                         {getMeterLabel(meter)}
                       </option>

@@ -108,8 +108,23 @@ function getMeterLocationLabel(meter: UtilityMeterPointRecord) {
   return [meter.storeLabel || meter.storeCode, meter.addressLine].filter(Boolean).join(' · ');
 }
 
+function getUtilityTypeLabel(utilityType: UtilityMeterPointRecord['utilityType']) {
+  const labels: Record<UtilityMeterPointRecord['utilityType'], string> = {
+    electricity_active: 'Електроенергія (активна)',
+    electricity_reactive: 'Електроенергія (реактивна)',
+    water: 'Вода',
+    waste: 'Водовідведення',
+    maintenance: 'Експлуатаційні послуги',
+    rent: 'Оренда',
+    other: 'Інша послуга'
+  };
+
+  return labels[utilityType];
+}
+
 function getMeterLabel(meter: UtilityMeterPointRecord) {
   return [
+    getUtilityTypeLabel(meter.utilityType),
     meter.utilityLabel,
     meter.meterNumber ? `№${meter.meterNumber}` : '',
     getMeterOwnerLabel(meter),
@@ -565,6 +580,9 @@ export default function UtilityMetersPage() {
             {selectedMeter ? (
               <div className="mt-3 grid gap-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700 sm:grid-cols-2">
                 <div className="space-y-1">
+                  <div>
+                    <span className="font-semibold">Послуга:</span> {getUtilityTypeLabel(selectedMeter.utilityType)}
+                  </div>
                   <div>
                     <span className="font-semibold">Лічильник:</span> {selectedMeter.utilityLabel}
                     {selectedMeter.meterNumber ? ` · №${selectedMeter.meterNumber}` : ''}
