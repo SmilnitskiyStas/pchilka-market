@@ -52,6 +52,16 @@ function buildInventoryIntakeUrl(baseUrl: string, token: string): string {
   return url.toString();
 }
 
+function buildUtilityMetersUrl(baseUrl: string, token: string): string {
+  const url = new URL('/utility-meters', baseUrl);
+  url.searchParams.set('token', token);
+  return url.toString();
+}
+
+function telegramCommand(text: string): string {
+  return text.split(/\s+/, 1)[0]?.toLowerCase().split('@', 1)[0] ?? '';
+}
+
 export async function processInventoryTelegramUpdate(update: TelegramUpdate) {
   const settings = await getInventoryTelegramSettingsFromDb();
   if (!settings.enabled || !settings.botToken || !settings.publicBaseUrl || !settings.webhookSecret) {
@@ -72,6 +82,49 @@ export async function processInventoryTelegramUpdate(update: TelegramUpdate) {
   const text = String(message?.text ?? '').trim();
   if (!chatId || !text) {
     return { handled: false, reason: 'unsupported_update' as const };
+  }
+
+  const command = telegramCommand(text);
+  if (command === '/meters') {
+    const existingUser = await findInventoryUserByChatId(chatId);
+    if (!existingUser || !existingUser.isActive || !existingUser.storeId) {
+      await sendInventoryTelegramMessage({
+        botToken: settings.botToken,
+        chatId,
+        text: 'Для внесення показників потрібен активний обліковий запис, прив’язаний до магазину.'
+      });
+      return { handled: true, reason: 'meters_user_not_available' as const };
+    }
+
+    if (existingUser.role !== 'store_manager') {
+      await sendInventoryTelegramMessage({
+        botToken: settings.botToken,
+        chatId,
+        text: 'Тестовий доступ до показників лічильників поки що відкритий лише для керівників магазинів.'
+      });
+      return { handled: true, reason: 'meters_access_denied' as const };
+    }
+
+    const token = createInventoryRegistrationToken(
+      {
+        chatId,
+        firstName: String(message?.from?.first_name ?? ''),
+        lastName: String(message?.from?.last_name ?? ''),
+        username: String(message?.from?.username ?? '')
+      },
+      settings.webhookSecret
+    );
+    const metersUrl = buildUtilityMetersUrl(settings.publicBaseUrl, token);
+
+    await sendInventoryTelegramMessage({
+      botToken: settings.botToken,
+      chatId,
+      text: `Внесіть показники лічильників для магазину: ${existingUser.storeLabel}.`,
+      buttonText: 'Внести показники',
+      buttonUrl: metersUrl
+    });
+
+    return { handled: true, reason: 'meters_link_sent' as const, metersUrl };
   }
 
   if (!text.startsWith('/start')) {

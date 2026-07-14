@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { resolveInventorySessionUserFromToken } from '@/lib/inventory-session-auth';
 import { findStoreByIdInDb } from '@/lib/stores-repository';
+import { assertUtilityMeterTestAccess } from '@/lib/utility-meter-access';
 import { createUtilityMeterReadingInDb } from '@/lib/utility-metering-repository';
 
 export const runtime = 'nodejs';
@@ -21,6 +22,7 @@ export async function POST(request: Request) {
     const notes = typeof body?.notes === 'string' ? body.notes : '';
 
     const user = await resolveInventorySessionUserFromToken(token);
+    assertUtilityMeterTestAccess(user);
     if (!user.storeId) throw new Error('Для користувача не привʼязано магазин.');
 
     const store = await findStoreByIdInDb(user.storeId);
