@@ -8,9 +8,10 @@ import {
 } from '@/lib/inventory-expiry-date-rules';
 import { normalizeInventoryBarcode } from '@/lib/inventory-product-types';
 import {
-  INVENTORY_SCANNER_MEDIA_CONSTRAINTS,
+  getInventoryScannerCameraErrorMessage,
   INVENTORY_SCANNER_TIMEOUT_MS,
-  INVENTORY_ZXING_SCAN_DELAY_MS
+  INVENTORY_ZXING_SCAN_DELAY_MS,
+  openInventoryScannerCamera
 } from '@/lib/inventory-scanner-camera';
 import { canEditInventoryBatchExpiry, canManageInventoryTaskMode, type InventoryUserRole } from '@/lib/inventory-user-roles';
 import { uploadRequestAttachment } from '@/lib/request-attachment-client';
@@ -581,6 +582,7 @@ export default function InventoryManagePage() {
   const [isUsersSectionOpen, setIsUsersSectionOpen] = useState(false);
   const [manageFilter, setManageFilter] = useState('');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isStartingScanner, setIsStartingScanner] = useState(false);
   const [scannerMessage, setScannerMessage] = useState('');
   const [storeLabel, setStoreLabel] = useState('');
   const [taskAssignmentMode, setTaskAssignmentMode] = useState<InventoryTaskAssignmentMode>('personal');
@@ -609,6 +611,7 @@ export default function InventoryManagePage() {
   const zxingControlsRef = useRef<ZxingControls | null>(null);
   const zxingReaderRef = useRef<{ reset?: () => void } | null>(null);
   const scannerEngineRef = useRef<'barcode-detector' | 'zxing' | null>(null);
+  const isStartingScannerRef = useRef(false);
   const isDetectingBarcodeRef = useRef(false);
   const isHandlingBarcodeRef = useRef(false);
 
@@ -772,7 +775,7 @@ export default function InventoryManagePage() {
   }, [isScannerOpen]);
 
   useEffect(() => {
-    if (!isScannerOpen || !videoRef.current) return;
+    if (!isScannerOpen || !videoRef.current || !streamRef.current) return;
     if (scannerEngineRef.current !== 'zxing') return;
     if (zxingControlsRef.current) return;
 
@@ -781,7 +784,8 @@ export default function InventoryManagePage() {
     async function attachAndScanWithZxing() {
       try {
         const { BarcodeFormat, BrowserMultiFormatReader } = await import('@zxing/browser');
-        if (cancelled || !videoRef.current) return;
+        if (cancelled || !videoRef.current || !streamRef.current) return;
+        const stream = streamRef.current;
 
         const reader = new BrowserMultiFormatReader(undefined, {
           delayBetweenScanAttempts: INVENTORY_ZXING_SCAN_DELAY_MS,
@@ -796,7 +800,7 @@ export default function InventoryManagePage() {
           BarcodeFormat.CODE_39
         ];
         zxingReaderRef.current = reader as { reset?: () => void };
-        const controls = await reader.decodeFromConstraints(INVENTORY_SCANNER_MEDIA_CONSTRAINTS, videoRef.current, (result) => {
+        const controls = await reader.decodeFromStream(stream, videoRef.current, (result) => {
           if (result) {
             void handleDetectedBarcode(result.getText());
           }
@@ -915,6 +919,9 @@ export default function InventoryManagePage() {
   }
 
   async function startScanner() {
+    if (isStartingScannerRef.current) return;
+    isStartingScannerRef.current = true;
+    setIsStartingScanner(true);
     isDetectingBarcodeRef.current = false;
     isHandlingBarcodeRef.current = false;
     setScannerMessage('');
@@ -923,23 +930,22 @@ export default function InventoryManagePage() {
 
     if (!window.isSecureContext) {
       setError('Сканування камерою працює лише через HTTPS або на localhost.');
-      return;
-    }
-
-    if (!window.BarcodeDetector) {
-      scannerEngineRef.current = 'zxing';
-      setIsScannerOpen(true);
-      setScannerMessage('Відкрито fallback-сканер. Наведіть камеру на штрихкод товару.');
+      isStartingScannerRef.current = false;
+      setIsStartingScanner(false);
       return;
     }
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setError('Браузер не підтримує доступ до камери.');
+      isStartingScannerRef.current = false;
+      setIsStartingScanner(false);
       return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(INVENTORY_SCANNER_MEDIA_CONSTRAINTS);
+      stopScanner();
+      setScannerMessage('Відкриваємо камеру...');
+      const stream = await openInventoryScannerCamera();
 
       if (document.visibilityState === 'hidden') {
         for (const track of stream.getTracks()) {
@@ -950,6 +956,13 @@ export default function InventoryManagePage() {
       }
 
       streamRef.current = stream;
+      if (!window.BarcodeDetector) {
+        scannerEngineRef.current = 'zxing';
+        setIsScannerOpen(true);
+        setScannerMessage('Камеру відкрито. Наведіть її на штрихкод товару.');
+        return;
+      }
+
       detectorRef.current = new window.BarcodeDetector({
         formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39']
       });
@@ -958,7 +971,10 @@ export default function InventoryManagePage() {
       setScannerMessage('Наведіть камеру на штрихкод товару.');
     } catch (cameraError) {
       stopScanner();
-      setError(cameraError instanceof Error ? cameraError.message : 'Не вдалося відкрити камеру для сканування.');
+      setError(getInventoryScannerCameraErrorMessage(cameraError));
+    } finally {
+      isStartingScannerRef.current = false;
+      setIsStartingScanner(false);
     }
   }
 
@@ -1212,9 +1228,10 @@ export default function InventoryManagePage() {
                           onClick={() => {
                             void startScanner();
                           }}
-                          className="shrink-0 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                          disabled={isStartingScanner}
+                          className="shrink-0 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition enabled:hover:bg-slate-50 disabled:opacity-60"
                         >
-                          Сканувати
+                          {isStartingScanner ? 'Відкриваємо камеру...' : 'Сканувати'}
                         </button>
                       )}
                     </div>

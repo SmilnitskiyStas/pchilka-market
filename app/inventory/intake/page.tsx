@@ -8,9 +8,10 @@ import {
 } from '@/lib/inventory-expiry-date-rules';
 import { normalizeInventoryBarcode, type InventoryProductInput } from '@/lib/inventory-product-types';
 import {
-  INVENTORY_SCANNER_MEDIA_CONSTRAINTS,
+  getInventoryScannerCameraErrorMessage,
   INVENTORY_SCANNER_TIMEOUT_MS,
-  INVENTORY_ZXING_SCAN_DELAY_MS
+  INVENTORY_ZXING_SCAN_DELAY_MS,
+  openInventoryScannerCamera
 } from '@/lib/inventory-scanner-camera';
 
 type ProductView = {
@@ -295,6 +296,7 @@ export default function InventoryIntakePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isStartingScanner, setIsStartingScanner] = useState(false);
   const [isSearchingProducts, setIsSearchingProducts] = useState(false);
   const [scannerMessage, setScannerMessage] = useState('');
   const [barcodeLookupStatus, setBarcodeLookupStatus] = useState<BarcodeLookupStatus>('idle');
@@ -313,6 +315,7 @@ export default function InventoryIntakePage() {
   const zxingControlsRef = useRef<ZxingControls | null>(null);
   const zxingReaderRef = useRef<{ reset?: () => void } | null>(null);
   const scannerEngineRef = useRef<'barcode-detector' | 'zxing' | null>(null);
+  const isStartingScannerRef = useRef(false);
   const isDetectingBarcodeRef = useRef(false);
   const isHandlingBarcodeRef = useRef(false);
 
@@ -452,7 +455,7 @@ export default function InventoryIntakePage() {
   }, [isScannerOpen, products]);
 
   useEffect(() => {
-    if (!isScannerOpen || !videoRef.current) return;
+    if (!isScannerOpen || !videoRef.current || !streamRef.current) return;
     if (scannerEngineRef.current !== 'zxing') return;
     if (zxingControlsRef.current) return;
 
@@ -461,7 +464,8 @@ export default function InventoryIntakePage() {
     async function attachAndScanWithZxing() {
       try {
         const { BarcodeFormat, BrowserMultiFormatReader } = await import('@zxing/browser');
-        if (cancelled || !videoRef.current) return;
+        if (cancelled || !videoRef.current || !streamRef.current) return;
+        const stream = streamRef.current;
 
         const reader = new BrowserMultiFormatReader(undefined, {
           delayBetweenScanAttempts: INVENTORY_ZXING_SCAN_DELAY_MS,
@@ -476,7 +480,7 @@ export default function InventoryIntakePage() {
           BarcodeFormat.CODE_39
         ];
         zxingReaderRef.current = reader as { reset?: () => void };
-        const controls = await reader.decodeFromConstraints(INVENTORY_SCANNER_MEDIA_CONSTRAINTS, videoRef.current, (result) => {
+        const controls = await reader.decodeFromStream(stream, videoRef.current, (result) => {
           if (result) {
             void handleDetectedBarcode(result.getText());
           }
@@ -822,6 +826,9 @@ export default function InventoryIntakePage() {
   }
 
   async function startScanner() {
+    if (isStartingScannerRef.current) return;
+    isStartingScannerRef.current = true;
+    setIsStartingScanner(true);
     isDetectingBarcodeRef.current = false;
     isHandlingBarcodeRef.current = false;
     setScannerMessage('');
@@ -831,23 +838,22 @@ export default function InventoryIntakePage() {
 
     if (!window.isSecureContext) {
       setMessageError('Сканування камерою працює лише через HTTPS або на localhost.');
-      return;
-    }
-
-    if (!window.BarcodeDetector) {
-      scannerEngineRef.current = 'zxing';
-      setIsScannerOpen(true);
-      setScannerMessage('Safari/iPhone режим: відкрито fallback-сканер. Наведіть камеру на штрихкод товару.');
+      isStartingScannerRef.current = false;
+      setIsStartingScanner(false);
       return;
     }
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setMessageError('Браузер не підтримує доступ до камери.');
+      isStartingScannerRef.current = false;
+      setIsStartingScanner(false);
       return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(INVENTORY_SCANNER_MEDIA_CONSTRAINTS);
+      stopScanner();
+      setScannerMessage('Відкриваємо камеру...');
+      const stream = await openInventoryScannerCamera();
 
       if (document.visibilityState === 'hidden') {
         for (const track of stream.getTracks()) {
@@ -858,6 +864,13 @@ export default function InventoryIntakePage() {
       }
 
       streamRef.current = stream;
+      if (!window.BarcodeDetector) {
+        scannerEngineRef.current = 'zxing';
+        setIsScannerOpen(true);
+        setScannerMessage('Камеру відкрито. Наведіть її на штрихкод товару.');
+        return;
+      }
+
       detectorRef.current = new window.BarcodeDetector({
         formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39']
       });
@@ -866,7 +879,10 @@ export default function InventoryIntakePage() {
       setScannerMessage('Наведіть камеру на штрихкод товару.');
     } catch (cameraError) {
       stopScanner();
-      setMessageError(cameraError instanceof Error ? cameraError.message : 'Не вдалося відкрити камеру для сканування.');
+      setMessageError(getInventoryScannerCameraErrorMessage(cameraError));
+    } finally {
+      isStartingScannerRef.current = false;
+      setIsStartingScanner(false);
     }
   }
 
@@ -1065,9 +1081,10 @@ export default function InventoryIntakePage() {
                         onClick={() => {
                           void startScanner();
                         }}
-                        className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
+                        disabled={isStartingScanner}
+                        className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition enabled:hover:bg-brand/5 disabled:opacity-60"
                       >
-                        Сканувати штрихкод
+                        {isStartingScanner ? 'Відкриваємо камеру...' : 'Сканувати штрихкод'}
                       </button>
                     )}
                   </div>
