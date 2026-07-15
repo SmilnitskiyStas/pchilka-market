@@ -110,6 +110,15 @@ type ZxingControls = {
   stop: () => void;
 };
 
+type ScannerDebugActionType =
+  | 'inventory_scanner_start_requested'
+  | 'inventory_scanner_stream_ready'
+  | 'inventory_scanner_video_ready'
+  | 'inventory_scanner_detector_error'
+  | 'inventory_scanner_barcode_detected'
+  | 'inventory_scanner_no_barcode_detected'
+  | 'inventory_scanner_camera_error';
+
 type BarcodeLookupStatus = 'idle' | 'found' | 'not_found';
 type BatchSelectionMode = 'existing' | 'new';
 
@@ -313,13 +322,50 @@ export default function InventoryIntakePage() {
   const detectorRef = useRef<BarcodeDetectorInstance | null>(null);
   const scanTimerRef = useRef<number | null>(null);
   const scannerTimeoutRef = useRef<number | null>(null);
+  const scannerDiagnosticTimerRef = useRef<number | null>(null);
   const zxingControlsRef = useRef<ZxingControls | null>(null);
   const zxingReaderRef = useRef<{ reset?: () => void } | null>(null);
   const scannerEngineRef = useRef<'barcode-detector' | 'zxing' | null>(null);
   const isStartingScannerRef = useRef(false);
   const isDetectingBarcodeRef = useRef(false);
   const isHandlingBarcodeRef = useRef(false);
+  const scannerSessionIdRef = useRef('');
+  const scannerStartedAtRef = useRef(0);
+  const scannerDetectionAttemptsRef = useRef(0);
+  const scannerDetectorErrorLoggedRef = useRef(false);
   productsRef.current = products;
+
+  function logScannerDebug(
+    actionType: ScannerDebugActionType,
+    meta: Record<string, string | number | boolean | null | undefined> = {}
+  ) {
+    if (!token) return;
+
+    const elapsedMs = scannerStartedAtRef.current > 0 ? Date.now() - scannerStartedAtRef.current : 0;
+    const body = {
+      token,
+      actionType,
+      meta: {
+        ...meta,
+        sessionId: scannerSessionIdRef.current,
+        elapsedMs,
+        detectionAttempts: scannerDetectionAttemptsRef.current,
+        visibilityState: document.visibilityState,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio
+      }
+    };
+
+    void fetch('/api/inventory/scanner-debug', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      keepalive: true
+    }).catch(() => {
+      // Scanner logging must never block or interrupt the worker flow.
+    });
+  }
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -394,7 +440,24 @@ export default function InventoryIntakePage() {
   useEffect(() => {
     if (!isScannerOpen) return;
 
+    scannerDiagnosticTimerRef.current = window.setTimeout(() => {
+      logScannerDebug('inventory_scanner_no_barcode_detected', {
+        stage: 'still_scanning_after_10_seconds',
+        engine: scannerEngineRef.current ?? 'unknown',
+        videoWidth: videoRef.current?.videoWidth ?? 0,
+        videoHeight: videoRef.current?.videoHeight ?? 0,
+        videoReadyState: videoRef.current?.readyState ?? 0
+      });
+    }, 10_000);
+
     scannerTimeoutRef.current = window.setTimeout(() => {
+      logScannerDebug('inventory_scanner_no_barcode_detected', {
+        stage: 'scanner_timeout',
+        engine: scannerEngineRef.current ?? 'unknown',
+        videoWidth: videoRef.current?.videoWidth ?? 0,
+        videoHeight: videoRef.current?.videoHeight ?? 0,
+        videoReadyState: videoRef.current?.readyState ?? 0
+      });
       stopScanner();
       setScannerMessage(
         `Сканер автоматично закрито після ${INVENTORY_SCANNER_TIMEOUT_MS / 1000} секунд без зчитування. Натисніть «Сканувати штрихкод», щоб спробувати знову.`
@@ -402,6 +465,10 @@ export default function InventoryIntakePage() {
     }, INVENTORY_SCANNER_TIMEOUT_MS);
 
     return () => {
+      if (scannerDiagnosticTimerRef.current != null) {
+        window.clearTimeout(scannerDiagnosticTimerRef.current);
+        scannerDiagnosticTimerRef.current = null;
+      }
       if (scannerTimeoutRef.current != null) {
         window.clearTimeout(scannerTimeoutRef.current);
         scannerTimeoutRef.current = null;
@@ -421,7 +488,26 @@ export default function InventoryIntakePage() {
     async function attachAndScan() {
       try {
         await video.play();
-      } catch {
+        const track = streamRef.current?.getVideoTracks()[0];
+        const settings = track?.getSettings();
+        logScannerDebug('inventory_scanner_video_ready', {
+          engine: 'barcode-detector',
+          videoWidth: video.videoWidth,
+          videoHeight: video.videoHeight,
+          videoReadyState: video.readyState,
+          trackReadyState: track?.readyState ?? 'missing',
+          trackMuted: track?.muted ?? false,
+          streamWidth: settings?.width ?? 0,
+          streamHeight: settings?.height ?? 0,
+          frameRate: settings?.frameRate ?? 0,
+          facingMode: settings?.facingMode ?? ''
+        });
+      } catch (error) {
+        logScannerDebug('inventory_scanner_detector_error', {
+          stage: 'video_play',
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+          errorMessage: error instanceof Error ? error.message : String(error)
+        });
         return;
       }
 
@@ -431,14 +517,22 @@ export default function InventoryIntakePage() {
         if (!videoRef.current || !detectorRef.current || isDetectingBarcodeRef.current || isHandlingBarcodeRef.current) return;
 
         isDetectingBarcodeRef.current = true;
+        scannerDetectionAttemptsRef.current += 1;
         try {
           const detected = await detectorRef.current.detect(videoRef.current);
           const first = detected.find((item) => item.rawValue?.trim());
           if (first?.rawValue) {
             await handleDetectedBarcode(first.rawValue);
           }
-        } catch {
-          // Ignore transient detector errors while camera stream stabilizes.
+        } catch (error) {
+          if (!scannerDetectorErrorLoggedRef.current) {
+            scannerDetectorErrorLoggedRef.current = true;
+            logScannerDebug('inventory_scanner_detector_error', {
+              stage: 'barcode_detector_detect',
+              errorName: error instanceof Error ? error.name : 'UnknownError',
+              errorMessage: error instanceof Error ? error.message : String(error)
+            });
+          }
         } finally {
           isDetectingBarcodeRef.current = false;
         }
@@ -482,9 +576,17 @@ export default function InventoryIntakePage() {
           BarcodeFormat.CODE_39
         ];
         zxingReaderRef.current = reader as { reset?: () => void };
-        const controls = await reader.decodeFromStream(stream, videoRef.current, (result) => {
+        const controls = await reader.decodeFromStream(stream, videoRef.current, (result, error) => {
+          scannerDetectionAttemptsRef.current += 1;
           if (result) {
             void handleDetectedBarcode(result.getText());
+          } else if (error && error.name !== 'NotFoundException' && !scannerDetectorErrorLoggedRef.current) {
+            scannerDetectorErrorLoggedRef.current = true;
+            logScannerDebug('inventory_scanner_detector_error', {
+              stage: 'zxing_decode',
+              errorName: error.name || 'UnknownError',
+              errorMessage: error.message || String(error)
+            });
           }
         });
 
@@ -495,8 +597,27 @@ export default function InventoryIntakePage() {
         }
 
         zxingControlsRef.current = controls as ZxingControls;
+        const track = stream.getVideoTracks()[0];
+        const settings = track?.getSettings();
+        logScannerDebug('inventory_scanner_video_ready', {
+          engine: 'zxing',
+          videoWidth: videoRef.current?.videoWidth ?? 0,
+          videoHeight: videoRef.current?.videoHeight ?? 0,
+          videoReadyState: videoRef.current?.readyState ?? 0,
+          trackReadyState: track?.readyState ?? 'missing',
+          trackMuted: track?.muted ?? false,
+          streamWidth: settings?.width ?? 0,
+          streamHeight: settings?.height ?? 0,
+          frameRate: settings?.frameRate ?? 0,
+          facingMode: settings?.facingMode ?? ''
+        });
       } catch (error) {
         if (!cancelled) {
+          logScannerDebug('inventory_scanner_detector_error', {
+            stage: 'zxing_start',
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+            errorMessage: error instanceof Error ? error.message : String(error)
+          });
           stopScanner();
           setMessageError(error instanceof Error ? error.message : 'Не вдалося відкрити камеру для сканування.');
         }
@@ -746,6 +867,10 @@ export default function InventoryIntakePage() {
   }
 
   function stopScanner() {
+    if (scannerDiagnosticTimerRef.current != null) {
+      window.clearTimeout(scannerDiagnosticTimerRef.current);
+      scannerDiagnosticTimerRef.current = null;
+    }
     if (scannerTimeoutRef.current != null) {
       window.clearTimeout(scannerTimeoutRef.current);
       scannerTimeoutRef.current = null;
@@ -788,6 +913,11 @@ export default function InventoryIntakePage() {
     if (!barcode || isHandlingBarcodeRef.current) return;
 
     isHandlingBarcodeRef.current = true;
+    logScannerDebug('inventory_scanner_barcode_detected', {
+      engine: scannerEngineRef.current ?? 'unknown',
+      barcode,
+      barcodeLength: barcode.length
+    });
     stopScanner();
 
     setProductFilter(barcode);
@@ -828,14 +958,24 @@ export default function InventoryIntakePage() {
     if (isStartingScannerRef.current) return;
     isStartingScannerRef.current = true;
     setIsStartingScanner(true);
+    scannerSessionIdRef.current = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    scannerStartedAtRef.current = Date.now();
+    scannerDetectionAttemptsRef.current = 0;
+    scannerDetectorErrorLoggedRef.current = false;
     isDetectingBarcodeRef.current = false;
     isHandlingBarcodeRef.current = false;
     setScannerMessage('');
     setBarcodeLookupStatus('idle');
     setBarcodeLookupMessage('');
     resetMessages();
+    logScannerDebug('inventory_scanner_start_requested', {
+      secureContext: window.isSecureContext,
+      hasMediaDevices: Boolean(navigator.mediaDevices?.getUserMedia),
+      hasBarcodeDetector: Boolean(window.BarcodeDetector)
+    });
 
     if (!window.isSecureContext) {
+      logScannerDebug('inventory_scanner_camera_error', { stage: 'insecure_context' });
       setMessageError('Сканування камерою працює лише через HTTPS або на localhost.');
       isStartingScannerRef.current = false;
       setIsStartingScanner(false);
@@ -843,6 +983,7 @@ export default function InventoryIntakePage() {
     }
 
     if (!navigator.mediaDevices?.getUserMedia) {
+      logScannerDebug('inventory_scanner_camera_error', { stage: 'media_devices_unavailable' });
       setMessageError('Браузер не підтримує доступ до камери.');
       isStartingScannerRef.current = false;
       setIsStartingScanner(false);
@@ -863,6 +1004,17 @@ export default function InventoryIntakePage() {
       }
 
       streamRef.current = stream;
+      const track = stream.getVideoTracks()[0];
+      const settings = track?.getSettings();
+      logScannerDebug('inventory_scanner_stream_ready', {
+        engine: window.BarcodeDetector ? 'barcode-detector' : 'zxing',
+        trackReadyState: track?.readyState ?? 'missing',
+        trackMuted: track?.muted ?? false,
+        streamWidth: settings?.width ?? 0,
+        streamHeight: settings?.height ?? 0,
+        frameRate: settings?.frameRate ?? 0,
+        facingMode: settings?.facingMode ?? ''
+      });
       if (!window.BarcodeDetector) {
         scannerEngineRef.current = 'zxing';
         setIsScannerOpen(true);
@@ -877,6 +1029,11 @@ export default function InventoryIntakePage() {
       setIsScannerOpen(true);
       setScannerMessage('Наведіть камеру на штрихкод товару.');
     } catch (cameraError) {
+      logScannerDebug('inventory_scanner_camera_error', {
+        stage: 'get_user_media',
+        errorName: cameraError instanceof Error ? cameraError.name : 'UnknownError',
+        errorMessage: cameraError instanceof Error ? cameraError.message : String(cameraError)
+      });
       stopScanner();
       setMessageError(getInventoryScannerCameraErrorMessage(cameraError));
     } finally {

@@ -17,7 +17,14 @@ export const INVENTORY_AUTH_DEBUG_ACTION_TYPES = [
   'inventory_intake_context_user_inactive',
   'inventory_intake_context_user_missing_store',
   'inventory_intake_context_store_not_found',
-  'inventory_intake_context_unexpected_error'
+  'inventory_intake_context_unexpected_error',
+  'inventory_scanner_start_requested',
+  'inventory_scanner_stream_ready',
+  'inventory_scanner_video_ready',
+  'inventory_scanner_detector_error',
+  'inventory_scanner_barcode_detected',
+  'inventory_scanner_no_barcode_detected',
+  'inventory_scanner_camera_error'
 ] as const;
 
 export type InventoryAuthDebugActionType = (typeof INVENTORY_AUTH_DEBUG_ACTION_TYPES)[number];

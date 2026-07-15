@@ -738,6 +738,20 @@ function formatInventoryAuthDebugActionType(type: string) {
       return 'Магазин користувача недоступний';
     case 'inventory_intake_context_unexpected_error':
       return 'Неочікувана помилка intake';
+    case 'inventory_scanner_start_requested':
+      return 'Сканер: натиснуто запуск';
+    case 'inventory_scanner_stream_ready':
+      return 'Сканер: камера надала відеопотік';
+    case 'inventory_scanner_video_ready':
+      return 'Сканер: відео готове до розпізнавання';
+    case 'inventory_scanner_detector_error':
+      return 'Сканер: помилка декодера';
+    case 'inventory_scanner_barcode_detected':
+      return 'Сканер: штрихкод розпізнано';
+    case 'inventory_scanner_no_barcode_detected':
+      return 'Сканер: штрихкод не розпізнано';
+    case 'inventory_scanner_camera_error':
+      return 'Сканер: помилка камери';
     default:
       return type || 'Невідома подія';
   }
@@ -5461,9 +5475,9 @@ export default function AdminInventoryManager({
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-slate-900">Лог доступу Telegram та intake</p>
+                <p className="text-sm font-semibold text-slate-900">Лог Telegram, intake та сканера</p>
                 <p className="mt-1 text-sm text-slate-600">
-                  Тут видно `/start`, відмови webhook, помилки токена і причини, через які працівника не пустило в `inventory/intake`.
+                  Тут видно `/start`, доступ до intake та етапи роботи камери й декодера штрихкодів із прив’язкою до працівника та магазину.
                 </p>
               </div>
               <button
@@ -5505,7 +5519,7 @@ export default function AdminInventoryManager({
               </div>
             ) : (
               <p className="mt-4 text-sm text-slate-500">
-                {isLoadingAuthDebugLogs ? 'Завантаження логу...' : 'Ще немає жодного запису по Telegram/intake доступу.'}
+                {isLoadingAuthDebugLogs ? 'Завантаження логу...' : 'Ще немає жодного запису по Telegram, intake або сканеру.'}
               </p>
             )}
           </div>
