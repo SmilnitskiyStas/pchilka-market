@@ -7,6 +7,11 @@ import {
   type SuspiciousInventoryExpiryDate
 } from '@/lib/inventory-expiry-date-rules';
 import { normalizeInventoryBarcode } from '@/lib/inventory-product-types';
+import {
+  INVENTORY_SCANNER_MEDIA_CONSTRAINTS,
+  INVENTORY_SCANNER_TIMEOUT_MS,
+  INVENTORY_ZXING_SCAN_DELAY_MS
+} from '@/lib/inventory-scanner-camera';
 import { canEditInventoryBatchExpiry, canManageInventoryTaskMode, type InventoryUserRole } from '@/lib/inventory-user-roles';
 import { uploadRequestAttachment } from '@/lib/request-attachment-client';
 import type { InventoryTaskAssignmentMode } from '@/lib/store-types';
@@ -93,7 +98,6 @@ type ManageContextPayload = {
   };
   users?: InventoryUserView[];
   storeBatches?: ExpiringBatchView[];
-  expiringBatches?: ExpiringBatchView[];
   taskAssignmentMode?: InventoryTaskAssignmentMode;
   error?: string;
 };
@@ -582,7 +586,6 @@ export default function InventoryManagePage() {
   const [taskAssignmentMode, setTaskAssignmentMode] = useState<InventoryTaskAssignmentMode>('personal');
   const [users, setUsers] = useState<InventoryUserView[]>([]);
   const [storeBatches, setStoreBatches] = useState<ExpiringBatchView[]>([]);
-  const [expiringBatches, setExpiringBatches] = useState<ExpiringBatchView[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [savingUserId, setSavingUserId] = useState<number | null>(null);
   const [assigningBatchId, setAssigningBatchId] = useState<string>('');
@@ -602,9 +605,12 @@ export default function InventoryManagePage() {
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<BarcodeDetectorInstance | null>(null);
   const scanTimerRef = useRef<number | null>(null);
+  const scannerTimeoutRef = useRef<number | null>(null);
   const zxingControlsRef = useRef<ZxingControls | null>(null);
   const zxingReaderRef = useRef<{ reset?: () => void } | null>(null);
   const scannerEngineRef = useRef<'barcode-detector' | 'zxing' | null>(null);
+  const isDetectingBarcodeRef = useRef(false);
+  const isHandlingBarcodeRef = useRef(false);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -626,8 +632,7 @@ export default function InventoryManagePage() {
           !payload.ok ||
           !payload.user ||
           !Array.isArray(payload.users) ||
-          !Array.isArray(payload.storeBatches) ||
-          !Array.isArray(payload.expiringBatches)
+          !Array.isArray(payload.storeBatches)
         ) {
           throw new Error(payload.error || 'Не вдалося завантажити сторінку керування магазином.');
         }
@@ -637,7 +642,6 @@ export default function InventoryManagePage() {
         setTaskAssignmentMode(payload.taskAssignmentMode ?? 'personal');
         setUsers(payload.users);
         setStoreBatches(payload.storeBatches);
-        setExpiringBatches(payload.expiringBatches);
         setError('');
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити сторінку керування магазином.');
@@ -653,8 +657,51 @@ export default function InventoryManagePage() {
     };
   }, []);
 
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'hidden') {
+        const wasScannerActive = scannerEngineRef.current !== null || streamRef.current !== null || zxingControlsRef.current !== null;
+        stopScanner();
+        if (wasScannerActive) {
+          setScannerMessage('Камеру закрито після згортання застосунку. За потреби відкрийте сканер знову.');
+        }
+      }
+    }
+
+    function handlePageHide() {
+      stopScanner();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isScannerOpen) return;
+
+    scannerTimeoutRef.current = window.setTimeout(() => {
+      stopScanner();
+      setScannerMessage(
+        `Сканер автоматично закрито після ${INVENTORY_SCANNER_TIMEOUT_MS / 1000} секунд без зчитування. Натисніть «Сканувати», щоб спробувати знову.`
+      );
+    }, INVENTORY_SCANNER_TIMEOUT_MS);
+
+    return () => {
+      if (scannerTimeoutRef.current != null) {
+        window.clearTimeout(scannerTimeoutRef.current);
+        scannerTimeoutRef.current = null;
+      }
+    };
+  }, [isScannerOpen]);
+
   const activeUsers = useMemo(() => users.filter((item) => item.isActive), [users]);
   const normalizedManageFilter = useMemo(() => normalizeFilterValue(manageFilter), [manageFilter]);
+  const expiringBatches = useMemo(() => storeBatches.filter((item) => item.daysLeft <= 30), [storeBatches]);
   const filteredStoreBatches = useMemo(
     () => storeBatches.filter((item) => batchMatchesFilter(item, normalizedManageFilter)),
     [storeBatches, normalizedManageFilter]
@@ -696,8 +743,9 @@ export default function InventoryManagePage() {
       if (cancelled) return;
 
       scanTimerRef.current = window.setInterval(async () => {
-        if (!videoRef.current || !detectorRef.current) return;
+        if (!videoRef.current || !detectorRef.current || isDetectingBarcodeRef.current || isHandlingBarcodeRef.current) return;
 
+        isDetectingBarcodeRef.current = true;
         try {
           const detected = await detectorRef.current.detect(videoRef.current);
           const first = detected.find((item) => item.rawValue?.trim());
@@ -706,6 +754,8 @@ export default function InventoryManagePage() {
           }
         } catch {
           // Ignore transient detector errors while camera stream stabilizes.
+        } finally {
+          isDetectingBarcodeRef.current = false;
         }
       }, 600);
     }
@@ -730,12 +780,23 @@ export default function InventoryManagePage() {
 
     async function attachAndScanWithZxing() {
       try {
-        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        const { BarcodeFormat, BrowserMultiFormatReader } = await import('@zxing/browser');
         if (cancelled || !videoRef.current) return;
 
-        const reader = new BrowserMultiFormatReader();
+        const reader = new BrowserMultiFormatReader(undefined, {
+          delayBetweenScanAttempts: INVENTORY_ZXING_SCAN_DELAY_MS,
+          delayBetweenScanSuccess: INVENTORY_ZXING_SCAN_DELAY_MS
+        });
+        reader.possibleFormats = [
+          BarcodeFormat.EAN_13,
+          BarcodeFormat.EAN_8,
+          BarcodeFormat.UPC_A,
+          BarcodeFormat.UPC_E,
+          BarcodeFormat.CODE_128,
+          BarcodeFormat.CODE_39
+        ];
         zxingReaderRef.current = reader as { reset?: () => void };
-        const controls = await reader.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+        const controls = await reader.decodeFromConstraints(INVENTORY_SCANNER_MEDIA_CONSTRAINTS, videoRef.current, (result) => {
           if (result) {
             void handleDetectedBarcode(result.getText());
           }
@@ -800,13 +861,14 @@ export default function InventoryManagePage() {
       prev.some((item) => item.id === nextBatch.id) ? prev.map((item) => (item.id === nextBatch.id ? nextBatch : item)) : [nextBatch, ...prev]
     );
 
-    setExpiringBatches((prev) => {
-      const next = prev.some((item) => item.id === nextBatch.id) ? prev.map((item) => (item.id === nextBatch.id ? nextBatch : item)) : [nextBatch, ...prev];
-      return nextBatch.daysLeft <= 30 ? next : next.filter((item) => item.id !== nextBatch.id);
-    });
   }
 
   function stopScanner() {
+    if (scannerTimeoutRef.current != null) {
+      window.clearTimeout(scannerTimeoutRef.current);
+      scannerTimeoutRef.current = null;
+    }
+
     if (scanTimerRef.current != null) {
       window.clearInterval(scanTimerRef.current);
       scanTimerRef.current = null;
@@ -841,16 +903,20 @@ export default function InventoryManagePage() {
 
   async function handleDetectedBarcode(rawValue: string) {
     const barcode = normalizeInventoryBarcode(rawValue);
-    if (!barcode) return;
+    if (!barcode || isHandlingBarcodeRef.current) return;
+
+    isHandlingBarcodeRef.current = true;
+    stopScanner();
 
     setManageFilter(barcode);
     setScannerMessage(`Знайдено штрихкод: ${barcode}`);
     setSuccess(`Штрихкод ${barcode} підставлено в пошук.`);
     setError('');
-    stopScanner();
   }
 
   async function startScanner() {
+    isDetectingBarcodeRef.current = false;
+    isHandlingBarcodeRef.current = false;
     setScannerMessage('');
     setError('');
     setSuccess('');
@@ -873,12 +939,15 @@ export default function InventoryManagePage() {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' }
-        },
-        audio: false
-      });
+      const stream = await navigator.mediaDevices.getUserMedia(INVENTORY_SCANNER_MEDIA_CONSTRAINTS);
+
+      if (document.visibilityState === 'hidden') {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+        setScannerMessage('Камеру не відкрито, тому що застосунок було згорнуто. Поверніться та запустіть сканер знову.');
+        return;
+      }
 
       streamRef.current = stream;
       detectorRef.current = new window.BarcodeDetector({
@@ -979,18 +1048,6 @@ export default function InventoryManagePage() {
       if (!response.ok || !payload.ok || !payload.batch) {
         throw new Error(payload.error || 'Не вдалося переназначити відповідального.');
       }
-
-      setExpiringBatches((prev) =>
-        prev.map((item) =>
-          item.id === payload.batch?.id
-            ? {
-                ...item,
-                responsibleUserId: payload.batch.responsibleUserId,
-                responsibleUserName: payload.batch.responsibleUserName
-              }
-            : item
-        )
-      );
 
       setStoreBatches((prev) =>
         prev.map((item) =>

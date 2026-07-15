@@ -199,7 +199,46 @@ function mapRow(row: BatchRow): InventoryBatchRecord {
   };
 }
 
-type InventoryDbExecutor = Pool | PoolConnection;
+export type InventoryDbExecutor = Pool | PoolConnection;
+
+type InventoryBatchLockRow = RowDataPacket & {
+  lock_acquired: number | null;
+};
+
+export async function withInventoryBatchDuplicateLock<T>(
+  input: { storeId?: string | number; productId?: string | number; expiryDate?: string },
+  callback: (executor: PoolConnection) => Promise<T>
+): Promise<T> {
+  const storeId = Number(input.storeId);
+  const productId = Number(input.productId);
+  const expiryDate = String(input.expiryDate ?? '').trim();
+
+  if (!Number.isFinite(storeId) || storeId <= 0 || !Number.isFinite(productId) || productId <= 0 || !expiryDate) {
+    throw new Error('Некоректні дані для перевірки дублювання партії.');
+  }
+
+  const connection = await getDbPool().getConnection();
+  const lockName = `inv_batch:${storeId}:${productId}:${expiryDate}`;
+  const batchCodeLockName = `inventory_batch_code:${storeId}`;
+
+  try {
+    const [rows] = await connection.query<InventoryBatchLockRow[]>('SELECT GET_LOCK(?, 10) AS lock_acquired', [lockName]);
+    if (Number(rows[0]?.lock_acquired ?? 0) !== 1) {
+      throw new Error('Не вдалося заблокувати одночасне створення партії. Спробуйте ще раз.');
+    }
+
+    const [batchCodeLockRows] = await connection.query<InventoryBatchLockRow[]>('SELECT GET_LOCK(?, 10) AS lock_acquired', [batchCodeLockName]);
+    if (Number(batchCodeLockRows[0]?.lock_acquired ?? 0) !== 1) {
+      throw new Error('Не вдалося заблокувати одночасну генерацію коду партії. Спробуйте ще раз.');
+    }
+
+    return await callback(connection);
+  } finally {
+    await connection.query('SELECT RELEASE_LOCK(?)', [batchCodeLockName]).catch(() => undefined);
+    await connection.query('SELECT RELEASE_LOCK(?)', [lockName]).catch(() => undefined);
+    connection.release();
+  }
+}
 
 type CreateInventoryBatchOptions = {
   createdByUserId?: number | null;

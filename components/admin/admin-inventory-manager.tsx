@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   getSuspiciousInventoryExpiryDate,
@@ -41,6 +41,8 @@ type BatchesPayload = {
   batches?: InventoryBatchRecord[];
   batch?: InventoryBatchRecord;
   metrics?: InventoryBatchOverviewMetrics;
+  hasMore?: boolean;
+  nextCursorBatchId?: string | null;
   error?: string;
 };
 type AnalyticsPayload = { ok?: boolean; metrics?: InventoryAnalyticsMetrics; error?: string };
@@ -903,6 +905,9 @@ export default function AdminInventoryManager({
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [batches, setBatches] = useState<InventoryBatchRecord[]>([]);
   const [batchOverviewMetrics, setBatchOverviewMetrics] = useState<InventoryBatchOverviewMetrics | null>(null);
+  const [batchesNextCursor, setBatchesNextCursor] = useState<string | null>(null);
+  const [hasMoreBatches, setHasMoreBatches] = useState(false);
+  const [isLoadingMoreBatches, setIsLoadingMoreBatches] = useState(false);
   const [analyticsMetricsFromDb, setAnalyticsMetricsFromDb] = useState<InventoryAnalyticsMetrics | null>(null);
   const [stores, setStores] = useState<StoreRecord[]>([]);
   const [inventoryUsers, setInventoryUsers] = useState<InventoryUserView[]>([]);
@@ -989,6 +994,7 @@ export default function AdminInventoryManager({
   const [isSavingManualStoreProduct, setIsSavingManualStoreProduct] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+  const loadedSubsectionsRef = useRef(new Set<InventorySubsectionId>());
 
   async function loadProducts(options?: { page?: number; q?: string; category?: string; limit?: number }) {
     const nextPage = options?.page ?? productPage;
@@ -1547,79 +1553,175 @@ export default function AdminInventoryManager({
   }
 
   useEffect(() => {
+    if (loadedSubsectionsRef.current.has(activeSubsection)) {
+      setIsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
     let cancelled = false;
+
+    async function requestPayload<T>(url: string): Promise<{ response: Response; payload: T }> {
+      const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+      const payload = (await response.json()) as T;
+      return { response, payload };
+    }
+
+    async function loadReadiness() {
+      const { response, payload } = await requestPayload<ReadinessPayload>('/api/admin/inventory/readiness');
+      if (!response.ok || !payload.ok || !payload.readiness) {
+        throw new Error(payload.error || 'Не вдалося перевірити готовність inventory-модуля.');
+      }
+      if (!cancelled) setReadiness(payload.readiness);
+    }
+
+    async function loadProductSummary() {
+      const { response, payload } = await requestPayload<ProductsPayload>('/api/admin/inventory/products?limit=1&page=1');
+      if (!response.ok || !payload.ok || !Array.isArray(payload.products)) {
+        throw new Error(payload.error || 'Не вдалося завантажити товари.');
+      }
+      if (!cancelled) setProductsTotalCount(Number(payload.totalCount ?? payload.products.length));
+    }
+
+    async function loadBatches(limit = 500) {
+      const { response, payload } = await requestPayload<BatchesPayload>(`/api/admin/inventory/batches?limit=${limit}`);
+      if (!response.ok || !payload.ok || !Array.isArray(payload.batches)) {
+        throw new Error(payload.error || 'Не вдалося завантажити партії.');
+      }
+      if (!cancelled) {
+        setBatches(payload.batches);
+        setBatchOverviewMetrics(payload.metrics ?? null);
+        setHasMoreBatches(Boolean(payload.hasMore));
+        setBatchesNextCursor(payload.nextCursorBatchId ?? null);
+      }
+    }
+
+    async function loadStores() {
+      const { response, payload } = await requestPayload<StoresPayload>('/api/admin/stores');
+      if (!response.ok || !payload.ok || !Array.isArray(payload.stores)) {
+        throw new Error(payload.error || 'Не вдалося завантажити магазини.');
+      }
+      if (!cancelled) setStores(payload.stores);
+    }
+
+    async function loadUsers() {
+      const { response, payload } = await requestPayload<UsersPayload>('/api/admin/inventory/users?limit=300');
+      if (!response.ok || !payload.ok || !Array.isArray(payload.users)) {
+        throw new Error(payload.error || 'Не вдалося завантажити працівників inventory-модуля.');
+      }
+      if (!cancelled) setInventoryUsers(payload.users);
+    }
+
+    async function loadManualProductsForSection() {
+      const { response, payload } = await requestPayload<ManualProductsPayload>('/api/admin/inventory/manual-products?limit=200');
+      if (!response.ok || !payload.ok || !Array.isArray(payload.items)) {
+        throw new Error(payload.error || 'Не вдалося завантажити товари, створені працівниками.');
+      }
+      if (!cancelled) setManualProductCreations(payload.items);
+    }
+
+    async function loadProductChangeLogs() {
+      const { response, payload } = await requestPayload<ProductChangeLogsPayload>('/api/admin/inventory/product-change-logs?limit=40');
+      if (!cancelled) setProductChangeLogs(response.ok && payload.ok && Array.isArray(payload.items) ? payload.items : []);
+    }
+
+    async function loadImportReview() {
+      const { response, payload } = await requestPayload<ImportReviewPayload>('/api/admin/inventory/import-review?status=pending&limit=100');
+      if (!cancelled) setImportReviewItems(response.ok && payload.ok && Array.isArray(payload.items) ? payload.items : []);
+    }
+
+    async function loadLatestImport() {
+      const { response, payload } = await requestPayload<ProductImportPayload>('/api/admin/inventory/products/import?latest=1');
+      if (!cancelled) {
+        setLatestImportLog(response.ok && payload.ok ? payload.importLog ?? null : null);
+        setImportSummary(response.ok && payload.ok ? payload.importLog?.summary ?? null : null);
+      }
+    }
+
+    async function loadTelegramSettings() {
+      const [{ response: settingsResponse, payload: settingsPayload }, { response: webhookResponse, payload: webhookPayload }] = await Promise.all([
+        requestPayload<SettingsPayload>('/api/admin/inventory/settings'),
+        requestPayload<WebhookPayload>('/api/admin/inventory/webhook')
+      ]);
+      if (!settingsResponse.ok || !settingsPayload.ok) {
+        throw new Error(settingsPayload.error || 'Не вдалося завантажити Telegram-налаштування.');
+      }
+      if (!cancelled) {
+        setTelegramSettings(normalizeInventoryTelegramSettings(settingsPayload.settings));
+        setWebhookInfo(webhookResponse.ok && webhookPayload.ok ? webhookPayload.info ?? null : null);
+      }
+    }
+
+    async function loadTelegramDiagnostics() {
+      const [broadcastResult, authResult] = await Promise.all([
+        requestPayload<InventoryNotificationLogsPayload>('/api/admin/inventory/notifications?type=inventory_manual_broadcast&limit=100&page=1'),
+        requestPayload<InventoryAuthDebugLogsPayload>('/api/admin/inventory/auth-debug?limit=100')
+      ]);
+      if (!cancelled) {
+        setManualBroadcastLogs(
+          broadcastResult.response.ok && broadcastResult.payload.ok && Array.isArray(broadcastResult.payload.logs)
+            ? broadcastResult.payload.logs
+            : []
+        );
+        setAuthDebugLogs(
+          authResult.response.ok && authResult.payload.ok && Array.isArray(authResult.payload.items)
+            ? authResult.payload.items
+            : []
+        );
+      }
+    }
 
     async function load() {
       setIsLoading(true);
       try {
-        const [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14] = await Promise.all([
-          fetch('/api/admin/inventory/readiness', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/settings', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/products', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/batches?limit=5000', { cache: 'no-store' }),
-          fetch('/api/admin/stores', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/users?limit=300', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/webhook', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/manual-products?limit=200', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/product-change-logs?limit=40', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/import-review?status=pending&limit=100', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/products/import?latest=1', { cache: 'no-store' }),
-          fetch(`/api/admin/inventory/notifications?limit=${notificationLogsPageSize}&page=1&dateFrom=${encodeURIComponent(notificationsDateFrom)}&dateTo=${encodeURIComponent(notificationsDateTo)}`, { cache: 'no-store' }),
-          fetch('/api/admin/inventory/notifications?type=inventory_manual_broadcast&limit=100&page=1', { cache: 'no-store' }),
-          fetch('/api/admin/inventory/auth-debug?limit=100', { cache: 'no-store' })
-        ]);
+        const tasks: Array<Promise<void>> = [];
 
-        const p1 = (await r1.json()) as ReadinessPayload;
-        const p2 = (await r2.json()) as SettingsPayload;
-        const p3 = (await r3.json()) as ProductsPayload;
-        const p4 = (await r4.json()) as BatchesPayload;
-        const p5 = (await r5.json()) as StoresPayload;
-        const p6 = (await r6.json()) as UsersPayload;
-        const p7 = (await r7.json()) as WebhookPayload;
-        const p8 = (await r8.json()) as ManualProductsPayload;
-        const p9 = (await r9.json()) as ProductChangeLogsPayload;
-        const p10 = (await r10.json()) as ImportReviewPayload;
-        const p11 = (await r11.json()) as ProductImportPayload;
-        const p12 = (await r12.json()) as InventoryNotificationLogsPayload;
-        const p13 = (await r13.json()) as InventoryNotificationLogsPayload;
-        const p14 = (await r14.json()) as InventoryAuthDebugLogsPayload;
+        switch (activeSubsection) {
+          case 'overview':
+            tasks.push(loadReadiness(), loadProductSummary(), loadBatches(200), loadStores(), loadUsers(), loadManualProductsForSection(), loadImportReview());
+            break;
+          case 'settings-schema':
+            tasks.push(loadReadiness());
+            break;
+          case 'product-list':
+            tasks.push(loadManualProductsForSection(), loadProductChangeLogs());
+            break;
+          case 'product-import':
+            tasks.push(loadProductChangeLogs(), loadImportReview(), loadLatestImport());
+            break;
+          case 'batches-list':
+            tasks.push(loadBatches(), loadStores());
+            break;
+          case 'registered-employees':
+            tasks.push(loadStores(), loadUsers(), loadBatches(), loadManualProductsForSection());
+            break;
+          case 'employee-tasks':
+            tasks.push(loadStores(), loadUsers());
+            break;
+          case 'batch-responsibility':
+            tasks.push(loadStores(), loadUsers(), loadBatches());
+            break;
+          case 'notifications':
+          case 'analytics':
+            tasks.push(loadStores());
+            break;
+          case 'settings-telegram':
+            tasks.push(loadTelegramSettings(), loadStores(), loadUsers(), loadTelegramDiagnostics());
+            break;
+          case 'product-create':
+            break;
+        }
 
-        if (!r1.ok || !p1.ok || !p1.readiness) throw new Error(p1.error || 'Не вдалося перевірити готовність inventory-модуля.');
-        if (!r2.ok || !p2.ok) throw new Error(p2.error || 'Не вдалося завантажити Telegram-налаштування.');
-        if (!r3.ok || !p3.ok || !Array.isArray(p3.products)) throw new Error(p3.error || 'Не вдалося завантажити товари.');
-        if (!r4.ok || !p4.ok || !Array.isArray(p4.batches)) throw new Error(p4.error || 'Не вдалося завантажити партії.');
-        if (!r5.ok || !p5.ok || !Array.isArray(p5.stores)) throw new Error(p5.error || 'Не вдалося завантажити магазини.');
-        if (!r6.ok || !p6.ok || !Array.isArray(p6.users)) throw new Error(p6.error || 'Не вдалося завантажити працівників inventory-модуля.');
-        if (!r8.ok || !p8.ok || !Array.isArray(p8.items)) throw new Error(p8.error || 'Не вдалося завантажити товари, створені працівниками.');
+        await Promise.all(tasks);
         if (!cancelled) {
-          setReadiness(p1.readiness);
-          setTelegramSettings(normalizeInventoryTelegramSettings(p2.settings));
-          setProducts(p3.products);
-          setProductsTotalCount(Number(p3.totalCount ?? p3.products.length));
-          setProductCategories(Array.isArray(p3.categories) ? p3.categories : []);
-          setBatches(p4.batches);
-          setBatchOverviewMetrics(p4.metrics ?? null);
-          setStores(p5.stores);
-          setInventoryUsers(p6.users);
-          setWebhookInfo(p7.ok ? p7.info ?? null : null);
-          setManualProductCreations(p8.items);
-          setProductChangeLogs(r9.ok && p9.ok && Array.isArray(p9.items) ? p9.items : []);
-          setImportReviewItems(r10.ok && p10.ok && Array.isArray(p10.items) ? p10.items : []);
-          setLatestImportLog(r11.ok && p11.ok ? p11.importLog ?? null : null);
-          setImportSummary(r11.ok && p11.ok ? p11.importLog?.summary ?? null : null);
-          setNotificationLogs(r12.ok && p12.ok && Array.isArray(p12.logs) ? p12.logs : []);
-          setManualBroadcastLogs(r13.ok && p13.ok && Array.isArray(p13.logs) ? p13.logs : []);
-          setAuthDebugLogs(r14.ok && p14.ok && Array.isArray(p14.items) ? p14.items : []);
-          setNotificationLogsTotalCount(r12.ok && p12.ok ? Number(p12.totalCount ?? p12.logs?.length ?? 0) : 0);
-          setNotificationLogsPage(r12.ok && p12.ok ? Number(p12.page ?? 1) : 1);
-          setNotificationLogsPageSize(r12.ok && p12.ok ? Number(p12.limit ?? notificationLogsPageSize) : notificationLogsPageSize);
+          loadedSubsectionsRef.current.add(activeSubsection);
           setError('');
           setSuccess('');
           setIsApplied(false);
           setIsSettingsSaved(false);
         }
       } catch (loadError) {
-        if (!cancelled) {
+        if (!cancelled && !(loadError instanceof DOMException && loadError.name === 'AbortError')) {
           setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити inventory-модуль.');
         }
       } finally {
@@ -1630,8 +1732,35 @@ export default function AdminInventoryManager({
     void load();
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, []);
+  }, [activeSubsection]);
+
+  async function loadMoreBatches() {
+    if (!hasMoreBatches || !batchesNextCursor || isLoadingMoreBatches) return;
+
+    setIsLoadingMoreBatches(true);
+    try {
+      const params = new URLSearchParams({ limit: '500', cursorBatchId: batchesNextCursor });
+      const response = await fetch(`/api/admin/inventory/batches?${params.toString()}`, { cache: 'no-store' });
+      const payload = (await response.json()) as BatchesPayload;
+      if (!response.ok || !payload.ok || !Array.isArray(payload.batches)) {
+        throw new Error(payload.error || 'Не вдалося дозавантажити партії.');
+      }
+
+      setBatches((current) => {
+        const knownIds = new Set(current.map((batch) => batch.id));
+        return [...current, ...payload.batches!.filter((batch) => !knownIds.has(batch.id))];
+      });
+      setBatchOverviewMetrics(payload.metrics ?? null);
+      setHasMoreBatches(Boolean(payload.hasMore));
+      setBatchesNextCursor(payload.nextCursorBatchId ?? null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Не вдалося дозавантажити партії.');
+    } finally {
+      setIsLoadingMoreBatches(false);
+    }
+  }
 
   useEffect(() => {
     if (activeSubsection !== 'notifications') return;
@@ -1698,8 +1827,13 @@ export default function AdminInventoryManager({
   }, [activeSection, catalogSearchQuery]);
 
   useEffect(() => {
-    void loadProducts();
-  }, [productPage, productPageSize, productCategoryFilter]);
+    if (activeSection !== 'product-list' && activeSection !== 'import' && activeSection !== 'intake') return;
+    if (activeSection === 'product-list') {
+      void loadProducts();
+      return;
+    }
+    void loadProducts({ page: 1, limit: 1 });
+  }, [activeSection, productPage, productPageSize, productCategoryFilter]);
 
   const existingTablesCount = useMemo(() => readiness?.tables.filter((item) => item.exists).length ?? 0, [readiness]);
   const missingTables = readiness?.tables.filter((item) => !item.exists).map((item) => item.name) ?? [];
@@ -2436,7 +2570,7 @@ export default function AdminInventoryManager({
     });
   }
 
-  async function submitIntake(duplicateAction?: 'merge' | 'create_anyway', confirmSuspiciousExpiryDate = false) {
+  async function submitIntake(duplicateAction?: 'merge', confirmSuspiciousExpiryDate = false) {
     setIsCreatingIntake(true);
     setError('');
     setSuccess('');
@@ -3418,6 +3552,18 @@ export default function AdminInventoryManager({
             ))}
           </div>
         )}
+        {hasMoreBatches ? (
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={() => { void loadMoreBatches(); }}
+              disabled={isLoadingMoreBatches}
+              className="rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition enabled:hover:border-brand enabled:hover:text-brand disabled:opacity-60"
+            >
+              {isLoadingMoreBatches ? 'Завантаження...' : 'Показати старіші партії'}
+            </button>
+          </div>
+        ) : null}
       </section>
       ) : null}
 
@@ -5511,7 +5657,7 @@ export default function AdminInventoryManager({
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Підтвердження</p>
           <h3 className="mt-2 text-xl font-semibold text-slate-900">Знайдено схожу партію</h3>
           <p className="mt-2 text-sm text-slate-600">
-            У магазині вже є партія цього товару з таким самим терміном придатності. Обери, що зробити далі.
+            У магазині вже є партія цього товару з таким самим терміном придатності. Окремий дубль створити неможливо: кількість можна додати до існуючої партії або скасувати дію.
           </p>
           <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
             <p><span className="font-semibold text-slate-900">Товар:</span> {intakeDuplicateBatch.productName}</p>
@@ -5528,14 +5674,6 @@ export default function AdminInventoryManager({
               className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
             >
               Скасувати
-            </button>
-            <button
-              type="button"
-              onClick={() => { void submitIntake('create_anyway'); }}
-              disabled={isCreatingIntake}
-              className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand disabled:opacity-60"
-            >
-              Створити окремо
             </button>
             <button
               type="button"

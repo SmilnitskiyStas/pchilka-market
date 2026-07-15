@@ -7,6 +7,7 @@ import { normalizeInventoryBarcode } from '@/lib/inventory-product-types';
 import { findInventoryUserByChatId } from '@/lib/inventory-users-repository';
 
 export const runtime = 'nodejs';
+const PRODUCT_SEARCH_LIMIT = 50;
 
 export async function GET(request: Request) {
   try {
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: true, product });
     }
 
-    const products = (await listInventoryProductsFromDb(query, 500, 0)).filter((item) => item.isActive);
+    const products = (await listInventoryProductsFromDb(query, PRODUCT_SEARCH_LIMIT, 0)).filter((item) => item.isActive);
     return NextResponse.json({ ok: true, products });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не вдалося виконати пошук товару.';

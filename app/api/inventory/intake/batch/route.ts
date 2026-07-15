@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server';
 import {
   createInventoryBatchInDb,
   findInventoryDuplicateBatchInDb,
-  mergeInventoryBatchQuantityInDb
+  mergeInventoryBatchQuantityInDb,
+  withInventoryBatchDuplicateLock
 } from '@/lib/inventory-batches-repository';
 import { normalizeInventoryBatchInput } from '@/lib/inventory-batch-types';
 import { getSuspiciousInventoryExpiryDate } from '@/lib/inventory-expiry-date-rules';
@@ -19,7 +20,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       token?: string;
       batch?: Record<string, unknown>;
-      duplicateAction?: 'merge' | 'create_anyway';
+      duplicateAction?: 'merge';
       confirmSuspiciousExpiryDate?: boolean;
     };
 
@@ -78,49 +79,54 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Товар знайдено, але він неактивний.' }, { status: 400 });
     }
 
-    const duplicateBatch = await findInventoryDuplicateBatchInDb({
-      storeId: normalized.storeId,
-      productId: normalized.productId,
-      expiryDate: normalized.expiryDate
-    });
-
-    if (duplicateBatch && body?.duplicateAction !== 'merge' && body?.duplicateAction !== 'create_anyway') {
-      return NextResponse.json(
+    return await withInventoryBatchDuplicateLock(normalized, async (executor) => {
+      const duplicateBatch = await findInventoryDuplicateBatchInDb(
         {
-          ok: false,
-          error: 'У цьому магазині вже є така партія з цим самим терміном придатності.',
-          duplicateBatch
+          storeId: normalized.storeId,
+          productId: normalized.productId,
+          expiryDate: normalized.expiryDate
         },
-        { status: 409 }
-      );
-    }
-
-    if (duplicateBatch && body?.duplicateAction === 'merge') {
-      const batch = await mergeInventoryBatchQuantityInDb(
-        {
-          batchId: duplicateBatch.id,
-          quantity: normalized.quantity,
-          batchCode: normalized.batchCode,
-          deliveryDate: normalized.deliveryDate,
-          notifiedDays: normalized.notifiedDays
-        },
-        undefined,
-        {
-          updatedByUserId: user.id,
-          responsibleUserId: user.id
-        }
+        executor
       );
 
-      return NextResponse.json({ ok: true, batch, resolution: 'merged' });
-    }
+      if (duplicateBatch && body?.duplicateAction !== 'merge') {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'У цьому магазині вже є така партія з цим самим терміном придатності.',
+            duplicateBatch
+          },
+          { status: 409 }
+        );
+      }
 
-    const batch = await createInventoryBatchInDb(normalized, undefined, {
-      createdByUserId: user.id,
-      updatedByUserId: user.id,
-      responsibleUserId: user.id
+      if (duplicateBatch) {
+        const batch = await mergeInventoryBatchQuantityInDb(
+          {
+            batchId: duplicateBatch.id,
+            quantity: normalized.quantity,
+            batchCode: normalized.batchCode,
+            deliveryDate: normalized.deliveryDate,
+            notifiedDays: normalized.notifiedDays
+          },
+          executor,
+          {
+            updatedByUserId: user.id,
+            responsibleUserId: user.id
+          }
+        );
+
+        return NextResponse.json({ ok: true, batch, resolution: 'merged' });
+      }
+
+      const batch = await createInventoryBatchInDb(normalized, executor, {
+        createdByUserId: user.id,
+        updatedByUserId: user.id,
+        responsibleUserId: user.id
+      });
+
+      return NextResponse.json({ ok: true, batch, resolution: 'created' });
     });
-
-    return NextResponse.json({ ok: true, batch, resolution: 'created' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не вдалося створити партію.';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

@@ -54,18 +54,13 @@ export async function GET(request: Request) {
       daysLeft: daysUntil(batch.expiryDate)
     }));
 
-    const expiringBatches = storeBatches
-      .filter((batch) => batch.daysLeft <= 30)
-      .sort((a, b) => a.daysLeft - b.daysLeft || a.expiryDate.localeCompare(b.expiryDate));
-
     return NextResponse.json({
       ok: true,
       user,
       store,
       taskAssignmentMode: store?.taskAssignmentMode ?? 'personal',
       users,
-      storeBatches,
-      expiringBatches
+      storeBatches
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown DB error';

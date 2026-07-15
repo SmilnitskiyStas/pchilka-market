@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { RowDataPacket } from 'mysql2/promise';
 
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import { getDbPool } from '@/lib/db';
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       product?: Record<string, unknown>;
       batch?: Record<string, unknown>;
-      duplicateAction?: 'merge' | 'create_anyway';
+      duplicateAction?: 'merge';
       confirmSuspiciousExpiryDate?: boolean;
     };
 
@@ -61,28 +62,11 @@ export async function POST(request: Request) {
       productName: productInput.productName,
       unitsOfMeasurement: productInput.unitsOfMeasurement
     });
-    const duplicateBatch =
-      duplicateProduct && batchInput.storeId && batchInput.expiryDate
-        ? await findInventoryDuplicateBatchInDb({
-            storeId: batchInput.storeId,
-            productId: duplicateProduct.id,
-            expiryDate: batchInput.expiryDate
-          })
-        : null;
-
-    if (duplicateBatch && body?.duplicateAction !== 'merge' && body?.duplicateAction !== 'create_anyway') {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: 'У цьому магазині вже є така партія з цим самим терміном придатності.',
-          duplicateBatch
-        },
-        { status: 409 }
-      );
-    }
-
     const pool = getDbPool();
     const connection = await pool.getConnection();
+    let duplicateConflict: Awaited<ReturnType<typeof findInventoryDuplicateBatchInDb>> = null;
+    let duplicateLockName = '';
+    let batchCodeLockName = '';
     let result:
       | {
           product: Awaited<ReturnType<typeof createInventoryProductInDb>>;
@@ -96,8 +80,36 @@ export async function POST(request: Request) {
 
       const product = duplicateProduct ?? (await createInventoryProductInDb(productInput, connection));
       const normalizedBatchInput = normalizeInventoryBatchInput({ ...batchInput, productId: product.id });
+      duplicateLockName = `inv_batch:${normalizedBatchInput.storeId}:${normalizedBatchInput.productId}:${normalizedBatchInput.expiryDate}`;
+      const [lockRows] = await connection.query<Array<RowDataPacket & { lock_acquired: number | null }>>(
+        'SELECT GET_LOCK(?, 10) AS lock_acquired',
+        [duplicateLockName]
+      );
+      if (Number(lockRows[0]?.lock_acquired ?? 0) !== 1) {
+        throw new Error('Не вдалося заблокувати одночасне створення партії. Спробуйте ще раз.');
+      }
+      batchCodeLockName = `inventory_batch_code:${normalizedBatchInput.storeId}`;
+      const [batchCodeLockRows] = await connection.query<Array<RowDataPacket & { lock_acquired: number | null }>>(
+        'SELECT GET_LOCK(?, 10) AS lock_acquired',
+        [batchCodeLockName]
+      );
+      if (Number(batchCodeLockRows[0]?.lock_acquired ?? 0) !== 1) {
+        throw new Error('Не вдалося заблокувати одночасну генерацію коду партії. Спробуйте ще раз.');
+      }
 
-      if (duplicateBatch && body?.duplicateAction === 'merge') {
+      const duplicateBatch = await findInventoryDuplicateBatchInDb(
+        {
+          storeId: normalizedBatchInput.storeId,
+          productId: normalizedBatchInput.productId,
+          expiryDate: normalizedBatchInput.expiryDate
+        },
+        connection
+      );
+
+      if (duplicateBatch && body?.duplicateAction !== 'merge') {
+        duplicateConflict = duplicateBatch;
+        await connection.rollback();
+      } else if (duplicateBatch) {
         const batch = await mergeInventoryBatchQuantityInDb(
           {
             batchId: duplicateBatch.id,
@@ -109,6 +121,7 @@ export async function POST(request: Request) {
           connection
         );
         result = { product, batch, resolution: 'merged', usedExistingProduct: true };
+        await connection.commit();
       } else {
         const batch = await createInventoryBatchInDb(normalizedBatchInput, connection);
         result = {
@@ -117,14 +130,30 @@ export async function POST(request: Request) {
           resolution: 'created',
           usedExistingProduct: Boolean(duplicateProduct)
         };
+        await connection.commit();
       }
-
-      await connection.commit();
     } catch (error) {
       await connection.rollback();
       throw error;
     } finally {
+      if (batchCodeLockName) {
+        await connection.query('SELECT RELEASE_LOCK(?)', [batchCodeLockName]).catch(() => undefined);
+      }
+      if (duplicateLockName) {
+        await connection.query('SELECT RELEASE_LOCK(?)', [duplicateLockName]).catch(() => undefined);
+      }
       connection.release();
+    }
+
+    if (duplicateConflict) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'У цьому магазині вже є така партія з цим самим терміном придатності.',
+          duplicateBatch: duplicateConflict
+        },
+        { status: 409 }
+      );
     }
 
     if (!result) {

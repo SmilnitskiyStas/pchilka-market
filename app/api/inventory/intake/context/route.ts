@@ -7,7 +7,6 @@ import {
 import { writeInventoryAuthDebugLog } from '@/lib/inventory-auth-debug';
 import { parseInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
-import { listInventoryProductsFromDb } from '@/lib/inventory-products-repository';
 import { findInventoryUserByChatId } from '@/lib/inventory-users-repository';
 import { listStoresFromDb } from '@/lib/stores-repository';
 
@@ -68,8 +67,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: 'Для користувача не прив’язано магазин.' }, { status: 400 });
     }
 
-    const [products, stores, openBatchCodes, nextBatchCode] = await Promise.all([
-      listInventoryProductsFromDb('', 500),
+    const [stores, openBatchCodes, nextBatchCode] = await Promise.all([
       listStoresFromDb(),
       listOpenInventoryBatchCodesForStoreInDb(user.storeId),
       generateNextInventoryBatchCodeForStoreInDb(user.storeId)
@@ -113,7 +111,7 @@ export async function GET(request: Request) {
         storeLabel: user.storeLabel
       },
       store,
-      products: products.filter((item) => item.isActive),
+      products: [],
       lastBatchCode,
       openBatchCodes,
       nextBatchCode

@@ -7,6 +7,11 @@ import {
   type SuspiciousInventoryExpiryDate
 } from '@/lib/inventory-expiry-date-rules';
 import { normalizeInventoryBarcode, type InventoryProductInput } from '@/lib/inventory-product-types';
+import {
+  INVENTORY_SCANNER_MEDIA_CONSTRAINTS,
+  INVENTORY_SCANNER_TIMEOUT_MS,
+  INVENTORY_ZXING_SCAN_DELAY_MS
+} from '@/lib/inventory-scanner-camera';
 
 type ProductView = {
   id: string;
@@ -304,9 +309,12 @@ export default function InventoryIntakePage() {
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<BarcodeDetectorInstance | null>(null);
   const scanTimerRef = useRef<number | null>(null);
+  const scannerTimeoutRef = useRef<number | null>(null);
   const zxingControlsRef = useRef<ZxingControls | null>(null);
   const zxingReaderRef = useRef<{ reset?: () => void } | null>(null);
   const scannerEngineRef = useRef<'barcode-detector' | 'zxing' | null>(null);
+  const isDetectingBarcodeRef = useRef(false);
+  const isHandlingBarcodeRef = useRef(false);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -355,6 +363,48 @@ export default function InventoryIntakePage() {
   }, []);
 
   useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'hidden') {
+        const wasScannerActive = scannerEngineRef.current !== null || streamRef.current !== null || zxingControlsRef.current !== null;
+        stopScanner();
+        if (wasScannerActive) {
+          setScannerMessage('Камеру закрито після згортання застосунку. За потреби відкрийте сканер знову.');
+        }
+      }
+    }
+
+    function handlePageHide() {
+      stopScanner();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isScannerOpen) return;
+
+    scannerTimeoutRef.current = window.setTimeout(() => {
+      stopScanner();
+      setScannerMessage(
+        `Сканер автоматично закрито після ${INVENTORY_SCANNER_TIMEOUT_MS / 1000} секунд без зчитування. Натисніть «Сканувати штрихкод», щоб спробувати знову.`
+      );
+    }, INVENTORY_SCANNER_TIMEOUT_MS);
+
+    return () => {
+      if (scannerTimeoutRef.current != null) {
+        window.clearTimeout(scannerTimeoutRef.current);
+        scannerTimeoutRef.current = null;
+      }
+    };
+  }, [isScannerOpen]);
+
+  useEffect(() => {
     if (!isScannerOpen || !streamRef.current || !videoRef.current || !detectorRef.current) return;
     if (scannerEngineRef.current !== 'barcode-detector') return;
 
@@ -373,8 +423,9 @@ export default function InventoryIntakePage() {
       if (cancelled) return;
 
       scanTimerRef.current = window.setInterval(async () => {
-        if (!videoRef.current || !detectorRef.current) return;
+        if (!videoRef.current || !detectorRef.current || isDetectingBarcodeRef.current || isHandlingBarcodeRef.current) return;
 
+        isDetectingBarcodeRef.current = true;
         try {
           const detected = await detectorRef.current.detect(videoRef.current);
           const first = detected.find((item) => item.rawValue?.trim());
@@ -383,6 +434,8 @@ export default function InventoryIntakePage() {
           }
         } catch {
           // Ignore transient detector errors while camera stream stabilizes.
+        } finally {
+          isDetectingBarcodeRef.current = false;
         }
       }, 600);
     }
@@ -407,12 +460,23 @@ export default function InventoryIntakePage() {
 
     async function attachAndScanWithZxing() {
       try {
-        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        const { BarcodeFormat, BrowserMultiFormatReader } = await import('@zxing/browser');
         if (cancelled || !videoRef.current) return;
 
-        const reader = new BrowserMultiFormatReader();
+        const reader = new BrowserMultiFormatReader(undefined, {
+          delayBetweenScanAttempts: INVENTORY_ZXING_SCAN_DELAY_MS,
+          delayBetweenScanSuccess: INVENTORY_ZXING_SCAN_DELAY_MS
+        });
+        reader.possibleFormats = [
+          BarcodeFormat.EAN_13,
+          BarcodeFormat.EAN_8,
+          BarcodeFormat.UPC_A,
+          BarcodeFormat.UPC_E,
+          BarcodeFormat.CODE_128,
+          BarcodeFormat.CODE_39
+        ];
         zxingReaderRef.current = reader as { reset?: () => void };
-        const controls = await reader.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+        const controls = await reader.decodeFromConstraints(INVENTORY_SCANNER_MEDIA_CONSTRAINTS, videoRef.current, (result) => {
           if (result) {
             void handleDetectedBarcode(result.getText());
           }
@@ -542,7 +606,7 @@ export default function InventoryIntakePage() {
 
   useEffect(() => {
     const barcode = normalizeInventoryBarcode(productFilter);
-    if (!token || !barcode || !isLikelyBarcode(productFilter)) {
+    if (!token || !barcode || !isLikelyBarcode(productFilter) || isHandlingBarcodeRef.current) {
       return;
     }
 
@@ -552,9 +616,10 @@ export default function InventoryIntakePage() {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     const timeoutId = window.setTimeout(async () => {
       try {
-        const exactBarcodeMatch = await lookupProductByBarcode(barcode);
+        const exactBarcodeMatch = await lookupProductByBarcode(barcode, controller.signal);
         if (cancelled) return;
 
         if (exactBarcodeMatch) {
@@ -578,6 +643,7 @@ export default function InventoryIntakePage() {
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [productFilter, token, products]);
 
@@ -604,12 +670,13 @@ export default function InventoryIntakePage() {
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     const timeoutId = window.setTimeout(async () => {
       setIsSearchingProducts(true);
       try {
         const response = await fetch(
           `/api/inventory/intake/product-lookup?token=${encodeURIComponent(token)}&q=${encodeURIComponent(query)}`,
-          { cache: 'no-store' }
+          { cache: 'no-store', signal: controller.signal }
         );
         const payload = (await response.json()) as ProductLookupPayload;
         if (!response.ok || !payload.ok || !Array.isArray(payload.products)) {
@@ -640,6 +707,7 @@ export default function InventoryIntakePage() {
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [productFilter, token]);
 
@@ -648,7 +716,7 @@ export default function InventoryIntakePage() {
     setSuccess('');
   }
 
-  async function lookupProductByBarcode(barcode: string) {
+  async function lookupProductByBarcode(barcode: string, signal?: AbortSignal) {
     const normalizedBarcode = normalizeInventoryBarcode(barcode);
     if (!normalizedBarcode || !token) return null;
 
@@ -657,7 +725,7 @@ export default function InventoryIntakePage() {
 
     const response = await fetch(
       `/api/inventory/intake/product-lookup?token=${encodeURIComponent(token)}&barcode=${encodeURIComponent(normalizedBarcode)}`,
-      { cache: 'no-store' }
+      { cache: 'no-store', signal }
     );
     const payload = (await response.json()) as ProductLookupPayload;
     if (!response.ok || !payload.ok) {
@@ -675,6 +743,11 @@ export default function InventoryIntakePage() {
   }
 
   function stopScanner() {
+    if (scannerTimeoutRef.current != null) {
+      window.clearTimeout(scannerTimeoutRef.current);
+      scannerTimeoutRef.current = null;
+    }
+
     if (scanTimerRef.current != null) {
       window.clearInterval(scanTimerRef.current);
       scanTimerRef.current = null;
@@ -709,7 +782,10 @@ export default function InventoryIntakePage() {
 
   async function handleDetectedBarcode(rawValue: string) {
     const barcode = normalizeInventoryBarcode(rawValue);
-    if (!barcode) return;
+    if (!barcode || isHandlingBarcodeRef.current) return;
+
+    isHandlingBarcodeRef.current = true;
+    stopScanner();
 
     setProductFilter(barcode);
     setScannerMessage(`Знайдено штрихкод: ${barcode}`);
@@ -740,12 +816,14 @@ export default function InventoryIntakePage() {
       setBarcodeLookupMessage('Не вдалося перевірити штрихкод.');
       setSuccess('');
       setMessageError(error instanceof Error ? error.message : 'Не вдалося знайти товар за штрихкодом.');
+    } finally {
+      isHandlingBarcodeRef.current = false;
     }
-
-    stopScanner();
   }
 
   async function startScanner() {
+    isDetectingBarcodeRef.current = false;
+    isHandlingBarcodeRef.current = false;
     setScannerMessage('');
     setBarcodeLookupStatus('idle');
     setBarcodeLookupMessage('');
@@ -769,12 +847,15 @@ export default function InventoryIntakePage() {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' }
-        },
-        audio: false
-      });
+      const stream = await navigator.mediaDevices.getUserMedia(INVENTORY_SCANNER_MEDIA_CONSTRAINTS);
+
+      if (document.visibilityState === 'hidden') {
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
+        setScannerMessage('Камеру не відкрито, тому що застосунок було згорнуто. Поверніться та запустіть сканер знову.');
+        return;
+      }
 
       streamRef.current = stream;
       detectorRef.current = new window.BarcodeDetector({
@@ -819,7 +900,7 @@ export default function InventoryIntakePage() {
     }
   }
 
-  async function submitBatch(duplicateAction?: 'merge' | 'create_anyway', confirmSuspiciousExpiryDate = false) {
+  async function submitBatch(duplicateAction?: 'merge', confirmSuspiciousExpiryDate = false) {
     resetMessages();
     setIsSubmitting(true);
 
@@ -1038,7 +1119,7 @@ export default function InventoryIntakePage() {
                   onChange={(event) => setProductId(event.target.value)}
                   className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
                 >
-                  <option value="">Оберіть товар</option>
+                  <option value="">{products.length === 0 && !productFilter.trim() ? 'Спочатку знайдіть товар вище' : 'Оберіть товар'}</option>
                   {filteredProducts.map((product) => (
                     <option key={product.id} value={product.id}>
                       {[product.productName, product.article, formatProductBarcodes(product.barcodes, product.barcode)].filter(Boolean).join(' | ')}
@@ -1324,7 +1405,7 @@ export default function InventoryIntakePage() {
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Підтвердження</p>
             <h3 className="mt-2 text-xl font-semibold text-slate-900">Така партія вже є</h3>
             <p className="mt-2 text-sm text-slate-600">
-              У вашому магазині вже є цей товар з таким самим терміном придатності. Оберіть наступну дію.
+              У вашому магазині вже є цей товар з таким самим терміном придатності. Окремий дубль створити неможливо: кількість можна додати до існуючої партії або скасувати дію.
             </p>
             <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
               <p><span className="font-semibold text-slate-900">Товар:</span> {duplicateBatch.productName}</p>
@@ -1341,16 +1422,6 @@ export default function InventoryIntakePage() {
                 className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
               >
                 Скасувати
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void submitBatch('create_anyway');
-                }}
-                disabled={isSubmitting}
-                className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand disabled:opacity-60"
-              >
-                Створити окремо
               </button>
               <button
                 type="button"
