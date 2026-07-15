@@ -309,6 +309,7 @@ export default function InventoryIntakePage() {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const productsRef = useRef<ProductView[]>([]);
   const detectorRef = useRef<BarcodeDetectorInstance | null>(null);
   const scanTimerRef = useRef<number | null>(null);
   const scannerTimeoutRef = useRef<number | null>(null);
@@ -318,6 +319,7 @@ export default function InventoryIntakePage() {
   const isStartingScannerRef = useRef(false);
   const isDetectingBarcodeRef = useRef(false);
   const isHandlingBarcodeRef = useRef(false);
+  productsRef.current = products;
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -452,7 +454,7 @@ export default function InventoryIntakePage() {
         scanTimerRef.current = null;
       }
     };
-  }, [isScannerOpen, products]);
+  }, [isScannerOpen]);
 
   useEffect(() => {
     if (!isScannerOpen || !videoRef.current || !streamRef.current) return;
@@ -596,9 +598,6 @@ export default function InventoryIntakePage() {
       setProductId((current) => (current === exactBarcodeMatch.id ? current : exactBarcodeMatch.id));
       setBarcodeLookupStatus('found');
       setBarcodeLookupMessage(`Товар знайдено: ${exactBarcodeMatch.productName}`);
-      setProducts((prev) =>
-        prev.map((item) => (item.id === exactBarcodeMatch.id ? { ...item, unitsOfMeasurement: exactBarcodeMatch.unitsOfMeasurement } : item))
-      );
       setNewProductForm((prev) => ({
         ...prev,
         barcode: exactBarcodeMatch.barcode || prev.barcode,
@@ -724,7 +723,7 @@ export default function InventoryIntakePage() {
     const normalizedBarcode = normalizeInventoryBarcode(barcode);
     if (!normalizedBarcode || !token) return null;
 
-    const localMatch = getProductMatchByBarcode(products, normalizedBarcode);
+    const localMatch = getProductMatchByBarcode(productsRef.current, normalizedBarcode);
     if (localMatch) return localMatch;
 
     const response = await fetch(
