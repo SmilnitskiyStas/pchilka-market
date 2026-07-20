@@ -40,7 +40,8 @@ export default async function PublicUtilityMetersDocumentPage({ searchParams }: 
 
   const document = await getUtilityPaymentDocumentData({
     periodMonth: payload.periodMonth,
-    storeId: payload.storeId
+    storeId: payload.storeId,
+    audience: payload.audience
   });
 
   const pdfUrl = `/api/utility-meters/document-export?${new URLSearchParams({

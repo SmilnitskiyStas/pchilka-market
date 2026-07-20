@@ -9,9 +9,11 @@ import {
   formatUtilityMoney,
   getUtilityPaymentDocumentData,
   getUtilityPaymentDocumentFileBaseName,
+  normalizeUtilityPaymentDocumentAudience,
   normalizeUtilityPeriodMonth
 } from '@/lib/utility-meter-payment-document';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
+import { getElectricitySupplierLabel } from '@/lib/utility-store-direct-contracts';
 
 export const runtime = 'nodejs';
 
@@ -29,6 +31,9 @@ function excelBuffer(documentData: Awaited<ReturnType<typeof getUtilityPaymentDo
       '№': index + 1,
       'Магазин': item.storeCode || item.storeLabel,
       'Адреса': item.addressLine,
+      'ТОВ': item.legalEntity,
+      'Прямий договір': item.isDirectContract ? 'Так' : '',
+      'Постачальник електрики': item.utilityType.startsWith('electricity') ? getElectricitySupplierLabel(item.electricitySupplier) : '',
       'Орендар': item.tenantName,
       'Лічильник': item.meterNumber,
       'Послуга': item.utilityLabel,
@@ -40,7 +45,7 @@ function excelBuffer(documentData: Awaited<ReturnType<typeof getUtilityPaymentDo
     { origin: 'A5' }
   );
 
-  XLSX.utils.sheet_add_aoa(worksheet, [['Разом', '', '', '', '', '', '', '', '', documentData.total]], {
+  XLSX.utils.sheet_add_aoa(worksheet, [['Разом', '', '', '', '', '', '', '', '', '', '', '', documentData.total]], {
     origin: `A${documentData.rows.length + 7}`
   });
 
@@ -48,6 +53,9 @@ function excelBuffer(documentData: Awaited<ReturnType<typeof getUtilityPaymentDo
     { wch: 5 },
     { wch: 14 },
     { wch: 28 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 22 },
     { wch: 18 },
     { wch: 18 },
     { wch: 24 },
@@ -88,7 +96,20 @@ async function pdfBuffer(documentData: Awaited<ReturnType<typeof getUtilityPayme
     ],
     ...documentData.rows.map((item, index) => ([
       String(index + 1),
-      { stack: [{ text: item.storeCode || item.storeLabel, bold: true }, { text: item.addressLine, fontSize: 8, color: '#475569' }] },
+      {
+        stack: [
+          { text: item.storeCode || item.storeLabel, bold: true },
+          { text: item.addressLine, fontSize: 8, color: '#475569' },
+          ...(item.isDirectContract
+            ? [
+                { text: `Прямий договір${item.legalEntity ? ` · ${item.legalEntity}` : ''}`, fontSize: 8, color: '#047857' },
+                ...(item.utilityType.startsWith('electricity') && item.electricitySupplier
+                  ? [{ text: getElectricitySupplierLabel(item.electricitySupplier), fontSize: 8, color: item.electricitySupplier === 'yasno' ? '#b45309' : '#4338ca' }]
+                  : [])
+              ]
+            : [])
+        ]
+      },
       { stack: [{ text: item.tenantName }, { text: item.meterNumber, fontSize: 8, color: '#475569' }] },
       item.utilityLabel,
       item.readingValue ?? '—',
@@ -150,6 +171,7 @@ export async function GET(request: Request) {
 
     let periodMonth = normalizeUtilityPeriodMonth(url.searchParams.get('periodMonth') ?? undefined);
     let storeId = String(url.searchParams.get('storeId') ?? '').trim();
+    let audience = normalizeUtilityPaymentDocumentAudience(url.searchParams.get('audience'));
 
     if (shareToken) {
       const settings = await getInventoryTelegramSettingsFromDb();
@@ -164,13 +186,15 @@ export async function GET(request: Request) {
 
       periodMonth = payload.periodMonth;
       storeId = payload.storeId;
+      audience = payload.audience;
     } else if (!isAdminRequestAuthorized(request)) {
       return NextResponse.json({ ok: false, error: 'Потрібна авторизація.' }, { status: 401 });
     }
 
-    const documentData = await getUtilityPaymentDocumentData({ periodMonth, storeId });
+    const documentData = await getUtilityPaymentDocumentData({ periodMonth, storeId, audience });
     const fileBaseName = getUtilityPaymentDocumentFileBaseName({
       periodMonth,
+      audience,
       storeCode: documentData.storeCode,
       storeId: documentData.storeId
     });

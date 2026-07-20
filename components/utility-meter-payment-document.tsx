@@ -1,11 +1,18 @@
 import type { ReactNode } from 'react';
 
 import { formatUtilityMoney, type UtilityPaymentDocumentData } from '@/lib/utility-meter-payment-document';
+import { getElectricitySupplierColor, getElectricitySupplierLabel } from '@/lib/utility-store-direct-contracts';
 
 type Props = {
   document: UtilityPaymentDocumentData;
   actions?: ReactNode;
 };
+
+function supplierBadgeClass(supplier: 'yasno' | 'tolk' | undefined) {
+  return getElectricitySupplierColor(supplier) === 'amber'
+    ? 'bg-amber-100 text-amber-900 ring-amber-200'
+    : 'bg-indigo-100 text-indigo-900 ring-indigo-200';
+}
 
 export function UtilityMeterPaymentDocument({ document, actions }: Props) {
   return (
@@ -33,7 +40,7 @@ export function UtilityMeterPaymentDocument({ document, actions }: Props) {
 
         <section className="rounded-lg border border-slate-200 bg-white p-6">
           <p className="text-sm font-semibold uppercase tracking-wide text-amber-700">Pchilka Market</p>
-          <h1 className="mt-1 text-3xl font-bold">Документ на оплату комунальних нарахувань</h1>
+          <h1 className="mt-1 text-3xl font-bold">Загальний рахунок: {document.audienceLabel}</h1>
           <p className="mt-2 text-sm text-slate-600">Період: {document.periodMonth.slice(0, 7)}</p>
           <p className="mt-1 text-sm text-slate-600">Магазин: {document.storeLabel}</p>
         </section>
@@ -60,6 +67,18 @@ export function UtilityMeterPaymentDocument({ document, actions }: Props) {
                     <td className="px-3 py-3 align-top">
                       <div className="font-semibold">{item.storeCode || item.storeLabel}</div>
                       <div className="text-xs text-slate-500">{item.addressLine}</div>
+                      {item.isDirectContract ? (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-900 ring-1 ring-emerald-200">
+                            Прямий договір{item.legalEntity ? ` · ${item.legalEntity}` : ''}
+                          </span>
+                          {item.utilityType.startsWith('electricity') && item.electricitySupplier ? (
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${supplierBadgeClass(item.electricitySupplier)}`}>
+                              {getElectricitySupplierLabel(item.electricitySupplier)}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-3 py-3 align-top">
                       <div>{item.tenantName}</div>

@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 export type UtilityMeterDocumentShareTokenPayload = {
   periodMonth: string;
   storeId: string;
+  audience: 'stores' | 'tenants';
   issuedAt: number;
   expiresAt: number;
 };
@@ -20,13 +21,14 @@ function signPayload(payload: string, secret: string): string {
 }
 
 export function createUtilityMeterDocumentShareToken(
-  payloadInput: { periodMonth: string; storeId?: string | number | null },
+  payloadInput: { periodMonth: string; storeId?: string | number | null; audience?: 'stores' | 'tenants' },
   secret: string,
   ttlMs = 1000 * 60 * 60 * 24 * 14
 ): string {
   const payload: UtilityMeterDocumentShareTokenPayload = {
     periodMonth: String(payloadInput.periodMonth ?? '').trim(),
     storeId: String(payloadInput.storeId ?? '').trim(),
+    audience: payloadInput.audience === 'tenants' ? 'tenants' : 'stores',
     issuedAt: Date.now(),
     expiresAt: Date.now() + ttlMs
   };
@@ -57,6 +59,7 @@ export function parseUtilityMeterDocumentShareToken(
     return {
       periodMonth: payload.periodMonth,
       storeId: String(payload.storeId ?? ''),
+      audience: payload.audience === 'tenants' ? 'tenants' : 'stores',
       issuedAt: Number(payload.issuedAt ?? 0),
       expiresAt: payload.expiresAt
     };

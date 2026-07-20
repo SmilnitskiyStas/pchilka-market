@@ -1,13 +1,30 @@
 import { findStoreByIdInDb } from '@/lib/stores-repository';
 import { listUtilityMeterReviewInDb } from '@/lib/utility-metering-repository';
+import { listUtilityStoreDirectContractsByStoreIds, type UtilityElectricitySupplier } from '@/lib/utility-store-direct-contracts';
+import type { UtilityType } from '@/lib/utility-metering-types';
+
+export const utilityPaymentDocumentAudiences = ['stores', 'tenants'] as const;
+export type UtilityPaymentDocumentAudience = (typeof utilityPaymentDocumentAudiences)[number];
+
+export function normalizeUtilityPaymentDocumentAudience(value: string | undefined | null): UtilityPaymentDocumentAudience {
+  return value === 'tenants' ? 'tenants' : 'stores';
+}
+
+export function getUtilityPaymentDocumentAudienceLabel(audience: UtilityPaymentDocumentAudience) {
+  return audience === 'tenants' ? 'Орендарі' : 'Магазини';
+}
 
 export type UtilityPaymentDocumentRow = {
   id: string;
   storeCode: string;
   storeLabel: string;
   addressLine: string;
+  legalEntity: string;
+  electricitySupplier?: UtilityElectricitySupplier;
+  isDirectContract: boolean;
   tenantName: string;
   meterNumber: string;
+  utilityType: UtilityType;
   utilityLabel: string;
   readingValue?: number;
   consumption?: number;
@@ -17,6 +34,8 @@ export type UtilityPaymentDocumentRow = {
 
 export type UtilityPaymentDocumentData = {
   periodMonth: string;
+  audience: UtilityPaymentDocumentAudience;
+  audienceLabel: string;
   storeId: string;
   storeCode: string;
   storeLabel: string;
@@ -38,40 +57,62 @@ export function formatUtilityMoney(value?: number) {
   return new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 }
 
-export function getUtilityPaymentDocumentFileBaseName(input: { periodMonth: string; storeCode?: string; storeId?: string }) {
+export function getUtilityPaymentDocumentFileBaseName(input: {
+  periodMonth: string;
+  audience: UtilityPaymentDocumentAudience;
+  storeCode?: string;
+  storeId?: string;
+}) {
   const month = input.periodMonth.slice(0, 7);
-  const suffixRaw = input.storeCode || input.storeId || 'all-stores';
+  const suffixRaw = `${input.audience}-${input.storeCode || input.storeId || 'all-stores'}`;
   const suffix = suffixRaw.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'all-stores';
   return `utility-payment-document-${month}-${suffix}`;
 }
 
-export async function getUtilityPaymentDocumentData(input: { periodMonth: string; storeId?: string | number | null }) {
+export async function getUtilityPaymentDocumentData(input: {
+  periodMonth: string;
+  storeId?: string | number | null;
+  audience?: UtilityPaymentDocumentAudience;
+}) {
   const normalizedStoreId = String(input.storeId ?? '').trim();
+  const audience = normalizeUtilityPaymentDocumentAudience(input.audience);
   const store = normalizedStoreId ? await findStoreByIdInDb(normalizedStoreId) : null;
   const items = await listUtilityMeterReviewInDb({
     periodMonth: input.periodMonth,
     storeId: normalizedStoreId || null,
     storeCode: store?.storeCode
   });
+  const contractsByStoreId = await listUtilityStoreDirectContractsByStoreIds(
+    items.flatMap((item) => (item.storeId ? [item.storeId] : []))
+  );
 
   const rows: UtilityPaymentDocumentRow[] = items
-    .filter((item) => item.reading && item.charge)
-    .map((item) => ({
-      id: item.id,
-      storeCode: item.storeCode,
-      storeLabel: item.storeLabel,
-      addressLine: item.addressLine,
-      tenantName: item.tenantName || 'Магазин',
-      meterNumber: item.meterNumber || 'Без номера',
-      utilityLabel: item.utilityLabel,
-      readingValue: item.reading?.readingValue,
-      consumption: item.charge?.consumption,
-      rate: item.charge?.rate,
-      amount: item.charge?.amount
-    }));
+    .filter((item) => item.reading && item.charge && (audience === 'stores' ? item.ownerKind === 'store' : item.ownerKind === 'tenant'))
+    .map((item) => {
+      const contract = item.storeId ? contractsByStoreId.get(item.storeId) : undefined;
+      return {
+        id: item.id,
+        storeCode: item.storeCode,
+        storeLabel: item.storeLabel,
+        addressLine: item.addressLine,
+        legalEntity: contract?.legalEntity ?? '',
+        electricitySupplier: contract?.electricitySupplier,
+        isDirectContract: contract?.isDirectContract ?? false,
+        tenantName: item.tenantName || 'Магазин',
+        meterNumber: item.meterNumber || 'Без номера',
+        utilityType: item.utilityType,
+        utilityLabel: item.utilityLabel,
+        readingValue: item.reading?.readingValue,
+        consumption: item.charge?.consumption,
+        rate: item.charge?.rate,
+        amount: item.charge?.amount
+      };
+    });
 
   return {
     periodMonth: input.periodMonth,
+    audience,
+    audienceLabel: getUtilityPaymentDocumentAudienceLabel(audience),
     storeId: normalizedStoreId,
     storeCode: store?.storeCode || '',
     storeLabel: store ? [store.storeCode, store.name || store.addressLine].filter(Boolean).join(' · ') : 'Усі магазини',

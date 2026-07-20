@@ -526,6 +526,7 @@ export default function AdminUtilityMetersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           periodMonth,
+          audience: 'stores',
           ...(selectedStoreId ? { storeId: selectedStoreId } : {})
         })
       });
@@ -545,16 +546,19 @@ export default function AdminUtilityMetersPage() {
 
   const documentHref = `/admin/utility-meters/document?${new URLSearchParams({
     periodMonth,
+    audience: 'stores',
     ...(selectedStoreId ? { storeId: selectedStoreId } : {})
   }).toString()}`;
   const documentPdfHref = `/api/utility-meters/document-export?${new URLSearchParams({
     format: 'pdf',
     periodMonth,
+    audience: 'stores',
     ...(selectedStoreId ? { storeId: selectedStoreId } : {})
   }).toString()}`;
   const documentExcelHref = `/api/utility-meters/document-export?${new URLSearchParams({
     format: 'xlsx',
     periodMonth,
+    audience: 'stores',
     ...(selectedStoreId ? { storeId: selectedStoreId } : {})
   }).toString()}`;
   const ratesHref = `/admin/utility-meters/rates?${new URLSearchParams({
