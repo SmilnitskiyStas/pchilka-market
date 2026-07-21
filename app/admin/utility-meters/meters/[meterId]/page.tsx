@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type {
   UtilityMeterPointRecord,
@@ -52,25 +52,69 @@ export default function AdminUtilityMeterDetailPage() {
   const meterId = String(params?.meterId ?? '');
   const [payload, setPayload] = useState<MeterDetailPayload>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [editingReading, setEditingReading] = useState<UtilityMeterReadingHistoryItem | null>(null);
+  const [editingReadingDate, setEditingReadingDate] = useState('');
+  const [editingReadingValue, setEditingReadingValue] = useState('');
+  const [editingPreviousValue, setEditingPreviousValue] = useState('');
+  const [editStatus, setEditStatus] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  const loadMeter = useCallback(async () => {
+    if (!meterId) return;
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/admin/utility-meters/points?${new URLSearchParams({ meterPointId: meterId }).toString()}`, {
+        cache: 'no-store'
+      });
+      const result = (await response.json()) as MeterDetailPayload;
+      setPayload(result);
+    } catch (error) {
+      setPayload({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося завантажити лічильник.' });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [meterId]);
 
   useEffect(() => {
-    if (!meterId) return;
+    void loadMeter();
+  }, [loadMeter]);
 
-    void (async () => {
-      setIsLoading(true);
-      try {
-        const response = await fetch(`/api/admin/utility-meters/points?${new URLSearchParams({ meterPointId: meterId }).toString()}`, {
-          cache: 'no-store'
-        });
-        const result = (await response.json()) as MeterDetailPayload;
-        setPayload(result);
-      } catch (error) {
-        setPayload({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося завантажити лічильник.' });
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, [meterId]);
+  function startReadingEdit(item: UtilityMeterReadingHistoryItem) {
+    setEditingReading(item);
+    setEditingReadingDate(item.reading.readingDate);
+    setEditingReadingValue(String(item.reading.readingValue));
+    setEditingPreviousValue(item.charge?.previousValue == null ? '' : String(item.charge.previousValue));
+    setEditStatus('');
+  }
+
+  async function saveReadingEdit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingReading) return;
+    setIsSavingEdit(true);
+    setEditStatus('');
+    try {
+      const response = await fetch('/api/admin/utility-meters/points', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meterPointId: meterId,
+          readingId: editingReading.reading.id,
+          readingDate: editingReadingDate,
+          readingValue: editingReadingValue,
+          previousValueOverride: editingPreviousValue
+        })
+      });
+      const result = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || 'Не вдалося оновити показник.');
+      setEditingReading(null);
+      setEditStatus('Показник оновлено, усі наступні нарахування перераховано.');
+      await loadMeter();
+    } catch (error) {
+      setEditStatus(error instanceof Error ? error.message : 'Не вдалося оновити показник.');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
 
   const meter = payload.meter;
   const history = payload.history ?? [];
@@ -162,6 +206,28 @@ export default function AdminUtilityMeterDetailPage() {
                 </div>
               </div>
 
+              {editStatus ? <div className="mt-4 rounded-md bg-blue-50 p-3 text-sm text-blue-900 ring-1 ring-blue-200">{editStatus}</div> : null}
+              {editingReading ? (
+                <form onSubmit={saveReadingEdit} className="mt-4 grid gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 sm:grid-cols-4">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Дата показника
+                    <input type="date" value={editingReadingDate} onChange={(event) => setEditingReadingDate(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2" required />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Попередній показник
+                    <input inputMode="decimal" value={editingPreviousValue} onChange={(event) => setEditingPreviousValue(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2" placeholder="Автоматично" />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Поточний показник
+                    <input inputMode="decimal" value={editingReadingValue} onChange={(event) => setEditingReadingValue(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2" required />
+                  </label>
+                  <div className="flex items-end gap-2">
+                    <button type="submit" disabled={isSavingEdit} className="rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{isSavingEdit ? 'Збереження…' : 'Зберегти'}</button>
+                    <button type="button" onClick={() => setEditingReading(null)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800">Скасувати</button>
+                  </div>
+                </form>
+              ) : null}
+
               {history.length === 0 ? (
                 <div className="mt-4 rounded-md bg-slate-50 p-4 text-sm text-slate-600">Для цього лічильника ще немає історії показників.</div>
               ) : (
@@ -178,6 +244,7 @@ export default function AdminUtilityMeterDetailPage() {
                         <th className="px-3 py-3">Тариф</th>
                         <th className="px-3 py-3">Сума</th>
                         <th className="px-3 py-3">Статус</th>
+                        <th className="px-3 py-3">Дія</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -208,6 +275,9 @@ export default function AdminUtilityMeterDetailPage() {
                                 <div className="mt-2 max-w-sm text-xs text-slate-600">{item.charge.validationMessages.join(' ')}</div>
                               ) : null}
                             </div>
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <button type="button" onClick={() => startReadingEdit(item)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900">Редагувати</button>
                           </td>
                         </tr>
                       ))}

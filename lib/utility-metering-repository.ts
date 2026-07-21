@@ -1307,6 +1307,7 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
     storeId: number;
     readingId: number;
     baselineValue?: number | null;
+    preserveSavedPreviousValue?: boolean;
   }
 ) {
   const [readingRows] = await conn.query<ReadingRow[]>(
@@ -1386,7 +1387,7 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
     utilityType: input.point.utilityType,
     previousValue:
       input.baselineValue ??
-      savedPreviousValue ??
+      (input.preserveSavedPreviousValue === false ? undefined : savedPreviousValue) ??
       (previous?.reading_value != null ? Number(previous.reading_value) : input.point.initialReadingValue),
     currentValue: Number(reading.reading_value),
     coefficient: input.point.coefficient,
@@ -1595,6 +1596,82 @@ export async function createUtilityMeterReadingInDb(input: {
       await conn.commit();
       return { periodMonth, calculation: calculationFresh };
     }
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
+export async function updateUtilityMeterReadingInDb(input: {
+  meterPointId: string | number;
+  readingId: string | number;
+  readingDate: string;
+  readingValue: number;
+  previousValueOverride?: number | null;
+}) {
+  const meterPointId = Number(input.meterPointId);
+  const readingId = Number(input.readingId);
+  const readingValue = Number(input.readingValue);
+  const previousValueOverride = input.previousValueOverride == null ? undefined : Number(input.previousValueOverride);
+  if (!Number.isFinite(meterPointId) || meterPointId <= 0 || !Number.isFinite(readingId) || readingId <= 0) {
+    throw new Error('Некоректний показник або лічильник.');
+  }
+  if (!Number.isFinite(readingValue) || readingValue < 0) throw new Error('Поточний показник має бути невід’ємним числом.');
+  if (previousValueOverride !== undefined && (!Number.isFinite(previousValueOverride) || previousValueOverride < 0)) {
+    throw new Error('Попередній показник має бути невід’ємним числом.');
+  }
+  const periodMonth = periodMonthFromDate(input.readingDate);
+
+  await ensureUtilityMeteringSchema();
+  const pool = getDbPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [pointRows] = await conn.query<MeterPointRow[]>(
+      'SELECT * FROM utility_meter_points WHERE id = ? LIMIT 1',
+      [meterPointId]
+    );
+    const point = pointRows[0] ? mapMeterPoint(pointRows[0]) : null;
+    if (!point?.storeId) throw new Error('Лічильник не знайдено.');
+
+    const [existingRows] = await conn.query<ReadingRow[]>(
+      'SELECT * FROM utility_meter_readings WHERE id = ? AND meter_point_id = ? LIMIT 1',
+      [readingId, meterPointId]
+    );
+    if (!existingRows[0]) throw new Error('Показник не знайдено.');
+
+    await conn.query(
+      `
+        UPDATE utility_meter_readings
+        SET period_month = ?, reading_date = ?, reading_value = ?, status = 'submitted'
+        WHERE id = ?
+      `,
+      [periodMonth, input.readingDate, readingValue, readingId]
+    );
+
+    const [allRows] = await conn.query<Array<RowDataPacket & { id: number }>>(
+      `
+        SELECT id
+        FROM utility_meter_readings
+        WHERE meter_point_id = ?
+        ORDER BY reading_date ASC, id ASC
+      `,
+      [meterPointId]
+    );
+    for (const row of allRows) {
+      await calculateAndSaveUtilityChargeForReadingInDb(conn, {
+        point,
+        storeId: Number(point.storeId),
+        readingId: row.id,
+        baselineValue: row.id === readingId ? previousValueOverride : undefined,
+        preserveSavedPreviousValue: false
+      });
+    }
+
+    await conn.commit();
+    return { periodMonth };
   } catch (error) {
     await conn.rollback();
     throw error;

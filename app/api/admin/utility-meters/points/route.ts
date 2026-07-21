@@ -9,8 +9,10 @@ import {
   listUtilityMeterReadingHistoryByMeterIdsInDb,
   listUtilityMetersForStoreInDb,
   setUtilityMeterPointActiveStateInDb,
+  updateUtilityMeterReadingInDb,
   updateUtilityMeterPointInDb
 } from '@/lib/utility-metering-repository';
+import { parseUtilityMeterDecimal } from '@/lib/utility-metering-calculator';
 
 export const runtime = 'nodejs';
 
@@ -102,6 +104,19 @@ export async function PATCH(request: Request) {
 
   try {
     const body = await request.json();
+    if (body?.readingId != null) {
+      const result = await updateUtilityMeterReadingInDb({
+        meterPointId: body?.meterPointId,
+        readingId: body?.readingId,
+        readingDate: String(body?.readingDate ?? ''),
+        readingValue: parseUtilityMeterDecimal(body?.readingValue),
+        previousValueOverride:
+          body?.previousValueOverride == null || body?.previousValueOverride === ''
+            ? undefined
+            : parseUtilityMeterDecimal(body?.previousValueOverride)
+      });
+      return NextResponse.json({ ok: true, ...result });
+    }
     const meter =
       typeof body?.isActive === 'boolean' && body?.updateFields !== true
         ? await setUtilityMeterPointActiveStateInDb({
