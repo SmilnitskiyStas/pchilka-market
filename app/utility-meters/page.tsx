@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { readLocalDraft, removeLocalDraft, writeLocalDraft } from '@/lib/client-local-drafts';
+import { parseUtilityMeterDecimal } from '@/lib/utility-metering-calculator';
 import type { UtilityMeterPointRecord, UtilityMeterReadingHistoryItem } from '@/lib/utility-metering-types';
 
 type ContextPayload = {
@@ -468,8 +469,14 @@ export default function UtilityMetersPage() {
     setStatus('');
     setSyncStatus('');
 
-    const normalizedReadingValue = Number(readingValue.replace(',', '.'));
-    const normalizedPreviousValue = previousValueOverride ? Number(previousValueOverride.replace(',', '.')) : undefined;
+    const normalizedReadingValue = parseUtilityMeterDecimal(readingValue);
+    const normalizedPreviousValue = previousValueOverride ? parseUtilityMeterDecimal(previousValueOverride) : undefined;
+
+    if (!Number.isFinite(normalizedReadingValue) || (normalizedPreviousValue !== undefined && !Number.isFinite(normalizedPreviousValue))) {
+      setStatus('Введіть показник числом. Можна використовувати крапку або кому для дробової частини.');
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const { response, result } = await postReading({

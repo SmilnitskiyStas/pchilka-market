@@ -1387,7 +1387,7 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
     previousValue:
       input.baselineValue ??
       savedPreviousValue ??
-      (previous?.reading_value != null ? Number(previous.reading_value) : input.point.initialReadingValue ?? 0),
+      (previous?.reading_value != null ? Number(previous.reading_value) : input.point.initialReadingValue),
     currentValue: Number(reading.reading_value),
     coefficient: input.point.coefficient,
     rate: rateRows[0] ? Number(rateRows[0].rate) : input.point.defaultRate,

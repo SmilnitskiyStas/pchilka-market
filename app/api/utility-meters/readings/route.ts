@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { resolveInventorySessionUserFromToken } from '@/lib/inventory-session-auth';
 import { findStoreByIdInDb } from '@/lib/stores-repository';
 import { assertUtilityMeterTestAccess } from '@/lib/utility-meter-access';
+import { parseUtilityMeterDecimal } from '@/lib/utility-metering-calculator';
 import { createUtilityMeterReadingInDb } from '@/lib/utility-metering-repository';
 
 export const runtime = 'nodejs';
@@ -13,12 +14,12 @@ export async function POST(request: Request) {
     const token = String(body?.token ?? '');
     const meterPointId = String(body?.meterPointId ?? '');
     const readingDate = String(body?.readingDate ?? '');
-    const readingValue = Number(body?.readingValue);
+    const readingValue = parseUtilityMeterDecimal(body?.readingValue);
     const clientMutationId = typeof body?.clientMutationId === 'string' ? body.clientMutationId : '';
     const previousValueOverride =
       body?.previousValueOverride == null || body?.previousValueOverride === ''
         ? undefined
-        : Number(body?.previousValueOverride);
+        : parseUtilityMeterDecimal(body?.previousValueOverride);
     const notes = typeof body?.notes === 'string' ? body.notes : '';
 
     const user = await resolveInventorySessionUserFromToken(token);

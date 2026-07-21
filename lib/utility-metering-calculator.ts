@@ -49,6 +49,25 @@ function finiteNumber(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+export function parseUtilityMeterDecimal(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : Number.NaN;
+  if (typeof value !== 'string') return Number.NaN;
+
+  const compact = value.trim().replace(/\s+/g, '');
+  if (!compact) return Number.NaN;
+
+  const commaIndex = compact.lastIndexOf(',');
+  const dotIndex = compact.lastIndexOf('.');
+  const normalized =
+    commaIndex >= 0 && dotIndex >= 0
+      ? commaIndex > dotIndex
+        ? compact.replace(/\./g, '').replace(',', '.')
+        : compact.replace(/,/g, '')
+      : compact.replace(',', '.');
+
+  return Number(normalized);
+}
+
 function formatPeriodMonthLabel(value: string | null | undefined) {
   if (!value) return null;
   const match = /^(\d{4})-(\d{2})/.exec(value);
