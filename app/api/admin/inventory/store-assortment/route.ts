@@ -70,14 +70,20 @@ export async function POST(request: Request) {
       if (!(file instanceof File)) {
         return NextResponse.json({ ok: false, error: 'Файл не передано.' }, { status: 400 });
       }
-      if (!file.name.toLowerCase().endsWith('.xlsx')) {
-        return NextResponse.json({ ok: false, error: 'Потрібен файл у форматі .xlsx.' }, { status: 400 });
+      if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
+        return NextResponse.json({ ok: false, error: 'Потрібен файл Excel або CSV: .xlsx, .xls чи .csv.' }, { status: 400 });
       }
 
       const fileBuffer = Buffer.from(await file.arrayBuffer());
       const rows = parseInventoryStoreAssortmentWorkbook(fileBuffer);
       if (rows.length === 0) {
-        return NextResponse.json({ ok: false, error: 'У файлі не знайдено жодного товару для імпорту.' }, { status: 400 });
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `У файлі «${file.name}» не знайдено товарів. Додай рядок із заголовками, наприклад: «Артикул», «Штрихкод» або «Назва».`
+          },
+          { status: 400 }
+        );
       }
 
       const summary = await importStoreInventoryAssortmentFromRows(storeId, rows);

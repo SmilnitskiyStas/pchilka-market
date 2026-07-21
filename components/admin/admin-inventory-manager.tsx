@@ -5219,7 +5219,7 @@ export default function AdminInventoryManager({
                     <div>
                       <h4 className="text-sm font-semibold text-slate-900">Завантажити товари магазину</h4>
                       <p className="mt-1 text-xs text-slate-500">
-                        Підтримується `.xlsx` файл з колонками на кшталт артикул, штрихкод, назва, одиниця, кількість.
+                        Підтримуються `.xlsx`, `.xls` або `.csv` з колонками на кшталт артикул, штрихкод, назва, одиниця, кількість.
                       </p>
                     </div>
                     <span className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
@@ -5229,7 +5229,7 @@ export default function AdminInventoryManager({
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
                     <input
                       type="file"
-                      accept=".xlsx"
+                      accept=".xlsx,.xls,.csv"
                       onChange={(event) => setStoreAssortmentImportFile(event.target.files?.[0] ?? null)}
                       className="block w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-700"
                     />
