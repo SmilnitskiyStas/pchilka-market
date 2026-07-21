@@ -54,9 +54,9 @@ export function UtilityMeterPaymentDocument({ document, actions }: Props) {
                   <th className="px-3 py-3">Магазин / адреса</th>
                   <th className="px-3 py-3">Орендар / лічильник</th>
                   <th className="px-3 py-3">Послуга</th>
-                  <th className="px-3 py-3">Показник</th>
+                  <th className="px-3 py-3">Показники / дата внесення</th>
                   <th className="px-3 py-3">Споживання</th>
-                  <th className="px-3 py-3">Тариф</th>
+                  <th className="px-3 py-3">Тариф / сума з рахунку</th>
                   <th className="px-3 py-3 text-right">Сума, грн</th>
                 </tr>
               </thead>
@@ -85,9 +85,25 @@ export function UtilityMeterPaymentDocument({ document, actions }: Props) {
                       <div className="text-xs text-slate-500">{item.meterNumber}</div>
                     </td>
                     <td className="px-3 py-3 align-top">{item.utilityLabel}</td>
-                    <td className="px-3 py-3 align-top">{item.readingValue ?? '—'}</td>
+                    <td className="px-3 py-3 align-top">
+                      <div>Попередній: {item.previousValue ?? '—'}</div>
+                      <div className="mt-1 font-medium">Поточний: {item.readingValue ?? '—'}</div>
+                      <div className="mt-1 text-xs text-slate-500">Коефіцієнт: {item.coefficient}</div>
+                      {item.readingDate ? <div className="mt-1 text-xs text-slate-500">Дата показника: {item.readingDate}</div> : null}
+                      {item.submittedAt ? <div className="mt-1 text-xs text-slate-500">Внесено: {new Date(item.submittedAt).toLocaleString('uk-UA')}</div> : null}
+                    </td>
                     <td className="px-3 py-3 align-top">{item.consumption ?? '—'}</td>
-                    <td className="px-3 py-3 align-top">{item.rate ?? '—'}</td>
+                    <td className="px-3 py-3 align-top">
+                      {item.calculationMode === 'fixed_amount' ? (
+                        <>
+                          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-900 ring-1 ring-violet-200">Сума з рахунку</span>
+                          <div className="mt-1 font-medium">{formatUtilityMoney(item.fixedAmount)}</div>
+                          {item.invoiceReference ? <div className="mt-1 text-xs text-slate-500">{item.invoiceReference}</div> : null}
+                        </>
+                      ) : (
+                        item.rate ?? '—'
+                      )}
+                    </td>
                     <td className="px-3 py-3 text-right align-top">{formatUtilityMoney(item.amount)}</td>
                   </tr>
                 ))}

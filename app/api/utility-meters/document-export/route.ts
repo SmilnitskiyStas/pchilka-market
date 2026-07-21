@@ -37,15 +37,22 @@ function excelBuffer(documentData: Awaited<ReturnType<typeof getUtilityPaymentDo
       'Орендар': item.tenantName,
       'Лічильник': item.meterNumber,
       'Послуга': item.utilityLabel,
-      'Показник': item.readingValue ?? '',
+      'Попередній показник': item.previousValue ?? '',
+      'Поточний показник': item.readingValue ?? '',
+      'Коефіцієнт трансформації': item.coefficient,
+      'Дата показника': item.readingDate,
+      'Дата внесення': item.submittedAt,
       'Споживання': item.consumption ?? '',
-      'Тариф': item.rate ?? '',
+      'Спосіб нарахування': item.calculationMode === 'fixed_amount' ? 'Сума з рахунку' : 'За тарифом',
+      'Тариф': item.calculationMode === 'rate' ? item.rate ?? '' : '',
+      'Сума з рахунку': item.calculationMode === 'fixed_amount' ? item.fixedAmount ?? '' : '',
+      'Номер / джерело рахунку': item.invoiceReference,
       'Сума, грн': item.amount ?? ''
     })),
     { origin: 'A5' }
   );
 
-  XLSX.utils.sheet_add_aoa(worksheet, [['Разом', '', '', '', '', '', '', '', '', '', '', '', documentData.total]], {
+  XLSX.utils.sheet_add_aoa(worksheet, [['Разом', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', documentData.total]], {
     origin: `A${documentData.rows.length + 7}`
   });
 
@@ -59,9 +66,14 @@ function excelBuffer(documentData: Awaited<ReturnType<typeof getUtilityPaymentDo
     { wch: 18 },
     { wch: 18 },
     { wch: 24 },
-    { wch: 12 },
     { wch: 14 },
-    { wch: 10 },
+    { wch: 14 },
+    { wch: 20 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 18 },
+    { wch: 24 },
     { wch: 14 }
   ];
 
@@ -91,7 +103,7 @@ async function pdfBuffer(documentData: Awaited<ReturnType<typeof getUtilityPayme
       { text: 'Послуга', style: 'tableHeader' },
       { text: 'Показник', style: 'tableHeader' },
       { text: 'Споживання', style: 'tableHeader' },
-      { text: 'Тариф', style: 'tableHeader' },
+      { text: 'Тариф / сума з рахунку', style: 'tableHeader' },
       { text: 'Сума, грн', style: 'tableHeader', alignment: 'right' }
     ],
     ...documentData.rows.map((item, index) => ([
@@ -112,9 +124,18 @@ async function pdfBuffer(documentData: Awaited<ReturnType<typeof getUtilityPayme
       },
       { stack: [{ text: item.tenantName }, { text: item.meterNumber, fontSize: 8, color: '#475569' }] },
       item.utilityLabel,
-      item.readingValue ?? '—',
+      {
+        stack: [
+          { text: `Попер.: ${item.previousValue ?? '—'}`, fontSize: 8, color: '#475569' },
+          { text: `Поточн.: ${item.readingValue ?? '—'}`, bold: true },
+          { text: `Коеф.: ${item.coefficient}`, fontSize: 8, color: '#475569' },
+          ...(item.submittedAt ? [{ text: `Внесено: ${new Date(item.submittedAt).toLocaleString('uk-UA')}`, fontSize: 7, color: '#475569' }] : [])
+        ]
+      },
       item.consumption ?? '—',
-      item.rate ?? '—',
+      item.calculationMode === 'fixed_amount'
+        ? { stack: [{ text: 'Сума з рахунку', fontSize: 8, color: '#6d28d9' }, { text: formatUtilityMoney(item.fixedAmount), bold: true }, ...(item.invoiceReference ? [{ text: item.invoiceReference, fontSize: 7, color: '#475569' }] : [])] }
+        : item.rate ?? '—',
       { text: formatUtilityMoney(item.amount), alignment: 'right' }
     ])),
     [

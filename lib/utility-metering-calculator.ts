@@ -1,4 +1,4 @@
-import type { UtilityType, UtilityValidationStatus } from '@/lib/utility-metering-types';
+import type { UtilityChargeCalculationMode, UtilityType, UtilityValidationStatus } from '@/lib/utility-metering-types';
 
 export type UtilityChargeInput = {
   utilityType: UtilityType;
@@ -6,6 +6,8 @@ export type UtilityChargeInput = {
   currentValue: number;
   coefficient?: number | null;
   rate?: number | null;
+  calculationMode?: UtilityChargeCalculationMode;
+  fixedAmount?: number | null;
   expectedAmount?: number | null;
   recentConsumptions?: number[];
   periodMonth?: string | null;
@@ -17,6 +19,8 @@ export type UtilityChargeCalculation = {
   consumption?: number;
   coefficient: number;
   rate?: number;
+  calculationMode: UtilityChargeCalculationMode;
+  fixedAmount?: number;
   amount?: number;
   validationStatus: UtilityValidationStatus;
   validationMessages: string[];
@@ -55,6 +59,8 @@ function formatPeriodMonthLabel(value: string | null | undefined) {
 export function calculateUtilityCharge(input: UtilityChargeInput): UtilityChargeCalculation {
   const coefficient = finiteNumber(input.coefficient) && Number(input.coefficient) !== 0 ? Number(input.coefficient) : 1;
   const rate = finiteNumber(input.rate) ? Number(input.rate) : undefined;
+  const calculationMode: UtilityChargeCalculationMode = input.calculationMode === 'fixed_amount' ? 'fixed_amount' : 'rate';
+  const fixedAmount = finiteNumber(input.fixedAmount) ? Number(input.fixedAmount) : undefined;
   const previousValue = finiteNumber(input.previousValue) ? Number(input.previousValue) : undefined;
   const currentValue = Number(input.currentValue);
   const validationMessages: string[] = [];
@@ -64,6 +70,8 @@ export function calculateUtilityCharge(input: UtilityChargeInput): UtilityCharge
       currentValue: 0,
       coefficient,
       rate,
+      calculationMode,
+      fixedAmount,
       validationStatus: 'error',
       validationMessages: ['Поточний показник не є числом.']
     };
@@ -73,14 +81,19 @@ export function calculateUtilityCharge(input: UtilityChargeInput): UtilityCharge
     validationMessages.push('Немає попереднього показника для автоматичного розрахунку споживання.');
   }
 
-  const rawConsumption = previousValue === undefined ? undefined : (currentValue - previousValue) * coefficient;
+  // Match the accounting workbook formula:
+  // IF((current - previous) <= 0, "", (current - previous) * coefficient).
+  // A non-positive difference is not billable consumption and must not create
+  // a tariff-based amount.
+  const readingDifference = previousValue === undefined ? undefined : currentValue - previousValue;
+  const rawConsumption = readingDifference !== undefined && readingDifference > 0 ? readingDifference * coefficient : undefined;
   const consumption = rawConsumption === undefined ? undefined : Math.round((rawConsumption + Number.EPSILON) * 10000) / 10000;
 
-  if (consumption !== undefined && consumption < 0) {
+  if (readingDifference !== undefined && readingDifference < 0) {
     validationMessages.push('Поточний показник менший за попередній.');
   }
 
-  if (consumption !== undefined && consumption === 0) {
+  if (readingDifference === 0) {
     validationMessages.push('Споживання за період дорівнює нулю.');
   }
 
@@ -92,7 +105,11 @@ export function calculateUtilityCharge(input: UtilityChargeInput): UtilityCharge
     }
   }
 
-  if (rate === undefined && input.utilityType !== 'other') {
+  if (calculationMode === 'fixed_amount' && (fixedAmount === undefined || fixedAmount < 0)) {
+    validationMessages.push('Не вказано коректну суму з рахунку.');
+  }
+
+  if (calculationMode === 'rate' && rate === undefined && input.utilityType !== 'other') {
     const periodLabel = formatPeriodMonthLabel(input.periodMonth);
     validationMessages.push(
       periodLabel
@@ -101,7 +118,14 @@ export function calculateUtilityCharge(input: UtilityChargeInput): UtilityCharge
     );
   }
 
-  const amount = consumption !== undefined && consumption >= 0 && rate !== undefined ? roundMoney(consumption * rate) : undefined;
+  const amount =
+    calculationMode === 'fixed_amount'
+      ? fixedAmount == null || fixedAmount < 0
+        ? undefined
+        : roundMoney(fixedAmount)
+      : consumption !== undefined && consumption >= 0 && rate !== undefined
+        ? roundMoney(consumption * rate)
+        : undefined;
 
   if (amount !== undefined && finiteNumber(input.expectedAmount)) {
     const expected = Number(input.expectedAmount);
@@ -121,6 +145,8 @@ export function calculateUtilityCharge(input: UtilityChargeInput): UtilityCharge
     consumption,
     coefficient,
     rate,
+    calculationMode,
+    fixedAmount,
     amount,
     validationStatus,
     validationMessages

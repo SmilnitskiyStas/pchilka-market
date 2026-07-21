@@ -40,6 +40,9 @@ type RateFormState = {
   scope: 'store' | 'meter';
   meterPointId: string;
   rate: string;
+  calculationMode: 'rate' | 'fixed_amount';
+  fixedAmount: string;
+  invoiceReference: string;
   rateLabel: string;
   includesVat: boolean;
 };
@@ -65,6 +68,9 @@ const EMPTY_FORM: RateFormState = {
   scope: 'store',
   meterPointId: '',
   rate: '',
+  calculationMode: 'rate',
+  fixedAmount: '',
+  invoiceReference: '',
   rateLabel: '',
   includesVat: true
 };
@@ -218,6 +224,9 @@ export default function AdminUtilityMeterRatesPage() {
       scope: rate.meterPointId ? 'meter' : 'store',
       meterPointId: rate.meterPointId ?? '',
       rate: String(rate.rate),
+      calculationMode: rate.calculationMode,
+      fixedAmount: rate.fixedAmount == null ? '' : String(rate.fixedAmount),
+      invoiceReference: rate.invoiceReference,
       rateLabel: rate.rateLabel,
       includesVat: rate.includesVat
     });
@@ -249,9 +258,12 @@ export default function AdminUtilityMeterRatesPage() {
           meterPointId: form.scope === 'meter' ? form.meterPointId : null,
           utilityType: form.utilityType,
           periodMonth: form.periodMonth,
-          rate: Number(form.rate.replace(',', '.')),
+          rate: form.calculationMode === 'rate' ? Number(form.rate.replace(',', '.')) : 0,
           rateLabel: form.rateLabel,
-          includesVat: form.includesVat
+          includesVat: form.includesVat,
+          calculationMode: form.calculationMode,
+          fixedAmount: form.calculationMode === 'fixed_amount' ? Number(form.fixedAmount.replace(',', '.')) : null,
+          invoiceReference: form.invoiceReference
         })
       });
 
@@ -481,6 +493,25 @@ export default function AdminUtilityMeterRatesPage() {
               ) : null}
 
               <label className="block text-sm font-semibold text-slate-700">
+                Спосіб нарахування
+                <select
+                  value={form.calculationMode}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      calculationMode: event.target.value as 'rate' | 'fixed_amount',
+                      scope: event.target.value === 'fixed_amount' ? 'meter' : current.scope
+                    }))
+                  }
+                  className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                >
+                  <option value="rate">За тарифом: споживання × тариф</option>
+                  <option value="fixed_amount">Сума з рахунку для лічильника</option>
+                </select>
+              </label>
+
+              {form.calculationMode === 'rate' ? (
+              <label className="block text-sm font-semibold text-slate-700">
                 Тариф, грн
                 <input
                   inputMode="decimal"
@@ -491,6 +522,30 @@ export default function AdminUtilityMeterRatesPage() {
                   required
                 />
               </label>
+              ) : (
+                <>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Сума з рахунку, грн
+                    <input
+                      inputMode="decimal"
+                      value={form.fixedAmount}
+                      onChange={(event) => setForm((current) => ({ ...current, fixedAmount: event.target.value }))}
+                      className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                      placeholder="Наприклад: 1840.00"
+                      required
+                    />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Номер або джерело рахунку
+                    <input
+                      value={form.invoiceReference}
+                      onChange={(event) => setForm((current) => ({ ...current, invoiceReference: event.target.value }))}
+                      className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                      placeholder="Наприклад: рахунок № 12345"
+                    />
+                  </label>
+                </>
+              )}
 
               <label className="block text-sm font-semibold text-slate-700">
                 Опис / джерело тарифу
@@ -583,8 +638,18 @@ export default function AdminUtilityMeterRatesPage() {
                           )}
                         </td>
                         <td className="px-3 py-3 align-top">
-                          <div className="font-semibold">{formatRate(rate.rate)}</div>
-                          <div className="mt-1 text-xs text-slate-500">{rate.includesVat ? 'З ПДВ' : 'Без ПДВ'}</div>
+                          {rate.calculationMode === 'fixed_amount' ? (
+                            <>
+                              <div className="inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-900">Сума з рахунку</div>
+                              <div className="mt-1 font-semibold">{formatRate(rate.fixedAmount ?? 0)} грн</div>
+                              {rate.invoiceReference ? <div className="mt-1 text-xs text-slate-500">{rate.invoiceReference}</div> : null}
+                            </>
+                          ) : (
+                            <>
+                              <div className="font-semibold">{formatRate(rate.rate)}</div>
+                              <div className="mt-1 text-xs text-slate-500">{rate.includesVat ? 'З ПДВ' : 'Без ПДВ'}</div>
+                            </>
+                          )}
                         </td>
                         <td className="px-3 py-3 align-top text-slate-600">{rate.rateLabel || '—'}</td>
                         <td className="px-3 py-3 align-top">

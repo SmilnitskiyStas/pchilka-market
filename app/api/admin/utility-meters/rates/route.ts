@@ -43,7 +43,10 @@ export async function POST(request: Request) {
       periodMonth: body?.periodMonth,
       rate: body?.rate,
       rateLabel: body?.rateLabel,
-      includesVat: body?.includesVat
+      includesVat: body?.includesVat,
+      calculationMode: body?.calculationMode,
+      fixedAmount: body?.fixedAmount,
+      invoiceReference: body?.invoiceReference
     });
 
     return NextResponse.json({ ok: true, rate });
@@ -66,7 +69,10 @@ export async function PATCH(request: Request) {
       periodMonth: body?.periodMonth,
       rate: body?.rate,
       rateLabel: body?.rateLabel,
-      includesVat: body?.includesVat
+      includesVat: body?.includesVat,
+      calculationMode: body?.calculationMode,
+      fixedAmount: body?.fixedAmount,
+      invoiceReference: body?.invoiceReference
     });
 
     return NextResponse.json({ ok: true, rate });

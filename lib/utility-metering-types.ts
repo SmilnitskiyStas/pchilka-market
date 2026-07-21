@@ -10,6 +10,7 @@ export type UtilityType =
   | 'other';
 
 export type UtilityValidationStatus = 'ok' | 'warning' | 'error';
+export type UtilityChargeCalculationMode = 'rate' | 'fixed_amount';
 
 export type UtilityMeterPointRecord = {
   id: string;
@@ -38,6 +39,7 @@ export type UtilityMeterReadingRecord = {
   meterPointId: string;
   periodMonth: string;
   readingDate: string;
+  submittedAt: string;
   readingValue: number;
   clientMutationId?: string;
   previousReadingId?: string;
@@ -57,6 +59,9 @@ export type UtilityMeterChargeRecord = {
   consumption?: number;
   coefficient: number;
   rate?: number;
+  calculationMode: UtilityChargeCalculationMode;
+  fixedAmount?: number;
+  invoiceReference: string;
   amount?: number;
   validationStatus: UtilityValidationStatus;
   validationMessages: string[];
@@ -79,6 +84,9 @@ export type UtilityMeterRateRecord = {
   utilityType: UtilityType;
   periodMonth: string;
   rate: number;
+  calculationMode: UtilityChargeCalculationMode;
+  fixedAmount?: number;
+  invoiceReference: string;
   rateLabel: string;
   includesVat: boolean;
   meterLabel: string;
@@ -115,6 +123,9 @@ export type UtilityMeterRateInput = {
   utilityType: UtilityType;
   periodMonth: string;
   rate: number;
+  calculationMode?: UtilityChargeCalculationMode;
+  fixedAmount?: number | null;
+  invoiceReference?: string;
   rateLabel?: string;
   includesVat?: boolean;
 };

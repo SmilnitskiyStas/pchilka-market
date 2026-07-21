@@ -16,6 +16,7 @@ import type {
   UtilityMeterReviewItem,
   UtilityMeterUpdateInput,
   UtilityMeterOwnerKind,
+  UtilityChargeCalculationMode,
   UtilityType
 } from '@/lib/utility-metering-types';
 
@@ -53,6 +54,8 @@ type ReadingRow = RowDataPacket & {
   submitted_by_name: string | null;
   source_kind: UtilityMeterReadingRecord['sourceKind'];
   status: UtilityMeterReadingRecord['status'];
+  created_at: Date | string;
+  updated_at: Date | string;
 };
 
 type ChargeRow = RowDataPacket & {
@@ -66,6 +69,9 @@ type ChargeRow = RowDataPacket & {
   coefficient: string | number;
   rate: string | number | null;
   amount: string | number | null;
+  calculation_mode: UtilityChargeCalculationMode;
+  fixed_amount: string | number | null;
+  invoice_reference: string | null;
   validation_status: UtilityMeterChargeRecord['validationStatus'];
   validation_messages: string | string[] | null;
 };
@@ -92,6 +98,9 @@ type RateRow = RowDataPacket & {
   rate: string | number;
   rate_label: string | null;
   includes_vat: number;
+  calculation_mode: UtilityChargeCalculationMode;
+  fixed_amount: string | number | null;
+  invoice_reference: string | null;
   meter_number: string | null;
   utility_label: string | null;
   owner_kind: UtilityMeterOwnerKind | null;
@@ -202,6 +211,24 @@ async function ensureUtilityMeteringSchema() {
           "ALTER TABLE utility_meter_readings ADD UNIQUE KEY uniq_utility_meter_readings_client_mutation_id (client_mutation_id)"
         );
       }
+
+      const additions: Array<{ table: string; column: string; definition: string }> = [
+        { table: 'utility_meter_rates', column: 'calculation_mode', definition: "ENUM('rate','fixed_amount') NOT NULL DEFAULT 'rate' AFTER includes_vat" },
+        { table: 'utility_meter_rates', column: 'fixed_amount', definition: 'DECIMAL(18,2) NULL AFTER calculation_mode' },
+        { table: 'utility_meter_rates', column: 'invoice_reference', definition: 'VARCHAR(255) NULL AFTER fixed_amount' },
+        { table: 'utility_meter_charges', column: 'calculation_mode', definition: "ENUM('rate','fixed_amount') NOT NULL DEFAULT 'rate' AFTER amount" },
+        { table: 'utility_meter_charges', column: 'fixed_amount', definition: 'DECIMAL(18,2) NULL AFTER calculation_mode' },
+        { table: 'utility_meter_charges', column: 'invoice_reference', definition: 'VARCHAR(255) NULL AFTER fixed_amount' }
+      ];
+      for (const addition of additions) {
+        const [columns] = await pool.query<Array<RowDataPacket & { Field: string }>>(
+          `SHOW COLUMNS FROM ${addition.table} LIKE ?`,
+          [addition.column]
+        );
+        if (columns.length === 0) {
+          await pool.query(`ALTER TABLE ${addition.table} ADD COLUMN ${addition.column} ${addition.definition}`);
+        }
+      }
     })().catch((error) => {
       utilityMeteringSchemaPromise = null;
       throw error;
@@ -242,6 +269,7 @@ function mapReading(row?: ReadingRow): UtilityMeterReadingRecord | undefined {
     meterPointId: String(row.meter_point_id),
     periodMonth: toIsoDate(row.period_month),
     readingDate: toIsoDate(row.reading_date),
+    submittedAt: (row.updated_at ?? row.created_at) ? new Date(row.updated_at ?? row.created_at).toISOString() : '',
     readingValue: Number(row.reading_value),
     clientMutationId: row.client_mutation_id ?? undefined,
     previousReadingId: row.previous_reading_id == null ? undefined : String(row.previous_reading_id),
@@ -276,6 +304,9 @@ function mapCharge(row?: ChargeRow): UtilityMeterChargeRecord | undefined {
     consumption: toNumberOrUndefined(row.consumption),
     coefficient: Number(row.coefficient ?? 1),
     rate: toNumberOrUndefined(row.rate),
+    calculationMode: row.calculation_mode === 'fixed_amount' ? 'fixed_amount' : 'rate',
+    fixedAmount: toNumberOrUndefined(row.fixed_amount),
+    invoiceReference: row.invoice_reference ?? '',
     amount: toNumberOrUndefined(row.amount),
     validationStatus: row.validation_status,
     validationMessages
@@ -307,6 +338,9 @@ function mapUtilityMeterRate(row: RateRow): UtilityMeterRateRecord {
     utilityType: row.utility_type,
     periodMonth: toIsoDate(row.period_month),
     rate: Number(row.rate),
+    calculationMode: row.calculation_mode === 'fixed_amount' ? 'fixed_amount' : 'rate',
+    fixedAmount: toNumberOrUndefined(row.fixed_amount),
+    invoiceReference: row.invoice_reference ?? '',
     rateLabel: row.rate_label ?? '',
     includesVat: row.includes_vat === 1,
     meterLabel: meterLabelParts.join(' | '),
@@ -839,9 +873,14 @@ export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): 
     throw new Error('Оберіть коректний місяць тарифу.');
   }
 
+  const calculationMode: UtilityChargeCalculationMode = input.calculationMode === 'fixed_amount' ? 'fixed_amount' : 'rate';
   const rate = Number(input.rate);
-  if (!Number.isFinite(rate) || rate < 0) {
+  const fixedAmount = input.fixedAmount == null ? null : Number(input.fixedAmount);
+  if (calculationMode === 'rate' && (!Number.isFinite(rate) || rate < 0)) {
     throw new Error('Тариф має бути невід’ємним числом.');
+  }
+  if (calculationMode === 'fixed_amount' && (fixedAmount == null || !Number.isFinite(fixedAmount) || fixedAmount < 0)) {
+    throw new Error('Вкажіть коректну суму з рахунку.');
   }
 
   const meterPointId =
@@ -852,6 +891,9 @@ export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): 
   }
   if (meterPointId !== null && (!Number.isInteger(meterPointId) || meterPointId <= 0)) {
     throw new Error('Оберіть коректний лічильник.');
+  }
+  if (calculationMode === 'fixed_amount' && meterPointId === null) {
+    throw new Error('Суму з рахунку можна вказати лише для конкретного лічильника.');
   }
   if (storeId !== null && (!Number.isInteger(storeId) || storeId <= 0)) {
     throw new Error('Оберіть коректний магазин.');
@@ -887,6 +929,7 @@ export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): 
   }
 
   const rateLabel = String(input.rateLabel ?? '').trim() || null;
+  const invoiceReference = String(input.invoiceReference ?? '').trim() || null;
   const includesVat = input.includesVat === false ? 0 : 1;
 
   if (input.rateId) {
@@ -905,11 +948,14 @@ export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): 
           period_month = ?,
           rate = ?,
           rate_label = ?,
-          includes_vat = ?
+          includes_vat = ?,
+          calculation_mode = ?,
+          fixed_amount = ?,
+          invoice_reference = ?
         WHERE id = ?
         LIMIT 1
       `,
-      [meterPointId, effectiveStoreId, utilityType, periodMonth, rate, rateLabel, includesVat, rateId]
+      [meterPointId, effectiveStoreId, utilityType, periodMonth, calculationMode === 'rate' ? rate : 0, rateLabel, includesVat, calculationMode, fixedAmount, invoiceReference, rateId]
     );
 
     const [rows] = await pool.query<RateRow[]>(
@@ -948,15 +994,18 @@ export async function upsertUtilityMeterRateInDb(input: UtilityMeterRateInput): 
   await pool.query(
     `
       INSERT INTO utility_meter_rates (
-        meter_point_id, store_id, utility_type, period_month, rate, rate_label, includes_vat
+        meter_point_id, store_id, utility_type, period_month, rate, rate_label, includes_vat, calculation_mode, fixed_amount, invoice_reference
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         rate = VALUES(rate),
         rate_label = VALUES(rate_label),
-        includes_vat = VALUES(includes_vat)
+        includes_vat = VALUES(includes_vat),
+        calculation_mode = VALUES(calculation_mode),
+        fixed_amount = VALUES(fixed_amount),
+        invoice_reference = VALUES(invoice_reference)
     `,
-    [meterPointId, effectiveStoreId, utilityType, periodMonth, rate, rateLabel, includesVat]
+    [meterPointId, effectiveStoreId, utilityType, periodMonth, calculationMode === 'rate' ? rate : 0, rateLabel, includesVat, calculationMode, fixedAmount, invoiceReference]
   );
 
   const [rows] = await pool.query<RateRow[]>(
@@ -1081,6 +1130,8 @@ export async function listUtilityMeterReviewInDb(input: {
         r.submitted_by_name,
         r.source_kind,
         r.status,
+        r.created_at,
+        r.updated_at,
         c.id AS charge_id,
         c.meter_point_id AS charge_meter_point_id,
         c.period_month AS charge_period_month,
@@ -1090,6 +1141,9 @@ export async function listUtilityMeterReviewInDb(input: {
         c.coefficient AS charge_coefficient,
         c.rate,
         c.amount,
+        c.calculation_mode,
+        c.fixed_amount,
+        c.invoice_reference,
         c.validation_status,
         c.validation_messages
       FROM utility_meter_points p
@@ -1189,6 +1243,8 @@ export async function listUtilityMeterReadingHistoryByMeterIdsInDb(input: {
         r.submitted_by_name,
         r.source_kind,
         r.status,
+        r.created_at,
+        r.updated_at,
         c.id AS charge_id,
         c.meter_point_id AS charge_meter_point_id,
         c.reading_id,
@@ -1199,6 +1255,9 @@ export async function listUtilityMeterReadingHistoryByMeterIdsInDb(input: {
         c.coefficient AS charge_coefficient,
         c.rate,
         c.amount,
+        c.calculation_mode,
+        c.fixed_amount,
+        c.invoice_reference,
         c.validation_status,
         c.validation_messages
       FROM utility_meter_readings r
@@ -1292,9 +1351,14 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
   );
   const previous = previousRows[0];
 
-  const [rateRows] = await conn.query<Array<RowDataPacket & { rate: string | number }>>(
+  const [rateRows] = await conn.query<Array<RowDataPacket & {
+    rate: string | number;
+    calculation_mode: UtilityChargeCalculationMode;
+    fixed_amount: string | number | null;
+    invoice_reference: string | null;
+  }>>(
     `
-      SELECT rate
+      SELECT rate, calculation_mode, fixed_amount, invoice_reference
       FROM utility_meter_rates
       WHERE period_month <= ?
         AND utility_type = ?
@@ -1327,6 +1391,8 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
     currentValue: Number(reading.reading_value),
     coefficient: input.point.coefficient,
     rate: rateRows[0] ? Number(rateRows[0].rate) : input.point.defaultRate,
+    calculationMode: rateRows[0]?.calculation_mode,
+    fixedAmount: rateRows[0]?.fixed_amount == null ? undefined : Number(rateRows[0].fixed_amount),
     recentConsumptions: recentRows.map((row) => Number(row.consumption)).filter(Number.isFinite),
     periodMonth: toIsoDate(reading.period_month)
   });
@@ -1344,9 +1410,9 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
     `
       INSERT INTO utility_meter_charges (
         meter_point_id, reading_id, period_month, previous_value, current_value,
-        consumption, coefficient, rate, amount, validation_status, validation_messages
+        consumption, coefficient, rate, amount, calculation_mode, fixed_amount, invoice_reference, validation_status, validation_messages
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON))
       ON DUPLICATE KEY UPDATE
         previous_value = VALUES(previous_value),
         current_value = VALUES(current_value),
@@ -1354,6 +1420,9 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
         coefficient = VALUES(coefficient),
         rate = VALUES(rate),
         amount = VALUES(amount),
+        calculation_mode = VALUES(calculation_mode),
+        fixed_amount = VALUES(fixed_amount),
+        invoice_reference = VALUES(invoice_reference),
         validation_status = VALUES(validation_status),
         validation_messages = VALUES(validation_messages)
     `,
@@ -1367,6 +1436,9 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
       calculation.coefficient,
       calculation.rate ?? null,
       calculation.amount ?? null,
+      calculation.calculationMode,
+      calculation.fixedAmount ?? null,
+      rateRows[0]?.invoice_reference ?? null,
       calculation.validationStatus,
       JSON.stringify(calculation.validationMessages)
     ]

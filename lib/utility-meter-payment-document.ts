@@ -26,9 +26,16 @@ export type UtilityPaymentDocumentRow = {
   meterNumber: string;
   utilityType: UtilityType;
   utilityLabel: string;
+  previousValue?: number;
   readingValue?: number;
+  readingDate: string;
+  submittedAt: string;
+  coefficient: number;
   consumption?: number;
   rate?: number;
+  calculationMode: 'rate' | 'fixed_amount';
+  fixedAmount?: number;
+  invoiceReference: string;
   amount?: number;
 };
 
@@ -102,9 +109,16 @@ export async function getUtilityPaymentDocumentData(input: {
         meterNumber: item.meterNumber || 'Без номера',
         utilityType: item.utilityType,
         utilityLabel: item.utilityLabel,
+        previousValue: item.charge?.previousValue,
         readingValue: item.reading?.readingValue,
+        readingDate: item.reading?.readingDate ?? '',
+        submittedAt: item.reading?.submittedAt ?? '',
+        coefficient: item.charge?.coefficient ?? item.coefficient,
         consumption: item.charge?.consumption,
         rate: item.charge?.rate,
+        calculationMode: item.charge?.calculationMode ?? 'rate',
+        fixedAmount: item.charge?.fixedAmount,
+        invoiceReference: item.charge?.invoiceReference ?? '',
         amount: item.charge?.amount
       };
     });
