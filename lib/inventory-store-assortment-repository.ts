@@ -5,9 +5,11 @@ import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql
 import { getDbPool } from '@/lib/db';
 import { findInventoryProductByBarcodeInDb, findInventoryProductByIdInDb, findInventoryProductDuplicateInDb } from '@/lib/inventory-products-repository';
 import type {
+  InventoryStoreAssortmentComparison,
   InventoryStoreAssortmentImportRow,
   InventoryStoreAssortmentManualInput,
   InventoryStoreAssortmentRecord,
+  InventoryStoreAssortmentSnapshot,
   InventoryStoreAssortmentSummary,
   InventoryStoreAssortmentUpdateInput
 } from '@/lib/inventory-store-assortment-types';
@@ -41,6 +43,19 @@ type SummaryRow = RowDataPacket & {
   quantity_total: string | number | null;
 };
 
+type SnapshotRow = RowDataPacket & {
+  id: number;
+  store_id: number;
+  snapshot_date: Date | string;
+  total_rows: number;
+  present_rows: number;
+  matched_rows: number;
+  unmatched_rows: number;
+  completion_percent: string | number;
+  quantity_total: string | number | null;
+  created_at: Date | string;
+};
+
 let storeInventoryAssortmentSchemaPromise: Promise<void> | null = null;
 
 function toIsoDateTime(value: Date | string | null | undefined) {
@@ -57,6 +72,25 @@ function toQuantity(value: string | number | null | undefined) {
 
 function normalizeText(value: unknown) {
   return String(value ?? '').trim();
+}
+
+function formatDateOnly(value: Date | string) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeSnapshotDate(value?: string | null) {
+  const raw = String(value ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    throw new Error('Некоректна дата зрізу асортименту.');
+  }
+
+  return raw;
+}
+
+function todayDateKey() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function buildIdentityHash(input: { article?: string; barcode?: string; productName?: string }) {
@@ -105,6 +139,23 @@ async function ensureStoreInventoryAssortmentSchema() {
           KEY idx_store_inventory_assortment_store_product (store_id, product_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS store_inventory_assortment_snapshots (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          store_id BIGINT UNSIGNED NOT NULL,
+          snapshot_date DATE NOT NULL,
+          total_rows INT NOT NULL DEFAULT 0,
+          present_rows INT NOT NULL DEFAULT 0,
+          matched_rows INT NOT NULL DEFAULT 0,
+          unmatched_rows INT NOT NULL DEFAULT 0,
+          completion_percent DECIMAL(7,2) NOT NULL DEFAULT 0,
+          quantity_total DECIMAL(14,3) NOT NULL DEFAULT 0,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY uniq_store_inventory_assortment_snapshot (store_id, snapshot_date),
+          KEY idx_store_inventory_assortment_snapshot_date (snapshot_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
     })().catch((error) => {
       storeInventoryAssortmentSchemaPromise = null;
       throw error;
@@ -131,6 +182,21 @@ function mapStoreInventoryAssortmentRow(row: StoreInventoryAssortmentRow): Inven
     importedAt: toIsoDateTime(row.imported_at),
     createdAt: toIsoDateTime(row.created_at),
     updatedAt: toIsoDateTime(row.updated_at)
+  };
+}
+
+function mapStoreInventoryAssortmentSnapshotRow(row: SnapshotRow): InventoryStoreAssortmentSnapshot {
+  return {
+    id: String(row.id),
+    storeId: String(row.store_id),
+    snapshotDate: formatDateOnly(row.snapshot_date),
+    totalRows: Number(row.total_rows ?? 0),
+    presentRows: Number(row.present_rows ?? 0),
+    matchedRows: Number(row.matched_rows ?? 0),
+    unmatchedRows: Number(row.unmatched_rows ?? 0),
+    completionPercent: Number(row.completion_percent ?? 0),
+    quantityTotal: Number(row.quantity_total ?? 0),
+    createdAt: toIsoDateTime(row.created_at)
   };
 }
 
@@ -255,7 +321,7 @@ export async function listStoreInventoryAssortmentFromDb(
     values.push(options.status);
   }
 
-  const safeLimit = Math.min(Math.max(Number(options?.limit ?? 500), 1), 1000);
+  const safeLimit = Math.min(Math.max(Number(options?.limit ?? 500), 1), 10000);
   const [rows] = await pool.query<StoreInventoryAssortmentRow[]>(
     `
       SELECT
@@ -314,6 +380,217 @@ export async function getStoreInventoryAssortmentSummaryFromDb(storeId: number):
     unmatchedRows: Number(row?.unmatched_rows ?? 0),
     completionPercent: calculateCompletionPercent(matchedRows, presentRows),
     quantityTotal: Number(row?.quantity_total ?? 0)
+  };
+}
+
+export async function upsertStoreInventoryAssortmentSnapshotInDb(
+  storeId: number,
+  snapshotDate?: string | null
+): Promise<InventoryStoreAssortmentSnapshot> {
+  await ensureStoreInventoryAssortmentSchema();
+
+  const normalizedStoreId = Number(storeId);
+  if (!Number.isFinite(normalizedStoreId) || normalizedStoreId <= 0) {
+    throw new Error('Некоректний магазин для збереження зрізу.');
+  }
+
+  const dateKey = snapshotDate ? normalizeSnapshotDate(snapshotDate) : todayDateKey();
+  const summary = await getStoreInventoryAssortmentSummaryFromDb(normalizedStoreId);
+
+  await getDbPool().query(
+    `
+      INSERT INTO store_inventory_assortment_snapshots (
+        store_id,
+        snapshot_date,
+        total_rows,
+        present_rows,
+        matched_rows,
+        unmatched_rows,
+        completion_percent,
+        quantity_total
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        total_rows = VALUES(total_rows),
+        present_rows = VALUES(present_rows),
+        matched_rows = VALUES(matched_rows),
+        unmatched_rows = VALUES(unmatched_rows),
+        completion_percent = VALUES(completion_percent),
+        quantity_total = VALUES(quantity_total)
+    `,
+    [
+      normalizedStoreId,
+      dateKey,
+      summary.totalRows,
+      summary.presentRows,
+      summary.matchedRows,
+      summary.unmatchedRows,
+      summary.completionPercent,
+      summary.quantityTotal
+    ]
+  );
+
+  const [rows] = await getDbPool().query<SnapshotRow[]>(
+    `
+      SELECT
+        id,
+        store_id,
+        snapshot_date,
+        total_rows,
+        present_rows,
+        matched_rows,
+        unmatched_rows,
+        completion_percent,
+        quantity_total,
+        created_at
+      FROM store_inventory_assortment_snapshots
+      WHERE store_id = ? AND snapshot_date = ?
+      LIMIT 1
+    `,
+    [normalizedStoreId, dateKey]
+  );
+
+  if (!rows[0]) {
+    throw new Error('Не вдалося зберегти зріз асортименту.');
+  }
+
+  return mapStoreInventoryAssortmentSnapshotRow(rows[0]);
+}
+
+export async function findStoreInventoryAssortmentSnapshotOnOrBeforeDateInDb(
+  storeId: number,
+  snapshotDate: string
+): Promise<InventoryStoreAssortmentSnapshot | null> {
+  await ensureStoreInventoryAssortmentSchema();
+
+  const normalizedStoreId = Number(storeId);
+  const dateKey = normalizeSnapshotDate(snapshotDate);
+  const [rows] = await getDbPool().query<SnapshotRow[]>(
+    `
+      SELECT
+        id,
+        store_id,
+        snapshot_date,
+        total_rows,
+        present_rows,
+        matched_rows,
+        unmatched_rows,
+        completion_percent,
+        quantity_total,
+        created_at
+      FROM store_inventory_assortment_snapshots
+      WHERE store_id = ? AND snapshot_date <= ?
+      ORDER BY snapshot_date DESC, id DESC
+      LIMIT 1
+    `,
+    [normalizedStoreId, dateKey]
+  );
+
+  return rows[0] ? mapStoreInventoryAssortmentSnapshotRow(rows[0]) : null;
+}
+
+export async function listStoreInventoryAssortmentSnapshotsInDb(
+  storeId: number,
+  options?: { dateFrom?: string | null; dateTo?: string | null; limit?: number }
+): Promise<InventoryStoreAssortmentSnapshot[]> {
+  await ensureStoreInventoryAssortmentSchema();
+
+  const normalizedStoreId = Number(storeId);
+  if (!Number.isFinite(normalizedStoreId) || normalizedStoreId <= 0) {
+    return [];
+  }
+
+  const whereParts = ['store_id = ?'];
+  const values: Array<string | number> = [normalizedStoreId];
+  if (options?.dateFrom) {
+    whereParts.push('snapshot_date >= ?');
+    values.push(normalizeSnapshotDate(options.dateFrom));
+  }
+  if (options?.dateTo) {
+    whereParts.push('snapshot_date <= ?');
+    values.push(normalizeSnapshotDate(options.dateTo));
+  }
+
+  const safeLimit = Math.min(Math.max(Number(options?.limit ?? 20), 1), 120);
+  const [rows] = await getDbPool().query<SnapshotRow[]>(
+    `
+      SELECT
+        id,
+        store_id,
+        snapshot_date,
+        total_rows,
+        present_rows,
+        matched_rows,
+        unmatched_rows,
+        completion_percent,
+        quantity_total,
+        created_at
+      FROM store_inventory_assortment_snapshots
+      WHERE ${whereParts.join(' AND ')}
+      ORDER BY snapshot_date DESC, id DESC
+      LIMIT ?
+    `,
+    [...values, safeLimit]
+  );
+
+  return rows.map(mapStoreInventoryAssortmentSnapshotRow);
+}
+
+export async function getStoreInventoryAssortmentComparisonByDatesInDb(
+  storeId: number,
+  baselineDate: string,
+  targetDate: string
+): Promise<InventoryStoreAssortmentComparison> {
+  await ensureStoreInventoryAssortmentSchema();
+
+  const normalizedStoreId = Number(storeId);
+  if (!Number.isFinite(normalizedStoreId) || normalizedStoreId <= 0) {
+    throw new Error('Некоректний магазин для порівняння.');
+  }
+
+  const requestedBaselineDate = normalizeSnapshotDate(baselineDate);
+  const requestedTargetDate = normalizeSnapshotDate(targetDate);
+
+  const baselineSnapshot = await findStoreInventoryAssortmentSnapshotOnOrBeforeDateInDb(
+    normalizedStoreId,
+    requestedBaselineDate
+  );
+
+  let targetSnapshot = await findStoreInventoryAssortmentSnapshotOnOrBeforeDateInDb(normalizedStoreId, requestedTargetDate);
+  if (!targetSnapshot && requestedTargetDate === todayDateKey()) {
+    const currentSummary = await getStoreInventoryAssortmentSummaryFromDb(normalizedStoreId);
+    targetSnapshot = {
+      id: 'live',
+      storeId: String(normalizedStoreId),
+      snapshotDate: requestedTargetDate,
+      createdAt: new Date().toISOString(),
+      ...currentSummary
+    };
+  }
+
+  const baseline = baselineSnapshot ?? {
+    totalRows: 0,
+    presentRows: 0,
+    matchedRows: 0,
+    unmatchedRows: 0,
+    completionPercent: 0,
+    quantityTotal: 0
+  };
+  const target = targetSnapshot ?? baseline;
+
+  return {
+    requestedBaselineDate,
+    requestedTargetDate,
+    baselineSnapshot,
+    targetSnapshot,
+    delta: {
+      totalRows: Number((target.totalRows - baseline.totalRows).toFixed(3)),
+      presentRows: Number((target.presentRows - baseline.presentRows).toFixed(3)),
+      matchedRows: Number((target.matchedRows - baseline.matchedRows).toFixed(3)),
+      unmatchedRows: Number((target.unmatchedRows - baseline.unmatchedRows).toFixed(3)),
+      completionPercent: Number((target.completionPercent - baseline.completionPercent).toFixed(2)),
+      quantityTotal: Number((target.quantityTotal - baseline.quantityTotal).toFixed(3))
+    }
   };
 }
 
@@ -579,4 +856,23 @@ export async function updateStoreInventoryAssortmentItemInDb(
   } finally {
     connection.release();
   }
+}
+
+export async function clearStoreInventoryAssortmentInDb(storeId: number): Promise<number> {
+  await ensureStoreInventoryAssortmentSchema();
+
+  const normalizedStoreId = Number(storeId);
+  if (!Number.isFinite(normalizedStoreId) || normalizedStoreId <= 0) {
+    throw new Error('Некоректний магазин для очищення асортименту.');
+  }
+
+  const [result] = await getDbPool().query<ResultSetHeader>(
+    `
+      DELETE FROM store_inventory_assortment
+      WHERE store_id = ?
+    `,
+    [normalizedStoreId]
+  );
+
+  return Number(result.affectedRows ?? 0);
 }

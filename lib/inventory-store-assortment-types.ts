@@ -28,6 +28,28 @@ export type InventoryStoreAssortmentSummary = {
   quantityTotal: number;
 };
 
+export type InventoryStoreAssortmentSnapshot = InventoryStoreAssortmentSummary & {
+  id: string;
+  storeId: string;
+  snapshotDate: string;
+  createdAt: string;
+};
+
+export type InventoryStoreAssortmentComparison = {
+  requestedBaselineDate: string;
+  requestedTargetDate: string;
+  baselineSnapshot: InventoryStoreAssortmentSnapshot | null;
+  targetSnapshot: InventoryStoreAssortmentSnapshot | null;
+  delta: {
+    totalRows: number;
+    presentRows: number;
+    matchedRows: number;
+    unmatchedRows: number;
+    completionPercent: number;
+    quantityTotal: number;
+  };
+};
+
 export type InventoryStoreAssortmentImportRow = {
   article: string;
   barcode: string;

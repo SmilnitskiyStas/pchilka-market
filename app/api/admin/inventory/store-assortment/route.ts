@@ -4,9 +4,11 @@ import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin
 import { parseInventoryStoreAssortmentWorkbook } from '@/lib/inventory-store-assortment-xlsx';
 import {
   addManualStoreInventoryAssortmentItemInDb,
+  clearStoreInventoryAssortmentInDb,
   getStoreInventoryAssortmentSummaryFromDb,
   importStoreInventoryAssortmentFromRows,
   listStoreInventoryAssortmentFromDb,
+  upsertStoreInventoryAssortmentSnapshotInDb,
   updateStoreInventoryAssortmentItemInDb
 } from '@/lib/inventory-store-assortment-repository';
 
@@ -79,6 +81,7 @@ export async function POST(request: Request) {
       }
 
       const summary = await importStoreInventoryAssortmentFromRows(storeId, rows);
+      await upsertStoreInventoryAssortmentSnapshotInDb(storeId);
       return NextResponse.json({ ok: true, summary });
     }
 
@@ -105,6 +108,7 @@ export async function POST(request: Request) {
       notes: body.notes
     });
     const summary = await getStoreInventoryAssortmentSummaryFromDb(storeId);
+    await upsertStoreInventoryAssortmentSnapshotInDb(storeId);
     return NextResponse.json({ ok: true, item, summary });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не вдалося зберегти товар магазину.';
@@ -145,9 +149,32 @@ export async function PATCH(request: Request) {
     }
 
     const summary = await getStoreInventoryAssortmentSummaryFromDb(storeId);
+    await upsertStoreInventoryAssortmentSnapshotInDb(storeId);
     return NextResponse.json({ ok: true, item, summary });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не вдалося оновити товар магазину.';
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  if (!isAdminRequestAuthorized(request)) {
+    return unauthorizedAdminResponse();
+  }
+
+  try {
+    const url = new URL(request.url);
+    const storeId = parseStoreId(url.searchParams.get('storeId'));
+    if (!storeId) {
+      return NextResponse.json({ ok: false, error: 'Потрібно вибрати магазин.' }, { status: 400 });
+    }
+
+    const clearedCount = await clearStoreInventoryAssortmentInDb(storeId);
+    const summary = await getStoreInventoryAssortmentSummaryFromDb(storeId);
+    await upsertStoreInventoryAssortmentSnapshotInDb(storeId);
+    return NextResponse.json({ ok: true, clearedCount, summary });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Не вдалося очистити асортимент магазину.';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
