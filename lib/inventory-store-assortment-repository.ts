@@ -137,7 +137,8 @@ async function ensureStoreInventoryAssortmentSchema() {
           PRIMARY KEY (id),
           KEY idx_store_inventory_assortment_store_present (store_id, is_present),
           KEY idx_store_inventory_assortment_store_match (store_id, match_status),
-          KEY idx_store_inventory_assortment_store_product (store_id, product_id)
+          KEY idx_store_inventory_assortment_store_product (store_id, product_id),
+          KEY idx_store_inventory_assortment_store_present_product (store_id, is_present, product_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
       await pool.query(`
@@ -166,6 +167,16 @@ async function ensureStoreInventoryAssortmentSchema() {
       const [indexes] = await pool.query<RowDataPacket[]>('SHOW INDEX FROM store_inventory_assortment');
       if (indexes.some((index) => String(index.Key_name ?? '') === 'uniq_store_inventory_assortment_identity')) {
         await pool.query('ALTER TABLE store_inventory_assortment DROP INDEX uniq_store_inventory_assortment_identity');
+      }
+      if (!indexes.some((index) => String(index.Key_name ?? '') === 'idx_store_inventory_assortment_store_present_product')) {
+        await pool.query(
+          'ALTER TABLE store_inventory_assortment ADD INDEX idx_store_inventory_assortment_store_present_product (store_id, is_present, product_id)'
+        );
+      }
+
+      const [batchIndexes] = await pool.query<RowDataPacket[]>('SHOW INDEX FROM product_batches');
+      if (!batchIndexes.some((index) => String(index.Key_name ?? '') === 'idx_product_batches_store_product')) {
+        await pool.query('ALTER TABLE product_batches ADD INDEX idx_product_batches_store_product (store_id, product_id)');
       }
     })().catch((error) => {
       storeInventoryAssortmentSchemaPromise = null;
@@ -387,37 +398,20 @@ export async function getStoreInventoryAssortmentSummaryFromDb(storeId: number):
   const [rows] = await pool.query<SummaryRow[]>(
     `
       SELECT
-        SUM(CASE WHEN is_present = 1 THEN 1 ELSE 0 END) AS total_rows,
-        SUM(CASE
-          WHEN is_present = 1
-            AND product_id IS NOT NULL
-            AND EXISTS (
-              SELECT 1
-              FROM product_batches pb
-              WHERE pb.store_id = store_inventory_assortment.store_id
-                AND pb.product_id = store_inventory_assortment.product_id
-            )
-          THEN 1 ELSE 0
-        END) AS present_rows,
-        SUM(CASE WHEN is_present = 1 AND product_id IS NOT NULL THEN 1 ELSE 0 END) AS matched_rows,
-        SUM(CASE
-          WHEN is_present = 1
-            AND NOT (
-              product_id IS NOT NULL
-              AND EXISTS (
-                SELECT 1
-                FROM product_batches pb
-                WHERE pb.store_id = store_inventory_assortment.store_id
-                  AND pb.product_id = store_inventory_assortment.product_id
-              )
-            )
-          THEN 1 ELSE 0
-        END) AS unmatched_rows,
-        SUM(CASE WHEN is_present = 1 THEN COALESCE(quantity, 0) ELSE 0 END) AS quantity_total
-      FROM store_inventory_assortment
-      WHERE store_id = ?
+        COUNT(*) AS total_rows,
+        SUM(CASE WHEN added_products.product_id IS NOT NULL THEN 1 ELSE 0 END) AS present_rows,
+        SUM(CASE WHEN assortment.product_id IS NOT NULL THEN 1 ELSE 0 END) AS matched_rows,
+        SUM(CASE WHEN added_products.product_id IS NULL THEN 1 ELSE 0 END) AS unmatched_rows,
+        SUM(COALESCE(assortment.quantity, 0)) AS quantity_total
+      FROM store_inventory_assortment AS assortment
+      LEFT JOIN (
+        SELECT DISTINCT product_id
+        FROM product_batches
+        WHERE store_id = ?
+      ) AS added_products ON added_products.product_id = assortment.product_id
+      WHERE assortment.store_id = ? AND assortment.is_present = 1
     `,
-    [storeId]
+    [storeId, storeId]
   );
 
   const row = rows[0];
