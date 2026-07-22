@@ -1257,7 +1257,7 @@ export default function AdminInventoryManager({
         const unmatchedCount = Number(payload.summary?.unmatchedCount ?? 0);
         setSuccess(
           parsedRows > 0
-            ? `Файл імпортовано: зчитано ${parsedRows} рядків, унікальних позицій ${uniqueRows}, дублікати ${duplicateRows}, співпало з каталогом ${matchedCount}, без прив'язки ${unmatchedCount}.`
+            ? `План магазину імпортовано: ${parsedRows} рядків у файлі, ${uniqueRows} унікальних ідентифікаторів, повторів ${duplicateRows}. Усі рядки збережено для перевірки заповненості.`
             : 'Файл асортименту успішно імпортовано.'
         );
         await loadStoreAssortment({ storeId: analyticsStoreId });
@@ -4964,8 +4964,8 @@ export default function AdminInventoryManager({
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand">Store assortment</p>
               <h3 className="mt-1 text-lg font-bold text-slate-900">Заповненість товарів по магазину</h3>
               <p className="mt-2 max-w-3xl text-sm text-slate-600">
-                Тут ми працюємо вже не з усім каталогом, а з фактичним асортиментом конкретного магазину:
-                імпортуємо файл, позначаємо присутні товари і бачимо, який відсоток позицій уже привʼязано до програми.
+                Файл задає плановий асортимент магазину. Заповненість показує, скільки позицій із цього плану вже внесли
+                працівники саме для обраного магазину.
               </p>
             </div>
             {analyticsStoreId ? (
@@ -4981,33 +4981,33 @@ export default function AdminInventoryManager({
 
           {!analyticsStoreId ? (
             <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-sm text-slate-600">
-              Вибери магазин у верхньому фільтрі аналітики, щоб завантажити асортимент, позначати товари магазину і
-              бачити відсоток заповненості.
+              Вибери магазин у верхньому фільтрі аналітики, щоб завантажити план асортименту й бачити, скільки товарів
+              уже внесли працівники.
             </div>
           ) : (
             <>
               <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <article className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Усього рядків</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">План магазину</p>
                   <p className="mt-2 text-2xl font-bold text-slate-900">{storeAssortmentSummary?.totalRows ?? 0}</p>
-                  <p className="mt-1 text-xs text-slate-500">Усі знайдені позиції магазину</p>
+                  <p className="mt-1 text-xs text-slate-500">Усі рядки з останнього файлу асортименту</p>
                 </article>
                 <article className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Присутні у магазині</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Додано працівниками</p>
                   <p className="mt-2 text-2xl font-bold text-slate-900">{storeAssortmentSummary?.presentRows ?? 0}</p>
-                  <p className="mt-1 text-xs text-slate-500">Активні товари поточного асортименту</p>
+                  <p className="mt-1 text-xs text-slate-500">Планові товари, уже внесені для цього магазину</p>
                 </article>
                 <article className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Вже в програмі</p>
-                  <p className="mt-2 text-2xl font-bold text-emerald-700">{storeAssortmentSummary?.matchedRows ?? 0}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Ще не додано</p>
+                  <p className="mt-2 text-2xl font-bold text-amber-700">{storeAssortmentSummary?.unmatchedRows ?? 0}</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    Позиції, що співпали з каталогом `Products` із {storeAssortmentSummary?.presentRows ?? 0} присутніх
+                    Планові товари, яких працівники ще не внесли для магазину
                   </p>
                 </article>
                 <article className="rounded-2xl border border-slate-200 bg-white p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Заповненість</p>
                   <p className="mt-2 text-2xl font-bold text-brand">{formatStoreAssortmentCompletion(storeAssortmentSummary?.completionPercent)}</p>
-                  <p className="mt-1 text-xs text-slate-500">Частка присутніх товарів, уже привʼязаних до каталогу</p>
+                  <p className="mt-1 text-xs text-slate-500">Частка плану, яку вже внесли працівники</p>
                 </article>
                 <article className="rounded-2xl border border-sky-200 bg-sky-50 p-4 sm:col-span-2 xl:col-span-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -5015,8 +5015,8 @@ export default function AdminInventoryManager({
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">Порівняння по датах</p>
                       <h4 className="mt-1 text-base font-semibold text-slate-900">Заповненість магазину: минула дата vs сьогодні</h4>
                       <p className="mt-1 text-xs text-slate-600">
-                        Для коректного порівняння система використовує історичні зрізи асортименту магазину. На сьогодні, 21.07.2026,
-                        якщо зріз ще не був збережений окремо, береться поточний живий стан магазину.
+                        Для порівняння система використовує історичні зрізи виконання плану. Для поточної дати, якщо зріз ще не був
+                        збережений окремо, береться поточний стан внесених працівниками товарів.
                       </p>
                     </div>
                     <a
@@ -5053,8 +5053,8 @@ export default function AdminInventoryManager({
                     <div className="rounded-xl border border-sky-200 bg-white p-4 text-sm text-slate-700">
                       <p className="font-semibold text-slate-900">Як читати результат</p>
                       <p className="mt-2">
-                        Ми порівнюємо фактичну заповненість магазину за двома зрізами: скільки товарів було присутніх, скільки з них
-                        вже були в програмі і який відсоток заповненості вийшов на кожну дату.
+                        Ми порівнюємо виконання плану за двома зрізами: скільки товарів працівники вже внесли та скільки
+                        ще залишилося до повного плану.
                       </p>
                     </div>
                   </div>
@@ -5110,19 +5110,19 @@ export default function AdminInventoryManager({
                           <tbody>
                             {[
                               {
-                                label: 'Присутні у магазині',
+                                label: 'Додано працівниками',
                                 baseline: storeAssortmentComparison.baselineSnapshot?.presentRows ?? 0,
                                 target: storeAssortmentComparison.targetSnapshot?.presentRows ?? 0,
                                 delta: storeAssortmentComparison.delta.presentRows
                               },
                               {
-                                label: 'Вже в програмі',
+                                label: 'Планових позицій, привʼязаних до каталогу',
                                 baseline: storeAssortmentComparison.baselineSnapshot?.matchedRows ?? 0,
                                 target: storeAssortmentComparison.targetSnapshot?.matchedRows ?? 0,
                                 delta: storeAssortmentComparison.delta.matchedRows
                               },
                               {
-                                label: 'Ще не в програмі',
+                                label: 'Ще не додано',
                                 baseline: storeAssortmentComparison.baselineSnapshot?.unmatchedRows ?? 0,
                                 target: storeAssortmentComparison.targetSnapshot?.unmatchedRows ?? 0,
                                 delta: storeAssortmentComparison.delta.unmatchedRows
@@ -5170,17 +5170,19 @@ export default function AdminInventoryManager({
                   ) : (
                     <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">
                       Для вибраних дат ще немає даних для порівняння. Перші історичні зрізи почнуть накопичуватись після
-                      змін асортименту магазину, а для дати 21.07.2026 система може взяти поточний стан напряму.
+                      внесень працівників, а для поточної дати система може взяти актуальний стан напряму.
                     </div>
                   )}
                 </article>
                 <article className="rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:col-span-2 xl:col-span-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">Ще не в програмі</p>
-                      <p className="mt-2 text-2xl font-bold text-amber-800">{formatStoreAssortmentGap(storeAssortmentSummary?.unmatchedRows)}</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">Ще не привʼязані до каталогу</p>
+                      <p className="mt-2 text-2xl font-bold text-amber-800">
+                        {formatStoreAssortmentGap((storeAssortmentSummary?.totalRows ?? 0) - (storeAssortmentSummary?.matchedRows ?? 0))}
+                      </p>
                       <p className="mt-1 text-xs text-amber-800/80">
-                        Присутні товари магазину, які ще не співпали з каталогом `Products` і не рахуються в заповненості.
+                        Планові товари без звʼязку з `Products`. Їх потрібно привʼязати, щоб система могла зарахувати внесення працівників.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">

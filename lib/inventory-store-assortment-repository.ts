@@ -56,6 +56,8 @@ type SnapshotRow = RowDataPacket & {
   created_at: Date | string;
 };
 
+const STORE_ASSORTMENT_SNAPSHOT_METRICS_VERSION = 2;
+
 let storeInventoryAssortmentSchemaPromise: Promise<void> | null = null;
 
 function toIsoDateTime(value: Date | string | null | undefined) {
@@ -133,7 +135,6 @@ async function ensureStoreInventoryAssortmentSchema() {
           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           PRIMARY KEY (id),
-          UNIQUE KEY uniq_store_inventory_assortment_identity (store_id, identity_hash),
           KEY idx_store_inventory_assortment_store_present (store_id, is_present),
           KEY idx_store_inventory_assortment_store_match (store_id, match_status),
           KEY idx_store_inventory_assortment_store_product (store_id, product_id)
@@ -150,12 +151,22 @@ async function ensureStoreInventoryAssortmentSchema() {
           unmatched_rows INT NOT NULL DEFAULT 0,
           completion_percent DECIMAL(7,2) NOT NULL DEFAULT 0,
           quantity_total DECIMAL(14,3) NOT NULL DEFAULT 0,
+          metrics_version TINYINT UNSIGNED NOT NULL DEFAULT 1,
           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
           PRIMARY KEY (id),
           UNIQUE KEY uniq_store_inventory_assortment_snapshot (store_id, snapshot_date),
           KEY idx_store_inventory_assortment_snapshot_date (snapshot_date)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
+      const [snapshotColumns] = await pool.query<RowDataPacket[]>('SHOW COLUMNS FROM store_inventory_assortment_snapshots');
+      if (!snapshotColumns.some((column) => String(column.Field ?? '') === 'metrics_version')) {
+        await pool.query('ALTER TABLE store_inventory_assortment_snapshots ADD COLUMN metrics_version TINYINT UNSIGNED NOT NULL DEFAULT 1');
+      }
+
+      const [indexes] = await pool.query<RowDataPacket[]>('SHOW INDEX FROM store_inventory_assortment');
+      if (indexes.some((index) => String(index.Key_name ?? '') === 'uniq_store_inventory_assortment_identity')) {
+        await pool.query('ALTER TABLE store_inventory_assortment DROP INDEX uniq_store_inventory_assortment_identity');
+      }
     })().catch((error) => {
       storeInventoryAssortmentSchemaPromise = null;
       throw error;
@@ -230,16 +241,62 @@ async function upsertStoreInventoryAssortmentRow(
     isPresent: boolean;
     notes?: string;
     importToken?: string | null;
+    identityHash?: string;
   }
 ) {
   const product = await resolveMatchingProduct(row, options.executor);
-  const identityHash = buildIdentityHash(row);
+  const identityHash = options.identityHash ?? buildIdentityHash(row);
   const normalizedArticle = normalizeText(row.article);
   const normalizedBarcode = normalizeInventoryBarcode(row.barcode);
   const normalizedProductName = normalizeText(row.productName);
   const normalizedUnits = normalizeText(row.unitsOfMeasurement || product?.unitsOfMeasurement);
   const productId = product?.id ? Number(product.id) : null;
   const matchStatus = productId ? 'matched' : 'unmatched';
+
+  const values = [
+    productId,
+    normalizedArticle,
+    normalizedBarcode,
+    normalizedProductName,
+    normalizedUnits,
+    row.quantity,
+    options.isPresent ? 1 : 0,
+    matchStatus,
+    options.sourceKind,
+    normalizeText(options.notes),
+    identityHash,
+    options.importToken ?? null,
+    options.sourceKind === 'import' ? new Date() : null
+  ];
+
+  if (options.sourceKind === 'manual') {
+    const [updated] = await options.executor.query<ResultSetHeader>(
+      `
+        UPDATE store_inventory_assortment
+        SET product_id = ?, article = ?, barcode = ?, product_name = ?, units_of_measurement = ?, quantity = ?,
+            is_present = ?, match_status = ?, source_kind = ?, notes = ?, last_import_token = ?, imported_at = ?
+        WHERE store_id = ? AND source_kind = 'manual' AND identity_hash = ?
+        LIMIT 1
+      `,
+      [
+        productId,
+        normalizedArticle,
+        normalizedBarcode,
+        normalizedProductName,
+        normalizedUnits,
+        row.quantity,
+        options.isPresent ? 1 : 0,
+        matchStatus,
+        options.sourceKind,
+        normalizeText(options.notes),
+        options.importToken ?? null,
+        null,
+        storeId,
+        identityHash
+      ]
+    );
+    if (updated.affectedRows > 0) return;
+  }
 
   await options.executor.query(
     `
@@ -260,36 +317,8 @@ async function upsertStoreInventoryAssortmentRow(
         imported_at
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        product_id = VALUES(product_id),
-        article = VALUES(article),
-        barcode = VALUES(barcode),
-        product_name = VALUES(product_name),
-        units_of_measurement = VALUES(units_of_measurement),
-        quantity = VALUES(quantity),
-        is_present = VALUES(is_present),
-        match_status = VALUES(match_status),
-        source_kind = VALUES(source_kind),
-        notes = VALUES(notes),
-        last_import_token = VALUES(last_import_token),
-        imported_at = VALUES(imported_at)
     `,
-    [
-      storeId,
-      productId,
-      normalizedArticle,
-      normalizedBarcode,
-      normalizedProductName,
-      normalizedUnits,
-      row.quantity,
-      options.isPresent ? 1 : 0,
-      matchStatus,
-      options.sourceKind,
-      normalizeText(options.notes),
-      identityHash,
-      options.importToken ?? null,
-      options.sourceKind === 'import' ? new Date() : null
-    ]
+    [storeId, ...values]
   );
 }
 
@@ -358,10 +387,32 @@ export async function getStoreInventoryAssortmentSummaryFromDb(storeId: number):
   const [rows] = await pool.query<SummaryRow[]>(
     `
       SELECT
-        COUNT(*) AS total_rows,
-        SUM(CASE WHEN is_present = 1 THEN 1 ELSE 0 END) AS present_rows,
-        SUM(CASE WHEN is_present = 1 AND match_status = 'matched' THEN 1 ELSE 0 END) AS matched_rows,
-        SUM(CASE WHEN is_present = 1 AND match_status = 'unmatched' THEN 1 ELSE 0 END) AS unmatched_rows,
+        SUM(CASE WHEN is_present = 1 THEN 1 ELSE 0 END) AS total_rows,
+        SUM(CASE
+          WHEN is_present = 1
+            AND product_id IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM product_batches pb
+              WHERE pb.store_id = store_inventory_assortment.store_id
+                AND pb.product_id = store_inventory_assortment.product_id
+            )
+          THEN 1 ELSE 0
+        END) AS present_rows,
+        SUM(CASE WHEN is_present = 1 AND product_id IS NOT NULL THEN 1 ELSE 0 END) AS matched_rows,
+        SUM(CASE
+          WHEN is_present = 1
+            AND NOT (
+              product_id IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM product_batches pb
+                WHERE pb.store_id = store_inventory_assortment.store_id
+                  AND pb.product_id = store_inventory_assortment.product_id
+              )
+            )
+          THEN 1 ELSE 0
+        END) AS unmatched_rows,
         SUM(CASE WHEN is_present = 1 THEN COALESCE(quantity, 0) ELSE 0 END) AS quantity_total
       FROM store_inventory_assortment
       WHERE store_id = ?
@@ -407,16 +458,18 @@ export async function upsertStoreInventoryAssortmentSnapshotInDb(
         matched_rows,
         unmatched_rows,
         completion_percent,
-        quantity_total
+        quantity_total,
+        metrics_version
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         total_rows = VALUES(total_rows),
         present_rows = VALUES(present_rows),
         matched_rows = VALUES(matched_rows),
         unmatched_rows = VALUES(unmatched_rows),
         completion_percent = VALUES(completion_percent),
-        quantity_total = VALUES(quantity_total)
+        quantity_total = VALUES(quantity_total),
+        metrics_version = VALUES(metrics_version)
     `,
     [
       normalizedStoreId,
@@ -426,7 +479,8 @@ export async function upsertStoreInventoryAssortmentSnapshotInDb(
       summary.matchedRows,
       summary.unmatchedRows,
       summary.completionPercent,
-      summary.quantityTotal
+      summary.quantityTotal,
+      STORE_ASSORTMENT_SNAPSHOT_METRICS_VERSION
     ]
   );
 
@@ -444,10 +498,10 @@ export async function upsertStoreInventoryAssortmentSnapshotInDb(
         quantity_total,
         created_at
       FROM store_inventory_assortment_snapshots
-      WHERE store_id = ? AND snapshot_date = ?
+      WHERE store_id = ? AND snapshot_date = ? AND metrics_version = ?
       LIMIT 1
     `,
-    [normalizedStoreId, dateKey]
+    [normalizedStoreId, dateKey, STORE_ASSORTMENT_SNAPSHOT_METRICS_VERSION]
   );
 
   if (!rows[0]) {
@@ -479,11 +533,11 @@ export async function findStoreInventoryAssortmentSnapshotOnOrBeforeDateInDb(
         quantity_total,
         created_at
       FROM store_inventory_assortment_snapshots
-      WHERE store_id = ? AND snapshot_date <= ?
+      WHERE store_id = ? AND snapshot_date <= ? AND metrics_version = ?
       ORDER BY snapshot_date DESC, id DESC
       LIMIT 1
     `,
-    [normalizedStoreId, dateKey]
+    [normalizedStoreId, dateKey, STORE_ASSORTMENT_SNAPSHOT_METRICS_VERSION]
   );
 
   return rows[0] ? mapStoreInventoryAssortmentSnapshotRow(rows[0]) : null;
@@ -500,8 +554,8 @@ export async function listStoreInventoryAssortmentSnapshotsInDb(
     return [];
   }
 
-  const whereParts = ['store_id = ?'];
-  const values: Array<string | number> = [normalizedStoreId];
+  const whereParts = ['store_id = ?', 'metrics_version = ?'];
+  const values: Array<string | number> = [normalizedStoreId, STORE_ASSORTMENT_SNAPSHOT_METRICS_VERSION];
   if (options?.dateFrom) {
     whereParts.push('snapshot_date >= ?');
     values.push(normalizeSnapshotDate(options.dateFrom));
@@ -557,7 +611,7 @@ export async function getStoreInventoryAssortmentComparisonByDatesInDb(
   );
 
   let targetSnapshot = await findStoreInventoryAssortmentSnapshotOnOrBeforeDateInDb(normalizedStoreId, requestedTargetDate);
-  if (!targetSnapshot && requestedTargetDate === todayDateKey()) {
+  if (requestedTargetDate === todayDateKey()) {
     const currentSummary = await getStoreInventoryAssortmentSummaryFromDb(normalizedStoreId);
     targetSnapshot = {
       id: 'live',
@@ -618,12 +672,13 @@ export async function importStoreInventoryAssortmentFromRows(
   try {
     await connection.beginTransaction();
 
-    for (const row of rows) {
+    for (const [rowIndex, row] of rows.entries()) {
       await upsertStoreInventoryAssortmentRow(storeId, row, {
         sourceKind: 'import',
         executor: connection,
         isPresent: true,
-        importToken
+        importToken,
+        identityHash: createHash('sha256').update(`${buildIdentityHash(row)}|import:${importToken}|row:${rowIndex}`).digest('hex')
       });
     }
 
@@ -632,6 +687,7 @@ export async function importStoreInventoryAssortmentFromRows(
         UPDATE store_inventory_assortment
         SET is_present = 0
         WHERE store_id = ?
+          AND source_kind = 'import'
           AND (last_import_token IS NULL OR last_import_token <> ?)
       `,
       [storeId, importToken]
@@ -719,7 +775,7 @@ export async function addManualStoreInventoryAssortmentItemInDb(
         created_at,
         updated_at
       FROM store_inventory_assortment
-      WHERE store_id = ? AND identity_hash = ?
+      WHERE store_id = ? AND source_kind = 'manual' AND identity_hash = ?
       LIMIT 1
     `,
     [storeId, identityHash]

@@ -39,7 +39,7 @@ function buildWorkbookBuffer(input: {
     ['Товари магазину, яких ще немає в програмі'],
     [`Магазин: ${input.storeLabel}`],
     [`Дата експорту: ${input.exportedAt}`],
-    [`Не прив’язано: ${input.summary.unmatchedRows} із ${input.summary.presentRows} присутніх товарів`],
+    [`Не прив’язано: ${Math.max(0, input.summary.totalRows - input.summary.matchedRows)} із ${input.summary.totalRows} планових товарів`],
     []
   ]);
 

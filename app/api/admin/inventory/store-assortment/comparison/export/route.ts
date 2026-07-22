@@ -45,25 +45,25 @@ function buildWorkbookBuffer(input: {
     overviewSheet,
     [
       {
-        Метрика: 'Усього рядків',
+        Метрика: 'План магазину',
         [`На ${baseline?.snapshotDate || input.baselineDate}`]: baseline?.totalRows ?? 0,
         [`На ${target?.snapshotDate || input.targetDate}`]: target?.totalRows ?? 0,
         'Різниця': delta.totalRows
       },
       {
-        Метрика: 'Присутні у магазині',
+        Метрика: 'Додано працівниками',
         [`На ${baseline?.snapshotDate || input.baselineDate}`]: baseline?.presentRows ?? 0,
         [`На ${target?.snapshotDate || input.targetDate}`]: target?.presentRows ?? 0,
         'Різниця': delta.presentRows
       },
       {
-        Метрика: 'Вже в програмі',
+        Метрика: 'Планових позицій, привʼязаних до каталогу',
         [`На ${baseline?.snapshotDate || input.baselineDate}`]: baseline?.matchedRows ?? 0,
         [`На ${target?.snapshotDate || input.targetDate}`]: target?.matchedRows ?? 0,
         'Різниця': delta.matchedRows
       },
       {
-        Метрика: 'Ще не в програмі',
+        Метрика: 'Ще не додано',
         [`На ${baseline?.snapshotDate || input.baselineDate}`]: baseline?.unmatchedRows ?? 0,
         [`На ${target?.snapshotDate || input.targetDate}`]: target?.unmatchedRows ?? 0,
         'Різниця': delta.unmatchedRows
@@ -88,10 +88,10 @@ function buildWorkbookBuffer(input: {
   const historySheet = XLSX.utils.json_to_sheet(
     input.history.map((item) => ({
       'Дата зрізу': item.snapshotDate,
-      'Усього рядків': item.totalRows,
-      'Присутні у магазині': item.presentRows,
-      'Вже в програмі': item.matchedRows,
-      'Ще не в програмі': item.unmatchedRows,
+      'План магазину': item.totalRows,
+      'Додано працівниками': item.presentRows,
+      'Планових позицій, привʼязаних до каталогу': item.matchedRows,
+      'Ще не додано': item.unmatchedRows,
       'Заповненість, %': item.completionPercent,
       'Кількість товару': item.quantityTotal,
       'Створено': item.createdAt ? item.createdAt.slice(0, 19).replace('T', ' ') : ''

@@ -11,6 +11,7 @@ import { getSuspiciousInventoryExpiryDate } from '@/lib/inventory-expiry-date-ru
 import { parseInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
 import { findInventoryProductByIdInDb } from '@/lib/inventory-products-repository';
+import { upsertStoreInventoryAssortmentSnapshotInDb } from '@/lib/inventory-store-assortment-repository';
 import { findInventoryUserByChatId } from '@/lib/inventory-users-repository';
 
 export const runtime = 'nodejs';
@@ -115,6 +116,7 @@ export async function POST(request: Request) {
             responsibleUserId: user.id
           }
         );
+        await upsertStoreInventoryAssortmentSnapshotInDb(Number(normalized.storeId));
 
         return NextResponse.json({ ok: true, batch, resolution: 'merged' });
       }
@@ -124,6 +126,7 @@ export async function POST(request: Request) {
         updatedByUserId: user.id,
         responsibleUserId: user.id
       });
+      await upsertStoreInventoryAssortmentSnapshotInDb(Number(normalized.storeId));
 
       return NextResponse.json({ ok: true, batch, resolution: 'created' });
     });

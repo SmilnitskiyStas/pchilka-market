@@ -3,6 +3,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import { getDbPool } from '@/lib/db';
+import { upsertStoreInventoryAssortmentSnapshotInDb } from '@/lib/inventory-store-assortment-repository';
 import {
   createInventoryBatchInDb,
   findInventoryDuplicateBatchInDb,
@@ -159,6 +160,8 @@ export async function POST(request: Request) {
     if (!result) {
       throw new Error('Не вдалося створити товар і партію.');
     }
+
+    await upsertStoreInventoryAssortmentSnapshotInDb(Number(result.batch.storeId));
 
     return NextResponse.json({
       ok: true,

@@ -10,6 +10,7 @@ import {
   withInventoryBatchDuplicateLock
 } from '@/lib/inventory-batches-repository';
 import { normalizeInventoryBatchInput } from '@/lib/inventory-batch-types';
+import { upsertStoreInventoryAssortmentSnapshotInDb } from '@/lib/inventory-store-assortment-repository';
 
 export const runtime = 'nodejs';
 
@@ -78,10 +79,12 @@ export async function POST(request: Request) {
           },
           executor
         );
+        await upsertStoreInventoryAssortmentSnapshotInDb(Number(normalized.storeId));
         return NextResponse.json({ ok: true, batch, resolution: 'merged' });
       }
 
       const batch = await createInventoryBatchInDb(normalized, executor);
+      await upsertStoreInventoryAssortmentSnapshotInDb(Number(normalized.storeId));
       return NextResponse.json({ ok: true, batch, resolution: 'created' });
     });
   } catch (error) {
