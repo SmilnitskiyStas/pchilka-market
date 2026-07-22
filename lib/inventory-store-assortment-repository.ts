@@ -421,15 +421,16 @@ export async function getStoreInventoryAssortmentSummaryFromDb(storeId: number):
   );
 
   const row = rows[0];
+  const totalRows = Number(row?.total_rows ?? 0);
   const presentRows = Number(row?.present_rows ?? 0);
   const matchedRows = Number(row?.matched_rows ?? 0);
 
   return {
-    totalRows: Number(row?.total_rows ?? 0),
+    totalRows,
     presentRows,
     matchedRows,
     unmatchedRows: Number(row?.unmatched_rows ?? 0),
-    completionPercent: calculateCompletionPercent(matchedRows, presentRows),
+    completionPercent: calculateCompletionPercent(presentRows, totalRows),
     quantityTotal: Number(row?.quantity_total ?? 0)
   };
 }
