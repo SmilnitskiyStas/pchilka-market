@@ -29,6 +29,36 @@ function percent(present: number, total: number) {
   return total > 0 ? Number(((present / total) * 100).toFixed(2)) : 0;
 }
 
+const headerStyle = {
+  fill: { fgColor: { rgb: '1F4E78' } },
+  font: { bold: true, color: { rgb: 'FFFFFF' } },
+  alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+  border: { bottom: { style: 'thin', color: { rgb: '163A5C' } } }
+};
+const totalStyle = {
+  fill: { fgColor: { rgb: 'D9EAD3' } },
+  font: { bold: true, color: { rgb: '274E13' } },
+  border: { top: { style: 'thin', color: { rgb: '70AD47' } } }
+};
+
+function styleTable(sheet: XLSX.WorkSheet, rows: Array<Record<string, string | number>>) {
+  const headers = Object.keys(rows[0] || {});
+  headers.forEach((header, columnIndex) => {
+    const headerCell = XLSX.utils.encode_cell({ r: 0, c: columnIndex });
+    if (sheet[headerCell]) sheet[headerCell].s = headerStyle;
+    for (let rowIndex = 1; rowIndex <= rows.length; rowIndex += 1) {
+      const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex });
+      const cell = sheet[cellAddress];
+      if (!cell) continue;
+      if (header.includes('заповненість')) cell.z = '0.00';
+      else if (typeof cell.v === 'number') cell.z = '#,##0;[Red]-#,##0;0';
+      if (rowIndex === rows.length) cell.s = totalStyle;
+    }
+  });
+  sheet['!autofilter'] = { ref: `A1:${XLSX.utils.encode_col(headers.length - 1)}${rows.length + 1}` };
+  sheet['!rows'] = [{ hpt: 34 }];
+}
+
 export async function GET(request: Request) {
   if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse();
 
@@ -87,6 +117,7 @@ export async function GET(request: Request) {
     const sheet = XLSX.utils.json_to_sheet(rows);
     sheet['!freeze'] = { xSplit: 1, ySplit: 1 };
     sheet['!cols'] = [{ wch: 34 }, ...Array(Math.max(0, Object.keys(rows[0] || {}).length - 1)).fill({ wch: 17 })];
+    styleTable(sheet, rows);
     const summary = XLSX.utils.aoa_to_sheet([
       ['Звіт заповненості магазинів'],
       [`Період: ${dates[0]} — ${dates[dates.length - 1]}`],
@@ -94,11 +125,18 @@ export async function GET(request: Request) {
       ['Заповнення плану товарами, внесеними працівниками', dates.length, stores.length, 'унікальні товари']
     ]);
     summary['!cols'] = [{ wch: 52 }, { wch: 16 }, { wch: 14 }, { wch: 22 }];
+    ['A1', 'A2'].forEach((address) => {
+      if (summary[address]) summary[address].s = { font: { bold: true, color: { rgb: '17365D' } }, fill: { fgColor: { rgb: 'DDEBF7' } } };
+    });
+    ['A3', 'B3', 'C3', 'D3'].forEach((address) => {
+      if (summary[address]) summary[address].s = headerStyle;
+    });
+    if (summary.A4) summary.A4.s = totalStyle;
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, 'Заповненість по магазинах');
     XLSX.utils.book_append_sheet(workbook, summary, 'Опис звіту');
-    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', cellStyles: true });
     const fileName = `store-assortment-report-${safeFilePart(dates[0])}-to-${safeFilePart(dates[dates.length - 1])}.xlsx`;
     return new NextResponse(buffer, {
       headers: {
