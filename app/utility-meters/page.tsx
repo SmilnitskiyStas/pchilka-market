@@ -447,7 +447,7 @@ export default function UtilityMetersPage() {
       setClientMutationId(savedDraft.clientMutationId || buildLocalId());
       setReadingDate(savedDraft.readingDate || todayIso());
       setReadingValue(savedDraft.readingValue || '');
-      setPreviousValueOverride(savedDraft.previousValueOverride || '');
+      setPreviousValueOverride('');
       setNotes(savedDraft.notes || '');
       setDraftStatus('Чернетку відновлено з цього пристрою.');
       return;
@@ -464,7 +464,7 @@ export default function UtilityMetersPage() {
   useEffect(() => {
     if (!draftStorageKey || isLoading) return;
 
-    const hasDraftData = Boolean(readingValue.trim() || previousValueOverride.trim() || notes.trim() || readingDate !== todayIso());
+    const hasDraftData = Boolean(readingValue.trim() || notes.trim() || readingDate !== todayIso());
     if (!hasDraftData) {
       removeLocalDraft(draftStorageKey);
       return;
@@ -475,14 +475,14 @@ export default function UtilityMetersPage() {
       selectedMeterId,
       readingDate,
       readingValue,
-      previousValueOverride,
+      previousValueOverride: '',
       notes
     });
 
     if (!isSubmitting) {
       setDraftStatus('Чернетка зберігається на цьому пристрої.');
     }
-  }, [clientMutationId, draftStorageKey, isLoading, isSubmitting, notes, previousValueOverride, readingDate, readingValue, selectedMeterId]);
+  }, [clientMutationId, draftStorageKey, isLoading, isSubmitting, notes, readingDate, readingValue, selectedMeterId]);
 
   useEffect(() => {
     if (!token) return;
@@ -510,9 +510,9 @@ export default function UtilityMetersPage() {
     setSyncStatus('');
 
     const normalizedReadingValue = parseUtilityMeterDecimal(readingValue);
-    const normalizedPreviousValue = previousValueOverride ? parseUtilityMeterDecimal(previousValueOverride) : undefined;
+    const normalizedPreviousValue = undefined;
 
-    if (!Number.isFinite(normalizedReadingValue) || (normalizedPreviousValue !== undefined && !Number.isFinite(normalizedPreviousValue))) {
+    if (!Number.isFinite(normalizedReadingValue)) {
       setStatus('Введіть показник числом. Можна використовувати крапку або кому для дробової частини.');
       setIsSubmitting(false);
       return;
@@ -763,19 +763,20 @@ export default function UtilityMetersPage() {
                 />
               </label>
               <label className="block text-sm font-semibold text-slate-700">
-                Початковий / попередній показник
+                Попередній показник
                 <input
-                  inputMode="decimal"
-                  value={previousValueOverride}
-                  onChange={(event) => setPreviousValueOverride(event.target.value)}
-                  className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
-                  placeholder="0 за замовчуванням"
+                  value={
+                    previousReading
+                      ? formatNumber(previousReading.readingValue)
+                      : selectedMeter?.initialReadingValue != null
+                        ? formatNumber(selectedMeter.initialReadingValue)
+                        : 'Немає даних'
+                  }
+                  readOnly
+                  aria-readonly="true"
+                  className="mt-2 w-full rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-base text-slate-700"
                 />
-                {previousValueOverride.trim() ? (
-                  <span className="mt-1 block text-xs font-normal text-slate-600">
-                    Для розрахунку буде використано введений попередній показник: {previousValueOverride}.
-                  </span>
-                ) : previousReading ? (
+                {previousReading ? (
                   <span className="mt-1 block text-xs font-normal text-slate-600">
                     Для розрахунку буде автоматично використано показник {formatNumber(previousReading.readingValue)} з бази за {formatPeriodMonth(previousReading.periodMonth)} ({previousReading.readingDate}).
                   </span>
