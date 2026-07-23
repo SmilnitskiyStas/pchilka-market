@@ -403,10 +403,14 @@ export async function listStoreInventoryAssortmentFromDb(
   return rows.map(mapStoreInventoryAssortmentRow);
 }
 
-export async function getStoreInventoryAssortmentSummaryFromDb(storeId: number): Promise<InventoryStoreAssortmentSummary> {
+export async function getStoreInventoryAssortmentSummaryFromDb(
+  storeId: number,
+  options?: { asOfDate?: string | null }
+): Promise<InventoryStoreAssortmentSummary> {
   await ensureStoreInventoryAssortmentSchema();
 
   const pool = getDbPool();
+  const asOfDate = options?.asOfDate ? normalizeSnapshotDate(options.asOfDate) : '';
   const [rows] = await pool.query<SummaryRow[]>(
     `
       SELECT
@@ -420,10 +424,11 @@ export async function getStoreInventoryAssortmentSummaryFromDb(storeId: number):
         SELECT DISTINCT product_id
         FROM product_batches
         WHERE store_id = ?
+          ${asOfDate ? 'AND created_at < DATE_ADD(?, INTERVAL 1 DAY)' : ''}
       ) AS added_products ON added_products.product_id = assortment.product_id
       WHERE assortment.store_id = ? AND assortment.is_present = 1
     `,
-    [storeId, storeId]
+    asOfDate ? [storeId, asOfDate, storeId] : [storeId, storeId]
   );
 
   const row = rows[0];
@@ -612,32 +617,26 @@ export async function getStoreInventoryAssortmentComparisonByDatesInDb(
   const requestedBaselineDate = normalizeSnapshotDate(baselineDate);
   const requestedTargetDate = normalizeSnapshotDate(targetDate);
 
-  const baselineSnapshot = await findStoreInventoryAssortmentSnapshotOnOrBeforeDateInDb(
-    normalizedStoreId,
-    requestedBaselineDate
-  );
-
-  let targetSnapshot = await findStoreInventoryAssortmentSnapshotOnOrBeforeDateInDb(normalizedStoreId, requestedTargetDate);
-  if (requestedTargetDate === todayDateKey()) {
-    const currentSummary = await getStoreInventoryAssortmentSummaryFromDb(normalizedStoreId);
-    targetSnapshot = {
-      id: 'live',
-      storeId: String(normalizedStoreId),
-      snapshotDate: requestedTargetDate,
-      createdAt: new Date().toISOString(),
-      ...currentSummary
-    };
-  }
-
-  const baseline = baselineSnapshot ?? {
-    totalRows: 0,
-    presentRows: 0,
-    matchedRows: 0,
-    unmatchedRows: 0,
-    completionPercent: 0,
-    quantityTotal: 0
+  const [baselineSummary, targetSummary] = await Promise.all([
+    getStoreInventoryAssortmentSummaryFromDb(normalizedStoreId, { asOfDate: requestedBaselineDate }),
+    getStoreInventoryAssortmentSummaryFromDb(normalizedStoreId, { asOfDate: requestedTargetDate })
+  ]);
+  const baselineSnapshot: InventoryStoreAssortmentSnapshot = {
+    id: 'historical-live',
+    storeId: String(normalizedStoreId),
+    snapshotDate: requestedBaselineDate,
+    createdAt: new Date().toISOString(),
+    ...baselineSummary
   };
-  const target = targetSnapshot ?? baseline;
+  const targetSnapshot: InventoryStoreAssortmentSnapshot = {
+    id: 'historical-live',
+    storeId: String(normalizedStoreId),
+    snapshotDate: requestedTargetDate,
+    createdAt: new Date().toISOString(),
+    ...targetSummary
+  };
+  const baseline = baselineSnapshot;
+  const target = targetSnapshot;
 
   return {
     requestedBaselineDate,
@@ -689,42 +688,41 @@ export async function getAllStoreInventoryAssortmentComparisonByDatesInDb(
     `
   );
 
-  const [snapshotRows] = await pool.query<SnapshotRow[]>(
-    `
-      SELECT
-        id,
-        store_id,
-        snapshot_date,
-        total_rows,
-        present_rows,
-        matched_rows,
-        unmatched_rows,
-        completion_percent,
-        quantity_total,
-        created_at
-      FROM store_inventory_assortment_snapshots
-      WHERE metrics_version = ?
-        AND snapshot_date <= ?
-      ORDER BY store_id ASC, snapshot_date DESC, id DESC
-    `,
-    [STORE_ASSORTMENT_SNAPSHOT_METRICS_VERSION, requestedBaselineDate > requestedTargetDate ? requestedBaselineDate : requestedTargetDate]
-  );
-
-  const latestSnapshotByDate = (date: string) => {
-    const result = new Map<string, InventoryStoreAssortmentSnapshot>();
-    for (const row of snapshotRows) {
-      const snapshot = mapStoreInventoryAssortmentSnapshotRow(row);
-      if (snapshot.snapshotDate <= date && !result.has(snapshot.storeId)) {
-        result.set(snapshot.storeId, snapshot);
-      }
-    }
-    return result;
+  const loadHistoricalRows = async (asOfDate: string) => {
+    const [rows] = await pool.query<AllStoreSummaryRow[]>(
+      `
+        SELECT
+          s.id AS store_id,
+          CONCAT_WS(' | ', s.store_code, s.city, s.address_line) AS store_label,
+          COUNT(assortment.id) AS total_rows,
+          COALESCE(SUM(CASE WHEN added_products.product_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS present_rows,
+          COALESCE(SUM(CASE WHEN assortment.product_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS matched_rows,
+          COALESCE(SUM(CASE WHEN added_products.product_id IS NULL THEN 1 ELSE 0 END), 0) AS unmatched_rows,
+          COALESCE(SUM(assortment.quantity), 0) AS quantity_total
+        FROM stores s
+        LEFT JOIN store_inventory_assortment assortment
+          ON assortment.store_id = s.id AND assortment.is_present = 1
+        LEFT JOIN (
+          SELECT DISTINCT store_id, product_id
+          FROM product_batches
+          WHERE created_at < DATE_ADD(?, INTERVAL 1 DAY)
+        ) added_products
+          ON added_products.store_id = s.id AND added_products.product_id = assortment.product_id
+        WHERE s.is_active = 1
+        GROUP BY s.id, s.store_code, s.city, s.address_line
+        ORDER BY s.sort_order ASC, s.city ASC, s.address_line ASC, s.id ASC
+      `,
+      [asOfDate]
+    );
+    return rows;
   };
-
-  const baselineSnapshots = latestSnapshotByDate(requestedBaselineDate);
-  const targetSnapshots = latestSnapshotByDate(requestedTargetDate);
+  const [baselineSummaryRows, targetSummaryRows] = await Promise.all([
+    loadHistoricalRows(requestedBaselineDate),
+    requestedTargetDate === todayDateKey() ? Promise.resolve(summaryRows) : loadHistoricalRows(requestedTargetDate)
+  ]);
+  const baselineSummaryByStore = new Map(baselineSummaryRows.map((row) => [String(row.store_id), row]));
   const liveSummaries = new Map<string, InventoryStoreAssortmentSnapshot>();
-  for (const row of summaryRows) {
+  for (const row of targetSummaryRows) {
     const totalRows = Number(row.total_rows ?? 0);
     const presentRows = Number(row.present_rows ?? 0);
     liveSummaries.set(String(row.store_id), {
@@ -754,12 +752,19 @@ export async function getAllStoreInventoryAssortmentComparisonByDatesInDb(
     createdAt: ''
   });
 
-  const rows: InventoryStoreAssortmentAllStoreComparisonRow[] = summaryRows.map((store) => {
+  const rows: InventoryStoreAssortmentAllStoreComparisonRow[] = targetSummaryRows.map((store) => {
     const storeId = String(store.store_id);
-    const baseline = baselineSnapshots.get(storeId) ?? zeroSnapshot(storeId, requestedBaselineDate);
-    const target = requestedTargetDate === todayDateKey()
-      ? liveSummaries.get(storeId) ?? zeroSnapshot(storeId, requestedTargetDate)
-      : targetSnapshots.get(storeId) ?? zeroSnapshot(storeId, requestedTargetDate);
+    const baselineRow = baselineSummaryByStore.get(storeId);
+    const baseline = baselineRow
+      ? {
+          id: 'historical-live', storeId, snapshotDate: requestedBaselineDate,
+          totalRows: Number(baselineRow.total_rows ?? 0), presentRows: Number(baselineRow.present_rows ?? 0),
+          matchedRows: Number(baselineRow.matched_rows ?? 0), unmatchedRows: Number(baselineRow.unmatched_rows ?? 0),
+          completionPercent: calculateCompletionPercent(Number(baselineRow.present_rows ?? 0), Number(baselineRow.total_rows ?? 0)),
+          quantityTotal: Number(baselineRow.quantity_total ?? 0), createdAt: new Date().toISOString()
+        }
+      : zeroSnapshot(storeId, requestedBaselineDate);
+    const target = liveSummaries.get(storeId) ?? zeroSnapshot(storeId, requestedTargetDate);
     return {
       storeId,
       storeLabel: store.store_label ?? `Магазин ${storeId}`,
