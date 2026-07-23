@@ -6,6 +6,8 @@ import { getDbPool } from '@/lib/db';
 import { findInventoryProductByBarcodeInDb, findInventoryProductByIdInDb, findInventoryProductDuplicateInDb } from '@/lib/inventory-products-repository';
 import type {
   InventoryStoreAssortmentComparison,
+  InventoryStoreAssortmentAllStoreComparison,
+  InventoryStoreAssortmentAllStoreComparisonRow,
   InventoryStoreAssortmentImportRow,
   InventoryStoreAssortmentManualInput,
   InventoryStoreAssortmentRecord,
@@ -54,6 +56,16 @@ type SnapshotRow = RowDataPacket & {
   completion_percent: string | number;
   quantity_total: string | number | null;
   created_at: Date | string;
+};
+
+type AllStoreSummaryRow = RowDataPacket & {
+  store_id: number;
+  store_label: string;
+  total_rows: number;
+  present_rows: number;
+  matched_rows: number;
+  unmatched_rows: number;
+  quantity_total: string | number | null;
 };
 
 const STORE_ASSORTMENT_SNAPSHOT_METRICS_VERSION = 2;
@@ -639,6 +651,158 @@ export async function getStoreInventoryAssortmentComparisonByDatesInDb(
       unmatchedRows: Number((target.unmatchedRows - baseline.unmatchedRows).toFixed(3)),
       completionPercent: Number((target.completionPercent - baseline.completionPercent).toFixed(2)),
       quantityTotal: Number((target.quantityTotal - baseline.quantityTotal).toFixed(3))
+    }
+  };
+}
+
+export async function getAllStoreInventoryAssortmentComparisonByDatesInDb(
+  baselineDate: string,
+  targetDate: string
+): Promise<InventoryStoreAssortmentAllStoreComparison> {
+  await ensureStoreInventoryAssortmentSchema();
+
+  const requestedBaselineDate = normalizeSnapshotDate(baselineDate);
+  const requestedTargetDate = normalizeSnapshotDate(targetDate);
+  const pool = getDbPool();
+
+  const [summaryRows] = await pool.query<AllStoreSummaryRow[]>(
+    `
+      SELECT
+        s.id AS store_id,
+        CONCAT_WS(' | ', s.store_code, s.city, s.address_line) AS store_label,
+        COUNT(assortment.id) AS total_rows,
+        COALESCE(SUM(CASE WHEN added_products.product_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS present_rows,
+        COALESCE(SUM(CASE WHEN assortment.product_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS matched_rows,
+        COALESCE(SUM(CASE WHEN added_products.product_id IS NULL THEN 1 ELSE 0 END), 0) AS unmatched_rows,
+        COALESCE(SUM(assortment.quantity), 0) AS quantity_total
+      FROM stores s
+      LEFT JOIN store_inventory_assortment assortment
+        ON assortment.store_id = s.id AND assortment.is_present = 1
+      LEFT JOIN (
+        SELECT DISTINCT store_id, product_id
+        FROM product_batches
+      ) added_products
+        ON added_products.store_id = s.id AND added_products.product_id = assortment.product_id
+      WHERE s.is_active = 1
+      GROUP BY s.id, s.store_code, s.city, s.address_line
+      ORDER BY s.sort_order ASC, s.city ASC, s.address_line ASC, s.id ASC
+    `
+  );
+
+  const [snapshotRows] = await pool.query<SnapshotRow[]>(
+    `
+      SELECT
+        id,
+        store_id,
+        snapshot_date,
+        total_rows,
+        present_rows,
+        matched_rows,
+        unmatched_rows,
+        completion_percent,
+        quantity_total,
+        created_at
+      FROM store_inventory_assortment_snapshots
+      WHERE metrics_version = ?
+        AND snapshot_date <= ?
+      ORDER BY store_id ASC, snapshot_date DESC, id DESC
+    `,
+    [STORE_ASSORTMENT_SNAPSHOT_METRICS_VERSION, requestedBaselineDate > requestedTargetDate ? requestedBaselineDate : requestedTargetDate]
+  );
+
+  const latestSnapshotByDate = (date: string) => {
+    const result = new Map<string, InventoryStoreAssortmentSnapshot>();
+    for (const row of snapshotRows) {
+      const snapshot = mapStoreInventoryAssortmentSnapshotRow(row);
+      if (snapshot.snapshotDate <= date && !result.has(snapshot.storeId)) {
+        result.set(snapshot.storeId, snapshot);
+      }
+    }
+    return result;
+  };
+
+  const baselineSnapshots = latestSnapshotByDate(requestedBaselineDate);
+  const targetSnapshots = latestSnapshotByDate(requestedTargetDate);
+  const liveSummaries = new Map<string, InventoryStoreAssortmentSnapshot>();
+  for (const row of summaryRows) {
+    const totalRows = Number(row.total_rows ?? 0);
+    const presentRows = Number(row.present_rows ?? 0);
+    liveSummaries.set(String(row.store_id), {
+      id: 'live',
+      storeId: String(row.store_id),
+      snapshotDate: requestedTargetDate,
+      totalRows,
+      presentRows,
+      matchedRows: Number(row.matched_rows ?? 0),
+      unmatchedRows: Number(row.unmatched_rows ?? 0),
+      completionPercent: calculateCompletionPercent(presentRows, totalRows),
+      quantityTotal: Number(row.quantity_total ?? 0),
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  const zeroSnapshot = (storeId: string, date: string): InventoryStoreAssortmentSnapshot => ({
+    id: 'empty',
+    storeId,
+    snapshotDate: date,
+    totalRows: 0,
+    presentRows: 0,
+    matchedRows: 0,
+    unmatchedRows: 0,
+    completionPercent: 0,
+    quantityTotal: 0,
+    createdAt: ''
+  });
+
+  const rows: InventoryStoreAssortmentAllStoreComparisonRow[] = summaryRows.map((store) => {
+    const storeId = String(store.store_id);
+    const baseline = baselineSnapshots.get(storeId) ?? zeroSnapshot(storeId, requestedBaselineDate);
+    const target = requestedTargetDate === todayDateKey()
+      ? liveSummaries.get(storeId) ?? zeroSnapshot(storeId, requestedTargetDate)
+      : targetSnapshots.get(storeId) ?? zeroSnapshot(storeId, requestedTargetDate);
+    return {
+      storeId,
+      storeLabel: store.store_label ?? `Магазин ${storeId}`,
+      baseline,
+      target,
+      delta: {
+        totalRows: target.totalRows - baseline.totalRows,
+        presentRows: target.presentRows - baseline.presentRows,
+        matchedRows: target.matchedRows - baseline.matchedRows,
+        unmatchedRows: target.unmatchedRows - baseline.unmatchedRows,
+        completionPercent: Number((target.completionPercent - baseline.completionPercent).toFixed(2)),
+        quantityTotal: target.quantityTotal - baseline.quantityTotal
+      }
+    };
+  });
+
+  const sum = (selector: (snapshot: InventoryStoreAssortmentSnapshot) => number, target: boolean) =>
+    rows.reduce((total, row) => total + selector(target ? row.target : row.baseline), 0);
+  const baselineTotalRows = sum((snapshot) => snapshot.totalRows, false);
+  const targetTotalRows = sum((snapshot) => snapshot.totalRows, true);
+  const baselinePresentRows = sum((snapshot) => snapshot.presentRows, false);
+  const targetPresentRows = sum((snapshot) => snapshot.presentRows, true);
+  const baselineMatchedRows = sum((snapshot) => snapshot.matchedRows, false);
+  const targetMatchedRows = sum((snapshot) => snapshot.matchedRows, true);
+  const baselineUnmatchedRows = sum((snapshot) => snapshot.unmatchedRows, false);
+  const targetUnmatchedRows = sum((snapshot) => snapshot.unmatchedRows, true);
+  const baselineQuantity = sum((snapshot) => snapshot.quantityTotal, false);
+  const targetQuantity = sum((snapshot) => snapshot.quantityTotal, true);
+
+  return {
+    requestedBaselineDate,
+    requestedTargetDate,
+    rows,
+    totals: {
+      storeCount: rows.length,
+      totalRows: targetTotalRows - baselineTotalRows,
+      presentRows: targetPresentRows - baselinePresentRows,
+      matchedRows: targetMatchedRows - baselineMatchedRows,
+      unmatchedRows: targetUnmatchedRows - baselineUnmatchedRows,
+      completionPercent: Number(
+        (calculateCompletionPercent(targetPresentRows, targetTotalRows) - calculateCompletionPercent(baselinePresentRows, baselineTotalRows)).toFixed(2)
+      ),
+      quantityTotal: targetQuantity - baselineQuantity
     }
   };
 }

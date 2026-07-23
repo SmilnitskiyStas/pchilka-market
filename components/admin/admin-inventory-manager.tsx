@@ -138,6 +138,24 @@ type StoreAssortmentComparisonPayload = {
   history?: StoreAssortmentSnapshot[];
   error?: string;
 };
+type StoreAssortmentAllStoreComparisonRow = {
+  storeId: string;
+  storeLabel: string;
+  baseline: StoreAssortmentSnapshot;
+  target: StoreAssortmentSnapshot;
+  delta: StoreAssortmentComparison['delta'];
+};
+type StoreAssortmentAllStoreComparison = {
+  requestedBaselineDate: string;
+  requestedTargetDate: string;
+  rows: StoreAssortmentAllStoreComparisonRow[];
+  totals: StoreAssortmentComparison['delta'] & { storeCount: number };
+};
+type StoreAssortmentAllStoreComparisonPayload = {
+  ok?: boolean;
+  comparison?: StoreAssortmentAllStoreComparison;
+  error?: string;
+};
 type DuplicateBatchConflict = {
   id: string;
   productName: string;
@@ -1039,6 +1057,8 @@ export default function AdminInventoryManager({
   const [storeAssortmentComparisonDateTo, setStoreAssortmentComparisonDateTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [storeAssortmentComparison, setStoreAssortmentComparison] = useState<StoreAssortmentComparison | null>(null);
   const [storeAssortmentSnapshotHistory, setStoreAssortmentSnapshotHistory] = useState<StoreAssortmentSnapshot[]>([]);
+  const [storeAssortmentAllStoreComparison, setStoreAssortmentAllStoreComparison] = useState<StoreAssortmentAllStoreComparison | null>(null);
+  const [isLoadingStoreAssortmentAllStoreComparison, setIsLoadingStoreAssortmentAllStoreComparison] = useState(false);
   const [storeAssortmentQuery, setStoreAssortmentQuery] = useState('');
   const [storeAssortmentPresentFilter, setStoreAssortmentPresentFilter] = useState<'all' | 'present' | 'missing'>('all');
   const [storeAssortmentMatchFilter, setStoreAssortmentMatchFilter] = useState<'all' | 'matched' | 'unmatched'>('all');
@@ -1191,6 +1211,31 @@ export default function AdminInventoryManager({
       );
     } finally {
       setIsLoadingStoreAssortmentComparison(false);
+    }
+  }
+
+  async function loadStoreAssortmentAllStoreComparison() {
+    const baselineDate = storeAssortmentComparisonDateFrom;
+    const targetDate = storeAssortmentComparisonDateTo;
+    if (!baselineDate || !targetDate) {
+      setStoreAssortmentAllStoreComparison(null);
+      return;
+    }
+
+    setIsLoadingStoreAssortmentAllStoreComparison(true);
+    try {
+      const params = new URLSearchParams({ baselineDate, targetDate });
+      const response = await fetch(`/api/admin/inventory/store-assortment/comparison/all?${params.toString()}`, { cache: 'no-store' });
+      const payload = (await response.json()) as StoreAssortmentAllStoreComparisonPayload;
+      if (!response.ok || !payload.ok || !payload.comparison) {
+        throw new Error(payload.error || 'Не вдалося завантажити порівняння по всіх магазинах.');
+      }
+      setStoreAssortmentAllStoreComparison(payload.comparison);
+    } catch (comparisonError) {
+      setStoreAssortmentAllStoreComparison(null);
+      setError(comparisonError instanceof Error ? comparisonError.message : 'Не вдалося завантажити порівняння по всіх магазинах.');
+    } finally {
+      setIsLoadingStoreAssortmentAllStoreComparison(false);
     }
   }
 
@@ -2086,6 +2131,11 @@ export default function AdminInventoryManager({
     void loadStoreAssortmentComparison();
   }, [activeSection, analyticsStoreId, storeAssortmentComparisonDateFrom, storeAssortmentComparisonDateTo]);
 
+  useEffect(() => {
+    if (activeSection !== 'analytics') return;
+    void loadStoreAssortmentAllStoreComparison();
+  }, [activeSection, storeAssortmentComparisonDateFrom, storeAssortmentComparisonDateTo]);
+
   const selectedAnalyticsStore = analyticsStoreId
     ? stores.find((entry) => String(entry.id) === analyticsStoreId) ?? null
     : null;
@@ -2102,6 +2152,13 @@ export default function AdminInventoryManager({
           baselineDate: storeAssortmentComparisonDateFrom,
           targetDate: storeAssortmentComparisonDateTo,
           storeLabel: selectedAnalyticsStore ? storeLabel(selectedAnalyticsStore) : `store-${analyticsStoreId}`
+        }).toString()}`
+      : '';
+  const storeAssortmentAllStoreComparisonExportHref =
+    storeAssortmentComparisonDateFrom && storeAssortmentComparisonDateTo
+      ? `/api/admin/inventory/store-assortment/comparison/all/export?${new URLSearchParams({
+          baselineDate: storeAssortmentComparisonDateFrom,
+          targetDate: storeAssortmentComparisonDateTo
         }).toString()}`
       : '';
 
@@ -4956,6 +5013,90 @@ export default function AdminInventoryManager({
               </div>
             )}
           </div>
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-indigo-200 bg-indigo-50 p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">All stores</p>
+              <h3 className="mt-1 text-lg font-bold text-slate-900">Заповненість по всіх магазинах</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                Порівняння плану асортименту та товарів, внесених працівниками, по кожному активному магазину.
+              </p>
+            </div>
+            <a
+              href={storeAssortmentAllStoreComparisonExportHref || undefined}
+              className={`rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
+                storeAssortmentAllStoreComparisonExportHref
+                  ? 'border-indigo-300 bg-white text-indigo-800 hover:bg-indigo-100'
+                  : 'pointer-events-none border-slate-200 bg-slate-100 text-slate-400'
+              }`}
+            >
+              Excel: всі магазини
+            </a>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[220px_220px_1fr]">
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-slate-900">Базова дата</span>
+              <input
+                type="date"
+                value={storeAssortmentComparisonDateFrom}
+                onChange={(event) => setStoreAssortmentComparisonDateFrom(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-semibold text-slate-900">Дата порівняння</span>
+              <input
+                type="date"
+                value={storeAssortmentComparisonDateTo}
+                onChange={(event) => setStoreAssortmentComparisonDateTo(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+              />
+            </label>
+            <div className="rounded-xl border border-indigo-200 bg-white p-4 text-sm text-slate-700">
+              {storeAssortmentAllStoreComparison ? (
+                <>
+                  <p className="font-semibold text-slate-900">Магазинів у звіті: {storeAssortmentAllStoreComparison.totals.storeCount}</p>
+                  <p className="mt-1">Зміна внесених товарів: {formatStoreAssortmentSignedValue(storeAssortmentAllStoreComparison.totals.presentRows)}</p>
+                </>
+              ) : (
+                <p>Вкажи дві дати, щоб сформувати зведення.</p>
+              )}
+            </div>
+          </div>
+          {isLoadingStoreAssortmentAllStoreComparison ? (
+            <p className="mt-4 text-sm text-slate-600">Формую зведення по всіх магазинах...</p>
+          ) : storeAssortmentAllStoreComparison ? (
+            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-100 text-slate-600">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold">Магазин</th>
+                    <th className="px-4 py-3 text-right font-semibold">План на базову</th>
+                    <th className="px-4 py-3 text-right font-semibold">План сьогодні</th>
+                    <th className="px-4 py-3 text-right font-semibold">Додано на базову</th>
+                    <th className="px-4 py-3 text-right font-semibold">Додано сьогодні</th>
+                    <th className="px-4 py-3 text-right font-semibold">Заповненість сьогодні</th>
+                    <th className="px-4 py-3 text-right font-semibold">Зміна</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {storeAssortmentAllStoreComparison.rows.map((row) => (
+                    <tr key={row.storeId} className="border-t border-slate-200 text-slate-700">
+                      <td className="px-4 py-3 font-medium text-slate-900">{row.storeLabel}</td>
+                      <td className="px-4 py-3 text-right">{row.baseline.totalRows}</td>
+                      <td className="px-4 py-3 text-right">{row.target.totalRows}</td>
+                      <td className="px-4 py-3 text-right">{row.baseline.presentRows}</td>
+                      <td className="px-4 py-3 text-right">{row.target.presentRows}</td>
+                      <td className="px-4 py-3 text-right font-semibold">{formatStoreAssortmentCompletion(row.target.completionPercent)}</td>
+                      <td className="px-4 py-3 text-right font-semibold">{formatStoreAssortmentSignedValue(row.delta.presentRows)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">

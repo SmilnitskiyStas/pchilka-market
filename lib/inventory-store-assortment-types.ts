@@ -50,6 +50,23 @@ export type InventoryStoreAssortmentComparison = {
   };
 };
 
+export type InventoryStoreAssortmentAllStoreComparisonRow = {
+  storeId: string;
+  storeLabel: string;
+  baseline: InventoryStoreAssortmentSnapshot;
+  target: InventoryStoreAssortmentSnapshot;
+  delta: InventoryStoreAssortmentComparison['delta'];
+};
+
+export type InventoryStoreAssortmentAllStoreComparison = {
+  requestedBaselineDate: string;
+  requestedTargetDate: string;
+  rows: InventoryStoreAssortmentAllStoreComparisonRow[];
+  totals: InventoryStoreAssortmentComparison['delta'] & {
+    storeCount: number;
+  };
+};
+
 export type InventoryStoreAssortmentImportRow = {
   article: string;
   barcode: string;
