@@ -1055,6 +1055,7 @@ export default function AdminInventoryManager({
   const [storeAssortmentSummary, setStoreAssortmentSummary] = useState<StoreAssortmentSummary | null>(null);
   const [storeAssortmentComparisonDateFrom, setStoreAssortmentComparisonDateFrom] = useState('');
   const [storeAssortmentComparisonDateTo, setStoreAssortmentComparisonDateTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [storeAssortmentReportExtraDates, setStoreAssortmentReportExtraDates] = useState('');
   const [storeAssortmentComparison, setStoreAssortmentComparison] = useState<StoreAssortmentComparison | null>(null);
   const [storeAssortmentSnapshotHistory, setStoreAssortmentSnapshotHistory] = useState<StoreAssortmentSnapshot[]>([]);
   const [storeAssortmentAllStoreComparison, setStoreAssortmentAllStoreComparison] = useState<StoreAssortmentAllStoreComparison | null>(null);
@@ -2156,10 +2157,18 @@ export default function AdminInventoryManager({
       : '';
   const storeAssortmentAllStoreComparisonExportHref =
     storeAssortmentComparisonDateFrom && storeAssortmentComparisonDateTo
-      ? `/api/admin/inventory/store-assortment/comparison/all/export?${new URLSearchParams({
-          baselineDate: storeAssortmentComparisonDateFrom,
-          targetDate: storeAssortmentComparisonDateTo
-        }).toString()}`
+      ? (() => {
+          const params = new URLSearchParams({
+            baselineDate: storeAssortmentComparisonDateFrom,
+            targetDate: storeAssortmentComparisonDateTo
+          });
+          storeAssortmentReportExtraDates
+            .split(',')
+            .map((value) => value.trim())
+            .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+            .forEach((value) => params.append('date', value));
+          return `/api/admin/inventory/store-assortment/comparison/all/export?${params.toString()}`;
+        })()
       : '';
 
   useEffect(() => {
@@ -5053,6 +5062,17 @@ export default function AdminInventoryManager({
                 onChange={(event) => setStoreAssortmentComparisonDateTo(event.target.value)}
                 className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
               />
+            </label>
+            <label className="block sm:col-span-2 lg:col-span-1">
+              <span className="mb-2 block text-sm font-semibold text-slate-900">Додаткові дати для Excel</span>
+              <input
+                type="text"
+                value={storeAssortmentReportExtraDates}
+                onChange={(event) => setStoreAssortmentReportExtraDates(event.target.value)}
+                placeholder="2026-06-24, 2026-06-30"
+                className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none focus:border-brand"
+              />
+              <span className="mt-1 block text-xs text-slate-500">Через кому у форматі РРРР-ММ-ДД</span>
             </label>
             <div className="rounded-xl border border-indigo-200 bg-white p-4 text-sm text-slate-700">
               {storeAssortmentAllStoreComparison ? (
