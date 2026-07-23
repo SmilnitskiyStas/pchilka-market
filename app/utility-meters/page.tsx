@@ -57,6 +57,9 @@ type PendingUtilityMeterReading = {
   createdAt: string;
 };
 
+type UtilityFilter = 'all' | 'electricity' | UtilityMeterPointRecord['utilityType'];
+type OwnerFilter = 'all' | 'store' | 'tenant';
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -135,6 +138,22 @@ function getMeterLabel(meter: UtilityMeterPointRecord) {
     .join(' | ');
 }
 
+const utilityFilterOptions: Array<{ value: UtilityFilter; label: string }> = [
+  { value: 'all', label: 'Усі послуги' },
+  { value: 'water', label: 'Вода' },
+  { value: 'electricity', label: 'Електрика' },
+  { value: 'waste', label: 'Водовідведення' },
+  { value: 'maintenance', label: 'Експлуатаційні послуги' },
+  { value: 'rent', label: 'Оренда' },
+  { value: 'other', label: 'Інше' }
+];
+
+function matchesUtilityFilter(meter: UtilityMeterPointRecord, filter: UtilityFilter) {
+  if (filter === 'all') return true;
+  if (filter === 'electricity') return meter.utilityType === 'electricity_active' || meter.utilityType === 'electricity_reactive';
+  return meter.utilityType === filter;
+}
+
 function buildLocalId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -147,6 +166,8 @@ export default function UtilityMetersPage() {
   const [payload, setPayload] = useState<ContextPayload>({});
   const [isLoading, setIsLoading] = useState(true);
   const [selectedMeterId, setSelectedMeterId] = useState('');
+  const [utilityFilter, setUtilityFilter] = useState<UtilityFilter>('all');
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>('all');
   const [readingDate, setReadingDate] = useState(todayIso());
   const [readingValue, setReadingValue] = useState('');
   const [previousValueOverride, setPreviousValueOverride] = useState('');
@@ -193,9 +214,28 @@ export default function UtilityMetersPage() {
     void loadContext(nextToken);
   }, [loadContext]);
 
+  const filteredMeters = useMemo(
+    () =>
+      (payload.meters ?? []).filter(
+        (meter) => matchesUtilityFilter(meter, utilityFilter) && (ownerFilter === 'all' || meter.ownerKind === ownerFilter)
+      ),
+    [ownerFilter, payload.meters, utilityFilter]
+  );
+
+  useEffect(() => {
+    if (filteredMeters.length === 0) {
+      setSelectedMeterId('');
+      return;
+    }
+    if (!filteredMeters.some((meter) => meter.id === selectedMeterId)) {
+      setSelectedMeterId(filteredMeters[0].id);
+      setPreviousValueOverride('');
+    }
+  }, [filteredMeters, selectedMeterId]);
+
   const selectedMeter = useMemo(
-    () => payload.meters?.find((meter) => meter.id === selectedMeterId),
-    [payload.meters, selectedMeterId]
+    () => filteredMeters.find((meter) => meter.id === selectedMeterId),
+    [filteredMeters, selectedMeterId]
   );
 
   const meterHistory = useMemo(
@@ -563,7 +603,40 @@ export default function UtilityMetersPage() {
           <div className="rounded-lg bg-red-50 p-4 text-sm font-medium text-red-800 ring-1 ring-red-200">{payload.error}</div>
         ) : payload.meters?.length ? (
           <form onSubmit={submitReading} className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-            <label className="block text-sm font-semibold text-slate-700" htmlFor="meter">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-semibold text-slate-700" htmlFor="utility-filter">
+                Тип показника
+                <select
+                  id="utility-filter"
+                  value={utilityFilter}
+                  onChange={(event) => {
+                    setUtilityFilter(event.target.value as UtilityFilter);
+                    setStatus('');
+                  }}
+                  className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                >
+                  {utilityFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm font-semibold text-slate-700" htmlFor="owner-filter">
+                Для кого лічильник
+                <select
+                  id="owner-filter"
+                  value={ownerFilter}
+                  onChange={(event) => {
+                    setOwnerFilter(event.target.value as OwnerFilter);
+                    setStatus('');
+                  }}
+                  className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+                >
+                  <option value="all">Усі</option>
+                  <option value="store">Магазин</option>
+                  <option value="tenant">Оренда / орендар</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="mt-4 block text-sm font-semibold text-slate-700" htmlFor="meter">
               Лічильник
             </label>
             <select
@@ -576,13 +649,18 @@ export default function UtilityMetersPage() {
                 setSyncStatus('');
               }}
               className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+              disabled={filteredMeters.length === 0}
             >
-              {payload.meters.map((meter) => (
+              {filteredMeters.map((meter) => (
                 <option key={meter.id} value={meter.id}>
                   {getMeterLabel(meter)}
                 </option>
               ))}
             </select>
+
+            {filteredMeters.length === 0 ? (
+              <div className="mt-2 rounded-md bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">За обраними типом і категорією лічильників немає.</div>
+            ) : null}
 
             {selectedMeter ? (
               <div className="mt-3 grid gap-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700 sm:grid-cols-2">
