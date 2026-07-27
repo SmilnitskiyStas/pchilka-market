@@ -16,11 +16,13 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       periodMonth?: string;
       storeId?: string | number | null;
+      storeIds?: string | string[] | null;
       audience?: string;
     };
 
     const periodMonth = normalizeUtilityPeriodMonth(body?.periodMonth);
     const storeId = String(body?.storeId ?? '').trim();
+    const storeIds = Array.isArray(body?.storeIds) ? body.storeIds.map(String) : String(body?.storeIds ?? '').trim();
     const audience = normalizeUtilityPaymentDocumentAudience(body?.audience);
     const settings = await getInventoryTelegramSettingsFromDb();
 
@@ -28,7 +30,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Не налаштовано секрет для формування зовнішніх посилань.' }, { status: 500 });
     }
 
-    const token = createUtilityMeterDocumentShareToken({ periodMonth, storeId, audience }, settings.webhookSecret);
+    const token = createUtilityMeterDocumentShareToken({ periodMonth, storeId, storeIds, audience }, settings.webhookSecret);
 
     const requestUrl = new URL(request.url);
     const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();

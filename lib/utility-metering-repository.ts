@@ -1087,6 +1087,7 @@ export async function deleteUtilityMeterRateInDb(input: { rateId: string | numbe
 }
 export async function listUtilityMeterReviewInDb(input: {
   periodMonth: string;
+  storeIds?: Array<string | number>;
   storeId?: string | number | null;
   storeCode?: string | null;
 }): Promise<UtilityMeterReviewItem[]> {
@@ -1095,8 +1096,14 @@ export async function listUtilityMeterReviewInDb(input: {
   const params: Array<string | number> = [input.periodMonth];
   const normalizedStoreCode = String(input.storeCode ?? '').trim();
   const comparableStoreCode = normalizeStoreCodeForSql(normalizedStoreCode);
+  const storeIds = (input.storeIds ?? [])
+    .map((value) => Number(value))
+    .filter((value, index, list) => Number.isFinite(value) && value > 0 && list.indexOf(value) === index);
   const storeFilters: string[] = [];
-  if (input.storeId) {
+  if (storeIds.length > 0) {
+    storeFilters.push(`p.store_id IN (${storeIds.map(() => '?').join(', ')})`);
+    params.push(...storeIds);
+  } else if (input.storeId) {
     storeFilters.push('p.store_id = ?');
     params.push(Number(input.storeId));
   } else if (normalizedStoreCode) {

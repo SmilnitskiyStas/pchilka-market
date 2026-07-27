@@ -192,6 +192,7 @@ export async function GET(request: Request) {
 
     let periodMonth = normalizeUtilityPeriodMonth(url.searchParams.get('periodMonth') ?? undefined);
     let storeId = String(url.searchParams.get('storeId') ?? '').trim();
+    let storeIds = String(url.searchParams.get('storeIds') ?? '').trim();
     let audience = normalizeUtilityPaymentDocumentAudience(url.searchParams.get('audience'));
 
     if (shareToken) {
@@ -207,12 +208,13 @@ export async function GET(request: Request) {
 
       periodMonth = payload.periodMonth;
       storeId = payload.storeId;
+      storeIds = payload.storeIds;
       audience = payload.audience;
     } else if (!isAdminRequestAuthorized(request)) {
       return NextResponse.json({ ok: false, error: 'Потрібна авторизація.' }, { status: 401 });
     }
 
-    const documentData = await getUtilityPaymentDocumentData({ periodMonth, storeId, audience });
+    const documentData = await getUtilityPaymentDocumentData({ periodMonth, storeId, storeIds, audience });
     const fileBaseName = getUtilityPaymentDocumentFileBaseName({
       periodMonth,
       audience,

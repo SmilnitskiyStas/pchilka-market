@@ -1,4 +1,4 @@
-import { findStoreByIdInDb } from '@/lib/stores-repository';
+import { findStoreByIdInDb, listStoresFromDb } from '@/lib/stores-repository';
 import { listUtilityMeterReviewInDb } from '@/lib/utility-metering-repository';
 import { listUtilityStoreDirectContractsByStoreIds, type UtilityElectricitySupplier } from '@/lib/utility-store-direct-contracts';
 import type { UtilityType } from '@/lib/utility-metering-types';
@@ -44,6 +44,7 @@ export type UtilityPaymentDocumentData = {
   audience: UtilityPaymentDocumentAudience;
   audienceLabel: string;
   storeId: string;
+  storeIds: string[];
   storeCode: string;
   storeLabel: string;
   total: number;
@@ -57,6 +58,14 @@ export function defaultUtilityPeriodMonth() {
 
 export function normalizeUtilityPeriodMonth(value: string | undefined) {
   return /^\d{4}-\d{2}-01$/.test(String(value ?? '').trim()) ? String(value).trim() : defaultUtilityPeriodMonth();
+}
+
+export function normalizeUtilityPaymentDocumentStoreIds(value: string | string[] | null | undefined) {
+  const rawValues = Array.isArray(value) ? value : [value ?? ''];
+  return rawValues
+    .flatMap((item) => String(item).split(','))
+    .map((item) => item.trim())
+    .filter((item, index, list) => /^\d+$/.test(item) && Number(item) > 0 && list.indexOf(item) === index);
 }
 
 export function formatUtilityMoney(value?: number) {
@@ -79,14 +88,21 @@ export function getUtilityPaymentDocumentFileBaseName(input: {
 export async function getUtilityPaymentDocumentData(input: {
   periodMonth: string;
   storeId?: string | number | null;
+  storeIds?: string | string[] | null;
   audience?: UtilityPaymentDocumentAudience;
 }) {
-  const normalizedStoreId = String(input.storeId ?? '').trim();
+  const normalizedStoreIds = normalizeUtilityPaymentDocumentStoreIds(input.storeIds);
+  const normalizedStoreId = normalizedStoreIds.length === 1 ? normalizedStoreIds[0] : String(input.storeId ?? '').trim();
   const audience = normalizeUtilityPaymentDocumentAudience(input.audience);
-  const store = normalizedStoreId ? await findStoreByIdInDb(normalizedStoreId) : null;
+  const [store, allStores] = await Promise.all([
+    normalizedStoreId ? findStoreByIdInDb(normalizedStoreId) : Promise.resolve(null),
+    normalizedStoreIds.length > 1 ? listStoresFromDb() : Promise.resolve([])
+  ]);
+  const selectedStores = normalizedStoreIds.length > 1 ? allStores.filter((item) => normalizedStoreIds.includes(item.id)) : store ? [store] : [];
   const items = await listUtilityMeterReviewInDb({
     periodMonth: input.periodMonth,
-    storeId: normalizedStoreId || null,
+    storeIds: normalizedStoreIds,
+    storeId: normalizedStoreIds.length === 0 ? normalizedStoreId || null : null,
     storeCode: store?.storeCode
   });
   const contractsByStoreId = await listUtilityStoreDirectContractsByStoreIds(
@@ -128,8 +144,14 @@ export async function getUtilityPaymentDocumentData(input: {
     audience,
     audienceLabel: getUtilityPaymentDocumentAudienceLabel(audience),
     storeId: normalizedStoreId,
+    storeIds: normalizedStoreIds,
     storeCode: store?.storeCode || '',
-    storeLabel: store ? [store.storeCode, store.name || store.addressLine].filter(Boolean).join(' · ') : 'Усі магазини',
+    storeLabel:
+      selectedStores.length > 1
+        ? `Обрані магазини (${selectedStores.length}): ${selectedStores.map((item) => item.storeCode || item.name).join(', ')}`
+        : store
+          ? [store.storeCode, store.name || store.addressLine].filter(Boolean).join(' · ')
+          : 'Усі магазини',
     total: rows.reduce((sum, item) => sum + (item.amount ?? 0), 0),
     rows
   } satisfies UtilityPaymentDocumentData;

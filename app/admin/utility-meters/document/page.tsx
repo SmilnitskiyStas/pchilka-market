@@ -1,11 +1,14 @@
 import { UtilityMeterDocumentActions } from '@/components/utility-meter-document-actions';
+import { UtilityMeterDocumentStoreSelector } from '@/components/utility-meter-document-store-selector';
 import { UtilityMeterPaymentDocument } from '@/components/utility-meter-payment-document';
 import Link from 'next/link';
 import {
   getUtilityPaymentDocumentData,
   normalizeUtilityPaymentDocumentAudience,
+  normalizeUtilityPaymentDocumentStoreIds,
   normalizeUtilityPeriodMonth
 } from '@/lib/utility-meter-payment-document';
+import { listStoresFromDb } from '@/lib/stores-repository';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +16,7 @@ type PageProps = {
   searchParams: Promise<{
     periodMonth?: string;
     storeId?: string;
+    storeIds?: string;
     audience?: string;
   }>;
 };
@@ -21,21 +25,27 @@ export default async function UtilityMetersDocumentPage({ searchParams }: PagePr
   const params = await searchParams;
   const periodMonth = normalizeUtilityPeriodMonth(params.periodMonth);
   const storeId = String(params.storeId ?? '').trim();
+  const storeIds = normalizeUtilityPaymentDocumentStoreIds(params.storeIds);
   const audience = normalizeUtilityPaymentDocumentAudience(params.audience);
-  const document = await getUtilityPaymentDocumentData({ periodMonth, storeId, audience });
+  const [document, stores] = await Promise.all([
+    getUtilityPaymentDocumentData({ periodMonth, storeId, storeIds, audience }),
+    listStoresFromDb()
+  ]);
+  const activeStores = stores.filter((store) => store.isActive);
+  const storeIdsValue = storeIds.join(',');
 
   const pdfUrl = `/api/utility-meters/document-export?${new URLSearchParams({
     format: 'pdf',
     periodMonth,
     audience,
-    ...(storeId ? { storeId } : {})
+    ...(storeIdsValue ? { storeIds: storeIdsValue } : storeId ? { storeId } : {})
   }).toString()}`;
 
   const excelUrl = `/api/utility-meters/document-export?${new URLSearchParams({
     format: 'xlsx',
     periodMonth,
     audience,
-    ...(storeId ? { storeId } : {})
+    ...(storeIdsValue ? { storeIds: storeIdsValue } : storeId ? { storeId } : {})
   }).toString()}`;
 
   return (
@@ -50,7 +60,7 @@ export default async function UtilityMetersDocumentPage({ searchParams }: PagePr
                 href={`/admin/utility-meters/document?${new URLSearchParams({
                   periodMonth,
                   audience: item,
-                  ...(storeId ? { storeId } : {})
+                  ...(storeIdsValue ? { storeIds: storeIdsValue } : storeId ? { storeId } : {})
                 }).toString()}`}
                 className={`rounded-md px-4 py-2.5 text-sm font-semibold ${
                   item === audience ? 'bg-slate-950 text-white' : 'border border-slate-300 bg-white text-slate-900'
@@ -60,11 +70,17 @@ export default async function UtilityMetersDocumentPage({ searchParams }: PagePr
               </Link>
             ))}
           </nav>
+          <UtilityMeterDocumentStoreSelector
+            stores={activeStores}
+            selectedStoreIds={storeIds.length > 0 ? storeIds : storeId ? [storeId] : []}
+            periodMonth={periodMonth}
+            audience={audience}
+          />
           <UtilityMeterDocumentActions
             pdfUrl={pdfUrl}
             excelUrl={excelUrl}
             shareApiUrl="/api/admin/utility-meters/document-share"
-            sharePayload={{ periodMonth, audience, ...(storeId ? { storeId } : {}) }}
+            sharePayload={{ periodMonth, audience, ...(storeIdsValue ? { storeIds: storeIdsValue } : storeId ? { storeId } : {}) }}
           />
         </>
       }

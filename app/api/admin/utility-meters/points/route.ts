@@ -61,6 +61,19 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
+    if (body?.createReading === true) {
+      const meter = await findUtilityMeterPointInDb({ meterPointId: body?.meterPointId });
+      if (!meter?.storeId) throw new Error('Лічильник не знайдено.');
+      const result = await createUtilityMeterReadingInDb({
+        meterPointId: meter.id,
+        storeId: meter.storeId,
+        readingDate: String(body?.readingDate ?? ''),
+        readingValue: parseUtilityMeterDecimal(body?.readingValue),
+        submittedByName: 'admin',
+        notes: typeof body?.notes === 'string' ? body.notes : 'Показник додано адміністратором'
+      });
+      return NextResponse.json({ ok: true, ...result });
+    }
     const meter = await createUtilityMeterPointInDb({
       storeId: body?.storeId,
       utilityType: body?.utilityType,

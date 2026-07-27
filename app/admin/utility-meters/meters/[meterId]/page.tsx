@@ -56,6 +56,9 @@ export default function AdminUtilityMeterDetailPage() {
   const [editingReadingDate, setEditingReadingDate] = useState('');
   const [editingReadingValue, setEditingReadingValue] = useState('');
   const [editingPreviousValue, setEditingPreviousValue] = useState('');
+  const [isCreateReadingOpen, setIsCreateReadingOpen] = useState(false);
+  const [newReadingDate, setNewReadingDate] = useState(new Date().toISOString().slice(0, 10));
+  const [newReadingValue, setNewReadingValue] = useState('');
   const [editStatus, setEditStatus] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
@@ -111,6 +114,29 @@ export default function AdminUtilityMeterDetailPage() {
       await loadMeter();
     } catch (error) {
       setEditStatus(error instanceof Error ? error.message : 'Не вдалося оновити показник.');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
+
+  async function createReading(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSavingEdit(true);
+    setEditStatus('');
+    try {
+      const response = await fetch('/api/admin/utility-meters/points', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ createReading: true, meterPointId: meterId, readingDate: newReadingDate, readingValue: newReadingValue })
+      });
+      const result = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || 'Не вдалося додати показник.');
+      setNewReadingValue('');
+      setIsCreateReadingOpen(false);
+      setEditStatus('Новий показник додано та нарахування перераховано.');
+      await loadMeter();
+    } catch (error) {
+      setEditStatus(error instanceof Error ? error.message : 'Не вдалося додати показник.');
     } finally {
       setIsSavingEdit(false);
     }
@@ -204,9 +230,28 @@ export default function AdminUtilityMeterDetailPage() {
                   <h2 className="text-lg font-bold">Історія показників</h2>
                   <p className="mt-1 text-sm text-slate-600">Кожен запис показує період, дату внесення, автора та результат розрахунку.</p>
                 </div>
+                <button type="button" onClick={() => { setIsCreateReadingOpen((value) => !value); setEditStatus(''); }} className="rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">
+                  {isCreateReadingOpen ? 'Скасувати' : 'Додати показник'}
+                </button>
               </div>
 
               {editStatus ? <div className="mt-4 rounded-md bg-blue-50 p-3 text-sm text-blue-900 ring-1 ring-blue-200">{editStatus}</div> : null}
+              {isCreateReadingOpen ? (
+                <form onSubmit={createReading} className="mt-4 grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Дата показника
+                    <input type="date" value={newReadingDate} onChange={(event) => setNewReadingDate(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2" required />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Новий поточний показник
+                    <input inputMode="decimal" value={newReadingValue} onChange={(event) => setNewReadingValue(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2" required />
+                    <span className="mt-1 block text-xs font-normal text-slate-600">Попередній буде взято з останнього показника або стартового значення.</span>
+                  </label>
+                  <div className="flex items-end">
+                    <button type="submit" disabled={isSavingEdit} className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{isSavingEdit ? 'Збереження…' : 'Додати'}</button>
+                  </div>
+                </form>
+              ) : null}
               {editingReading ? (
                 <form onSubmit={saveReadingEdit} className="mt-4 grid gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 sm:grid-cols-4">
                   <label className="block text-sm font-semibold text-slate-700">

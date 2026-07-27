@@ -1189,8 +1189,10 @@ export default function AdminUtilityMetersPage() {
                           <div className="text-xs text-slate-500">{item.addressLine}</div>
                         </td>
                         <td className="px-3 py-3 align-top">
-                          <div className="font-medium">{item.utilityLabel}</div>
-                          <div className="text-xs text-slate-500">{item.meterNumber || 'Без номера'}</div>
+                          <Link href={`/admin/utility-meters/meters/${encodeURIComponent(item.id)}`} className="block rounded-sm hover:text-amber-700 hover:underline">
+                            <div className="font-medium">{item.utilityLabel}</div>
+                            <div className="text-xs text-slate-500">{item.meterNumber || 'Без номера'}</div>
+                          </Link>
                         </td>
                         <td className="px-3 py-3 align-top">{getMeterOwnerLabel(item)}</td>
                         <td className="px-3 py-3 align-top">{item.reading ? item.reading.readingValue : 'Не подано'}</td>

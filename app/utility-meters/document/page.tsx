@@ -41,6 +41,7 @@ export default async function PublicUtilityMetersDocumentPage({ searchParams }: 
   const document = await getUtilityPaymentDocumentData({
     periodMonth: payload.periodMonth,
     storeId: payload.storeId,
+    storeIds: payload.storeIds,
     audience: payload.audience
   });
 
