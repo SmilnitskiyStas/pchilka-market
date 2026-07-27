@@ -4,13 +4,6 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
-type AuthMePayload = {
-  user?: {
-    login?: string;
-    role?: string;
-  };
-};
-
 type MessagesPayload = {
   ok?: boolean;
   unprocessedCount?: number;
@@ -32,8 +25,8 @@ export default function AdminNav() {
   const pathname = usePathname();
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [currentLogin, setCurrentLogin] = useState<string>('');
-  const [currentRole, setCurrentRole] = useState<string>('');
+  const [currentLogin] = useState<string>('');
+  const [currentRole] = useState<string>('');
   const [unprocessedCount, setUnprocessedCount] = useState<number>(0);
   const [currentHash, setCurrentHash] = useState('');
   const [openGroupKeys, setOpenGroupKeys] = useState<Record<string, string>>({});
@@ -48,34 +41,24 @@ export default function AdminNav() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadMe() {
+    async function loadUnprocessedMessagesCount() {
       try {
-        const [authResponse, messagesResponse] = await Promise.all([
-          fetch('/api/admin/auth/me', { cache: 'no-store' }),
-          fetch('/api/admin/messages?status=new&limit=1', { cache: 'no-store' })
-        ]);
+        const messagesResponse = await fetch('/api/admin/messages?status=new&limit=1', { cache: 'no-store' });
         if (cancelled) return;
 
-        const payload = (await authResponse.json()) as AuthMePayload;
         const messagesPayload = (await messagesResponse.json()) as MessagesPayload;
-        if (!authResponse.ok) return;
-
-        const login = typeof payload.user?.login === 'string' ? payload.user.login : '';
-        const role = typeof payload.user?.role === 'string' ? payload.user.role : '';
         const nextUnprocessedCount =
           messagesResponse.ok && Number.isFinite(messagesPayload.unprocessedCount)
             ? Number(messagesPayload.unprocessedCount)
             : 0;
 
-        setCurrentLogin(login);
-        setCurrentRole(role);
         setUnprocessedCount(nextUnprocessedCount);
       } catch {
         // ignore
       }
     }
 
-    void loadMe();
+    void loadUnprocessedMessagesCount();
 
     return () => {
       cancelled = true;
@@ -89,7 +72,6 @@ export default function AdminNav() {
     } finally {
       router.replace('/login?next=/admin');
       router.refresh();
-      setIsLoggingOut(false);
     }
   }
 
