@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type {
@@ -49,7 +49,13 @@ function utilityTypeLabel(value: string) {
 
 export default function AdminUtilityMeterDetailPage() {
   const params = useParams<{ meterId: string }>();
+  const searchParams = useSearchParams();
   const meterId = String(params?.meterId ?? '');
+  const backSearchParams = new URLSearchParams({
+    ...(searchParams.get('storeId') ? { storeId: searchParams.get('storeId')! } : {}),
+    ...(searchParams.get('periodMonth') ? { periodMonth: searchParams.get('periodMonth')! } : {})
+  });
+  const backHref = `/admin/utility-meters${backSearchParams.size > 0 ? `?${backSearchParams.toString()}` : ''}`;
   const [payload, setPayload] = useState<MeterDetailPayload>({});
   const [isLoading, setIsLoading] = useState(true);
   const [editingReading, setEditingReading] = useState<UtilityMeterReadingHistoryItem | null>(null);
@@ -171,7 +177,7 @@ export default function AdminUtilityMeterDetailPage() {
             </p>
           </div>
           <Link
-            href="/admin/utility-meters"
+            href={backHref}
             className="rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900"
           >
             До списку лічильників

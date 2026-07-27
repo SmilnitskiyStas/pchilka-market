@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 import type {
   UtilityMeterOwnerKind,
@@ -191,8 +192,12 @@ function getMeterOwnerLabel(meter: UtilityMeterPointRecord) {
 }
 
 export default function AdminUtilityMetersPage() {
-  const [periodMonth, setPeriodMonth] = useState(currentPeriodMonth());
-  const [selectedStoreId, setSelectedStoreId] = useState('');
+  const searchParams = useSearchParams();
+  const initialStoreId = searchParams.get('storeId') ?? '';
+  const requestedPeriodMonth = searchParams.get('periodMonth') ?? '';
+  const initialPeriodMonth = /^\d{4}-\d{2}-01$/.test(requestedPeriodMonth) ? requestedPeriodMonth : currentPeriodMonth();
+  const [periodMonth, setPeriodMonth] = useState(initialPeriodMonth);
+  const [selectedStoreId, setSelectedStoreId] = useState(initialStoreId);
   const [stores, setStores] = useState<StoreView[]>([]);
   const [payload, setPayload] = useState<ReviewPayload>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -1189,7 +1194,13 @@ export default function AdminUtilityMetersPage() {
                           <div className="text-xs text-slate-500">{item.addressLine}</div>
                         </td>
                         <td className="px-3 py-3 align-top">
-                          <Link href={`/admin/utility-meters/meters/${encodeURIComponent(item.id)}`} className="block rounded-sm hover:text-amber-700 hover:underline">
+                          <Link
+                            href={`/admin/utility-meters/meters/${encodeURIComponent(item.id)}?${new URLSearchParams({
+                              ...(selectedStoreId ? { storeId: selectedStoreId } : {}),
+                              periodMonth
+                            }).toString()}`}
+                            className="block rounded-sm hover:text-amber-700 hover:underline"
+                          >
                             <div className="font-medium">{item.utilityLabel}</div>
                             <div className="text-xs text-slate-500">{item.meterNumber || 'Без номера'}</div>
                           </Link>
