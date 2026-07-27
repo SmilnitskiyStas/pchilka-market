@@ -270,7 +270,7 @@ export default function AdminNav() {
 
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">{renderItems(navGroups)}</div>
 
-      <div className="mt-4 border-t border-slate-200 pt-4">
+      <div className="hidden mt-4 border-t border-slate-200 pt-4">
         <button
           type="button"
           onClick={handleLogout}
