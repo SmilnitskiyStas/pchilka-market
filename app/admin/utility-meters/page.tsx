@@ -10,6 +10,7 @@ import type {
   UtilityMeterReviewItem,
   UtilityType
 } from '@/lib/utility-metering-types';
+import { parseUtilityMeterDecimal } from '@/lib/utility-metering-calculator';
 
 type StoreView = {
   id: string;
@@ -405,6 +406,11 @@ export default function AdminUtilityMetersPage() {
     setMetersStatus('');
 
     try {
+      const initialReadingRequested = Boolean(meterForm.initialReadingValue.trim());
+      const initialReadingValue = initialReadingRequested ? parseUtilityMeterDecimal(meterForm.initialReadingValue) : undefined;
+      if (initialReadingRequested && !Number.isFinite(initialReadingValue)) {
+        throw new Error('Початковий показник має бути числом. Можна використовувати крапку, кому або пробіл між тисячами.');
+      }
       const response = await fetch('/api/admin/utility-meters/points', {
         method: editingMeterId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -416,10 +422,9 @@ export default function AdminUtilityMetersPage() {
           utilityLabel: meterForm.utilityLabel,
           meterNumber: meterForm.meterNumber,
           coefficient: meterForm.coefficient ? Number(meterForm.coefficient.replace(',', '.')) : undefined,
-          initialReadingValue: meterForm.initialReadingValue
-            ? Number(meterForm.initialReadingValue.replace(',', '.'))
-            : undefined,
-          initialReadingDate: meterForm.initialReadingValue ? meterForm.initialReadingDate : undefined,
+          initialReadingRequested,
+          initialReadingValue,
+          initialReadingDate: initialReadingRequested ? meterForm.initialReadingDate : undefined,
           defaultRate: meterForm.defaultRate ? Number(meterForm.defaultRate.replace(',', '.')) : undefined,
           ownerKind: meterForm.ownerKind,
           tenantName: meterForm.tenantName,

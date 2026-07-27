@@ -74,13 +74,22 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({ ok: true, ...result });
     }
+    const initialReadingRequested = body?.initialReadingRequested === true;
+    const initialReadingValue = body?.initialReadingValue == null ? undefined : parseUtilityMeterDecimal(body.initialReadingValue);
+    if (initialReadingRequested && !Number.isFinite(initialReadingValue)) {
+      return NextResponse.json({ ok: false, error: 'Початковий показник має бути коректним числом.' }, { status: 400 });
+    }
+    if (initialReadingRequested && (!/^\d{4}-\d{2}-\d{2}$/.test(String(body?.initialReadingDate ?? '')))) {
+      return NextResponse.json({ ok: false, error: 'Вкажіть дату початкового показника.' }, { status: 400 });
+    }
+
     const meter = await createUtilityMeterPointInDb({
       storeId: body?.storeId,
       utilityType: body?.utilityType,
       utilityLabel: body?.utilityLabel,
       meterNumber: body?.meterNumber,
       coefficient: body?.coefficient,
-      initialReadingValue: body?.initialReadingValue,
+      initialReadingValue,
       defaultRate: body?.defaultRate,
       ownerKind: body?.ownerKind,
       tenantName: body?.tenantName,
@@ -91,15 +100,14 @@ export async function POST(request: Request) {
     });
 
     if (
-      body?.initialReadingValue != null &&
-      typeof body?.initialReadingDate === 'string' &&
-      /^\d{4}-\d{2}-\d{2}$/.test(body.initialReadingDate)
+      initialReadingRequested &&
+      initialReadingValue !== undefined
     ) {
       await createUtilityMeterReadingInDb({
         meterPointId: meter.id,
-        storeId: body.storeId,
+        storeId: meter.storeId ?? body.storeId,
         readingDate: body.initialReadingDate,
-        readingValue: Number(body.initialReadingValue),
+        readingValue: initialReadingValue,
         submittedByName: 'admin',
         notes: 'Початковий показник'
       });
