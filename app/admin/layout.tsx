@@ -29,7 +29,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           `
         }}
       />
-      <main className="min-h-screen w-full px-3 py-4 sm:px-4 sm:py-5 lg:px-5 lg:py-6">
+      <main className="min-h-screen w-full px-3 pb-4 pt-1 sm:px-4 sm:pb-5 sm:pt-1 lg:px-5 lg:pb-6">
         <AdminHeader />
         <div className="mt-2.5 grid gap-2.5 xl:grid-cols-[300px_minmax(0,1fr)]">
           <aside className="xl:sticky xl:top-5 xl:max-h-[calc(100vh-2.5rem)] xl:self-start">
