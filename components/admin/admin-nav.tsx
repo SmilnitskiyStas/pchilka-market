@@ -141,6 +141,14 @@ export default function AdminNav() {
         children: [{ href: '/admin/content', label: 'Статті' }]
       },
       {
+        label: 'Комунальні нарахування',
+        children: [
+          { href: '/admin/utility-meters', label: 'Лічильники та показники' },
+          { href: '/admin/utility-meters/rates', label: 'Тарифи' },
+          { href: '/admin/utility-meters/document', label: 'Документ на оплату' }
+        ]
+      },
+      {
         href: '/admin/own-brand',
         label: 'Власне класне'
       },
