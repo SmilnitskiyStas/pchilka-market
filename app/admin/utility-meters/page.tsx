@@ -156,7 +156,7 @@ function meterToFormState(meter: UtilityMeterPointRecord): MeterFormState {
     meterNumber: meter.meterNumber,
     coefficient: String(meter.coefficient ?? 1),
     initialReadingValue: meter.initialReadingValue == null ? '' : String(meter.initialReadingValue),
-    initialReadingDate: todayIso(),
+    initialReadingDate: meter.initialReadingDate || todayIso(),
     defaultRate: meter.defaultRate == null ? '' : String(meter.defaultRate),
     ownerKind: meter.ownerKind,
     tenantName: meter.tenantName,

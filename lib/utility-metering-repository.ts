@@ -36,6 +36,7 @@ type MeterPointRow = RowDataPacket & {
   meter_number: string | null;
   coefficient: string | number;
   initial_reading_value: string | number | null;
+  initial_reading_date?: Date | string | null;
   default_rate: string | number | null;
   area_sq_m: string | number | null;
   source_key: string;
@@ -255,6 +256,7 @@ function mapMeterPoint(row: MeterPointRow): UtilityMeterPointRecord {
     meterNumber: row.meter_number ?? '',
     coefficient: Number(row.coefficient ?? 1),
     initialReadingValue: toNumberOrUndefined(row.initial_reading_value),
+    initialReadingDate: toIsoDate(row.initial_reading_date),
     defaultRate: toNumberOrUndefined(row.default_rate),
     areaSqM: toNumberOrUndefined(row.area_sq_m),
     sourceKey: row.source_key,
@@ -523,8 +525,16 @@ export async function createUtilityMeterPointInDb(input: UtilityMeterCreateInput
 
   const [rows] = await pool.query<MeterPointRow[]>(
     `
-      SELECT *
-      FROM utility_meter_points
+      SELECT
+        p.*,
+        (
+          SELECT r.reading_date
+          FROM utility_meter_readings r
+          WHERE r.meter_point_id = p.id
+          ORDER BY r.reading_date ASC, r.id ASC
+          LIMIT 1
+        ) AS initial_reading_date
+      FROM utility_meter_points p
       WHERE id = ?
       LIMIT 1
     `,
@@ -645,9 +655,17 @@ export async function updateUtilityMeterPointInDb(input: UtilityMeterUpdateInput
 
   const [rows] = await pool.query<MeterPointRow[]>(
     `
-      SELECT *
-      FROM utility_meter_points
-      WHERE id = ?
+      SELECT
+        p.*,
+        (
+          SELECT r.reading_date
+          FROM utility_meter_readings r
+          WHERE r.meter_point_id = p.id
+          ORDER BY r.reading_date ASC, r.id ASC
+          LIMIT 1
+        ) AS initial_reading_date
+      FROM utility_meter_points p
+      WHERE p.id = ?
       LIMIT 1
     `,
     [meterPointId]

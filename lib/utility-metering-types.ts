@@ -28,6 +28,7 @@ export type UtilityMeterPointRecord = {
   meterNumber: string;
   coefficient: number;
   initialReadingValue?: number;
+  initialReadingDate?: string;
   defaultRate?: number;
   areaSqM?: number;
   sourceKey: string;
