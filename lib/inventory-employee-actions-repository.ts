@@ -217,6 +217,37 @@ function buildActionTitleFromActivityLog(actionType: string) {
   }
 }
 
+function buildScannerActionDetails(comment: string): string[] | null {
+  try {
+    const scannerMeta = JSON.parse(comment) as Record<string, unknown>;
+    const details: string[] = [];
+    const barcode = String(scannerMeta.barcode ?? '').trim();
+    const engine = String(scannerMeta.engine ?? '').trim();
+    const stage = String(scannerMeta.stage ?? '').trim();
+    const facingMode = String(scannerMeta.facingMode ?? '').trim();
+    const attempts = Number(scannerMeta.detectionAttempts);
+    const elapsedMs = Number(scannerMeta.elapsedMs);
+    const width = Number(scannerMeta.streamWidth);
+    const height = Number(scannerMeta.streamHeight);
+    const frameRate = Number(scannerMeta.frameRate);
+
+    if (barcode) details.push(`Штрихкод: ${barcode}`);
+    if (engine) details.push(`Розпізнавання: ${engine === 'barcode-detector' ? 'вбудований сканер браузера' : engine}`);
+    if (stage) details.push(`Етап: ${stage.replaceAll('_', ' ')}`);
+    if (facingMode) details.push(`Камера: ${facingMode === 'environment' ? 'задня' : facingMode}`);
+    if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) details.push(`Відео: ${width}×${height}`);
+    if (Number.isFinite(frameRate) && frameRate > 0) details.push(`Частота кадрів: ${frameRate} fps`);
+    if (Number.isFinite(attempts) && attempts > 0) details.push(`Спроб розпізнавання: ${attempts}`);
+    if (Number.isFinite(elapsedMs) && elapsedMs >= 0) {
+      details.push(`Час: ${(elapsedMs / 1000).toLocaleString('uk-UA', { maximumFractionDigits: 1 })} с`);
+    }
+
+    return details.length > 0 ? details : null;
+  } catch {
+    return null;
+  }
+}
+
 function buildActionDetailsFromActivityLog(row: ActivityActionRow) {
   const changes: string[] = [];
   if (row.old_quantity != null || row.new_quantity != null) {
@@ -225,21 +256,12 @@ function buildActionDetailsFromActivityLog(row: ActivityActionRow) {
   if (row.old_expiry_date || row.new_expiry_date) {
     changes.push(`Термін: ${toIso(row.old_expiry_date).slice(0, 10) || '—'} -> ${toIso(row.new_expiry_date).slice(0, 10) || '—'}`);
   }
-  if (row.comment && String(row.action_type ?? '') === 'inventory_scanner_barcode_detected') {
-    try {
-      const scannerMeta = JSON.parse(row.comment) as {
-        barcode?: unknown;
-        detectionAttempts?: unknown;
-        elapsedMs?: unknown;
-      };
-      const barcode = String(scannerMeta.barcode ?? '').trim();
-      const attempts = Number(scannerMeta.detectionAttempts);
-      const elapsedMs = Number(scannerMeta.elapsedMs);
-
-      if (barcode) changes.push(`Штрихкод: ${barcode}`);
-      if (Number.isFinite(attempts) && attempts > 0) changes.push(`Спроб розпізнавання: ${attempts}`);
-      if (Number.isFinite(elapsedMs) && elapsedMs >= 0) changes.push(`Час розпізнавання: ${(elapsedMs / 1000).toLocaleString('uk-UA', { maximumFractionDigits: 1 })} с`);
-    } catch {
+  const actionType = String(row.action_type ?? '');
+  if (row.comment && actionType.startsWith('inventory_scanner_')) {
+    const scannerDetails = buildScannerActionDetails(row.comment);
+    if (scannerDetails) {
+      changes.push(...scannerDetails);
+    } else if (actionType === 'inventory_scanner_barcode_detected') {
       changes.push('Штрихкод розпізнано сканером.');
     }
   } else if (row.comment) {
