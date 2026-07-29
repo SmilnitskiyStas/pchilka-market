@@ -198,6 +198,20 @@ function buildActionTitleFromActivityLog(actionType: string) {
       return 'Позначив партію на списання';
     case 'batch_check_discussion_required':
       return 'Відправив партію на обговорення';
+    case 'inventory_scanner_start_requested':
+      return 'Сканер: запущено';
+    case 'inventory_scanner_stream_ready':
+      return 'Сканер: камера готова';
+    case 'inventory_scanner_video_ready':
+      return 'Сканер: відео готове до розпізнавання';
+    case 'inventory_scanner_detector_error':
+      return 'Сканер: помилка декодера';
+    case 'inventory_scanner_barcode_detected':
+      return 'Сканер: штрихкод розпізнано';
+    case 'inventory_scanner_no_barcode_detected':
+      return 'Сканер: штрихкод не розпізнано';
+    case 'inventory_scanner_camera_error':
+      return 'Сканер: помилка камери';
     default:
       return actionType || 'Дія працівника';
   }
@@ -211,7 +225,24 @@ function buildActionDetailsFromActivityLog(row: ActivityActionRow) {
   if (row.old_expiry_date || row.new_expiry_date) {
     changes.push(`Термін: ${toIso(row.old_expiry_date).slice(0, 10) || '—'} -> ${toIso(row.new_expiry_date).slice(0, 10) || '—'}`);
   }
-  if (row.comment) {
+  if (row.comment && String(row.action_type ?? '') === 'inventory_scanner_barcode_detected') {
+    try {
+      const scannerMeta = JSON.parse(row.comment) as {
+        barcode?: unknown;
+        detectionAttempts?: unknown;
+        elapsedMs?: unknown;
+      };
+      const barcode = String(scannerMeta.barcode ?? '').trim();
+      const attempts = Number(scannerMeta.detectionAttempts);
+      const elapsedMs = Number(scannerMeta.elapsedMs);
+
+      if (barcode) changes.push(`Штрихкод: ${barcode}`);
+      if (Number.isFinite(attempts) && attempts > 0) changes.push(`Спроб розпізнавання: ${attempts}`);
+      if (Number.isFinite(elapsedMs) && elapsedMs >= 0) changes.push(`Час розпізнавання: ${(elapsedMs / 1000).toLocaleString('uk-UA', { maximumFractionDigits: 1 })} с`);
+    } catch {
+      changes.push('Штрихкод розпізнано сканером.');
+    }
+  } else if (row.comment) {
     changes.push(`Коментар: ${row.comment}`);
   }
   return changes.join(' | ');
