@@ -2006,7 +2006,7 @@ export default function AdminInventoryManager({
             tasks.push(loadProductChangeLogs(), loadImportReview(), loadLatestImport());
             break;
           case 'batches-list':
-            tasks.push(loadBatches(), loadStores());
+            tasks.push(loadBatches(), loadStores(), loadUsers());
             break;
           case 'registered-employees':
             tasks.push(loadStores(), loadUsers(), loadBatches(), loadManualProductsForSection());
@@ -2476,28 +2476,36 @@ export default function AdminInventoryManager({
   const selectedBatchGroupUserRows = useMemo(() => {
     if (!selectedBatchGroup) return [];
 
-    const storeIds = new Set(selectedBatchGroup.batches.map((batch) => batch.storeId));
-    const counts = new Map<string, number>();
+    const batchCreators = new Map<string, { count: number; name: string }>();
     for (const batch of selectedBatchGroup.batches) {
       const key = batch.createdByUserId ? `user:${batch.createdByUserId}` : 'unknown';
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const current = batchCreators.get(key);
+      batchCreators.set(key, {
+        count: (current?.count ?? 0) + 1,
+        name: current?.name || batch.createdByUserName || ''
+      });
     }
 
-    const rows = inventoryUsers
-      .filter((user) => user.storeId != null && storeIds.has(String(user.storeId)))
-      .map((user) => ({
-        key: `user:${user.id}`,
-        label: `${user.surname} ${user.name}`.trim(),
-        caption: [user.positionTitle, user.role].filter(Boolean).join(' | '),
-        count: counts.get(`user:${user.id}`) ?? 0
-      }));
+    const rows = Array.from(batchCreators.entries())
+      .filter(([key]) => key !== 'unknown')
+      .map(([key, creator]) => {
+        const userId = Number(key.replace('user:', ''));
+        const user = inventoryUsers.find((item) => item.id === userId);
 
-    if ((counts.get('unknown') ?? 0) > 0) {
+        return {
+          key,
+          label: user ? `${user.surname} ${user.name}`.trim() : creator.name || `Користувач #${userId}`,
+          caption: user ? [user.positionTitle, user.role].filter(Boolean).join(' | ') : 'Автор позицій',
+          count: creator.count
+        };
+      });
+
+    if ((batchCreators.get('unknown')?.count ?? 0) > 0) {
       rows.push({
         key: 'unknown',
         label: 'Не визначено',
         caption: 'Записи без created_by_user_id',
-        count: counts.get('unknown') ?? 0
+        count: batchCreators.get('unknown')?.count ?? 0
       });
     }
 
