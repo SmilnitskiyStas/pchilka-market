@@ -202,7 +202,7 @@ export default function AdminNav() {
 
   function renderItems(items: NavItem[], depth = 0, parentKey = 'root') {
     return (
-      <ul className={depth === 0 ? 'space-y-1.5' : 'mt-1 space-y-1 border-l border-slate-200 pl-3'}>
+      <ul className={depth === 0 ? 'space-y-0.5' : 'mt-0.5 space-y-0.5 border-l border-slate-200 pl-2'}>
         {items.map((item, index) => {
           const active = isItemActive(item.href);
           const itemKey = `${parentKey}:${index}:${item.label}`;
@@ -216,7 +216,7 @@ export default function AdminNav() {
                   href={item.href}
                   scroll={false}
                   onClick={(event) => handleItemClick(event, item.href!)}
-                  className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
+                  className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[13px] leading-5 transition ${
                     active
                       ? 'bg-brand/10 font-semibold text-brand'
                       : depth === 0
@@ -226,7 +226,7 @@ export default function AdminNav() {
                 >
                   <span>{item.label}</span>
                   {item.badge != null ? (
-                    <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                    <span className="rounded-full border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
                       {item.badge}
                     </span>
                   ) : null}
@@ -236,7 +236,7 @@ export default function AdminNav() {
                   type="button"
                   onClick={() => toggleGroup(parentKey, itemKey)}
                   aria-expanded={expanded}
-                  className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] leading-5 transition ${
                     expanded ? 'bg-slate-100 font-semibold text-slate-900' : 'text-slate-900'
                   }`}
                 >
@@ -244,7 +244,7 @@ export default function AdminNav() {
                   <span className="text-xs text-slate-500">{expanded ? '-' : '+'}</span>
                 </button>
               ) : (
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-400">
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[13px] leading-5 text-slate-400">
                   <span>{item.label}</span>
                   <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">Поки ні</span>
                 </div>
@@ -259,7 +259,7 @@ export default function AdminNav() {
   }
 
   return (
-    <nav className="flex max-h-[calc(100vh-2.5rem)] flex-col rounded-3xl border border-slate-200 bg-white p-4 shadow-sm xl:h-full xl:max-h-[calc(100vh-2.5rem)]">
+    <nav className="flex max-h-[calc(100vh-2.5rem)] flex-col rounded-3xl border border-slate-200 bg-white p-2.5 shadow-sm xl:h-full xl:max-h-[calc(100vh-2.5rem)]">
       {currentLogin ? (
         <div className="rounded-2xl border border-brand/20 bg-brand/5 px-3 py-3">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Admin Session</p>
@@ -268,7 +268,7 @@ export default function AdminNav() {
         </div>
       ) : null}
 
-      <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">{renderItems(navGroups)}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">{renderItems(navGroups)}</div>
 
       <div className="hidden mt-4 border-t border-slate-200 pt-4">
         <button
