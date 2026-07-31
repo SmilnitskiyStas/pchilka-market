@@ -21,8 +21,21 @@ export async function PUT(request: Request) {
   try {
     const body = (await request.json()) as { settings?: Partial<FunTelegramSettings> };
     const settings = normalizeFunTelegramSettings({ ...body.settings, updatedAt: new Date().toISOString() });
-    if (!isValidTelegramBotToken(settings.botToken) || !isValidTelegramBotUsername(settings.botUsername) || !isValidWebhookSecret(settings.webhookSecret) || !isValidTelegramChatId(settings.allowedChatId)) {
-      return NextResponse.json({ ok: false, error: 'Перевірте формат налаштувань Telegram.' }, { status: 400 });
+    const invalidFields = [
+      !isValidTelegramBotToken(settings.botToken) ? 'Bot token' : '',
+      !isValidTelegramBotUsername(settings.botUsername) ? 'Username бота' : '',
+      !isValidTelegramChatId(settings.allowedChatId) ? 'ID тестової групи' : '',
+      !isValidWebhookSecret(settings.webhookSecret) ? 'Webhook secret' : ''
+    ].filter(Boolean);
+
+    if (invalidFields.length) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Некоректні поля: ${invalidFields.join(', ')}. Webhook secret: 12–120 латинських літер, цифр, "_" або "-".`
+        },
+        { status: 400 }
+      );
     }
     return NextResponse.json({ ok: true, settings: await saveFunTelegramSettings(settings), webhookUrl: buildFunTelegramWebhookUrl(settings) });
   } catch (error) {
