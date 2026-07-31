@@ -15,7 +15,7 @@ FUN_TELEGRAM_REMINDERS_BASE_URL=https://pchilka-new.eatshock.com
 3. Add a cron entry that runs once per minute from the project folder:
 
 ```cron
-* * * * * /usr/bin/npm run fun-telegram:reminders >> /path/to/project/logs/fun-telegram-reminders.log 2>&1
+* * * * * /usr/bin/node /path/to/project/run-fun-telegram-reminders.cjs >> /path/to/project/logs/fun-telegram-reminders.log 2>&1
 ```
 
 Use the real absolute npm and project paths from the server. The task runner calls a protected site endpoint and sends all due reminders to their original group.
