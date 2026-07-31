@@ -127,5 +127,16 @@ export async function registerFunTelegramWebhook() {
   await telegramRequest(settings.botToken, 'setWebhook', {
     url, secret_token: settings.webhookSecret, allowed_updates: ['message']
   });
+  await telegramRequest(settings.botToken, 'setMyCommands', {
+    scope: { type: 'all_group_chats' },
+    commands: [
+      { command: 'joke', description: 'Випадковий доброзичливий жарт' },
+      { command: 'remind', description: 'Створити нагадування' },
+      { command: 'tasks', description: 'Мої активні нагадування' },
+      { command: 'done', description: 'Позначити нагадування виконаним' },
+      { command: 'delete', description: 'Скасувати нагадування' },
+      { command: 'help', description: 'Показати довідку' }
+    ]
+  });
   return { webhookUrl: url };
 }
