@@ -1,7 +1,12 @@
 import { getFunTelegramSettings } from '@/lib/fun-telegram-settings-repository';
+import { changeTelegramReminderStatus, createTelegramReminder, listPendingTelegramReminders } from '@/lib/fun-telegram-reminders-repository';
 
 type TelegramUpdate = {
-  message?: { chat?: { id?: number | string }; text?: string };
+  message?: {
+    chat?: { id?: number | string };
+    from?: { id?: number | string; first_name?: string; username?: string };
+    text?: string;
+  };
 };
 
 const jokes = [
@@ -19,11 +24,42 @@ async function telegramRequest(token: string, method: string, body: Record<strin
   if (!response.ok || !payload?.ok) throw new Error(payload?.description || `Telegram ${method} failed.`);
 }
 
+export async function sendFunTelegramMessage(token: string, chatId: string, text: string) {
+  return telegramRequest(token, 'sendMessage', { chat_id: chatId, text });
+}
+
+function formatKyiv(value: Date): string {
+  return new Intl.DateTimeFormat('uk-UA', { timeZone: 'Europe/Kyiv', dateStyle: 'short', timeStyle: 'short' }).format(value);
+}
+
+function kyivDateToUtc(date: string, time: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!match || !timeMatch) return null;
+  const [year, month, day, hours, minutes] = [...match.slice(1), ...timeMatch.slice(1)].map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hours > 23 || minutes > 59) return null;
+  const desiredUtc = Date.UTC(year, month - 1, day, hours, minutes);
+  const offsetAt = (instant: Date) => {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Kyiv', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(instant);
+    const values = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, Number(part.value)]));
+    return Date.UTC(values.year, values.month - 1, values.day, values.hour, values.minute) - instant.getTime();
+  };
+  let result = new Date(desiredUtc - offsetAt(new Date(desiredUtc)));
+  result = new Date(desiredUtc - offsetAt(result));
+  return Number.isNaN(result.getTime()) ? null : result;
+}
+
+function reminderHelp() {
+  return 'Нагадування:\n/remind РРРР-ММ-ДД ГГ:ХХ текст\n/tasks\n/done ID\n/delete ID\n\nЧас указуйте за Києвом.';
+}
+
 export async function processFunTelegramUpdate(update: TelegramUpdate) {
   const settings = await getFunTelegramSettings();
   const message = update.message;
   const chatId = message?.chat?.id?.toString() ?? '';
   const command = (message?.text?.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? '').replace(/@[^\s]+$/, '');
+  const senderId = message?.from?.id?.toString() ?? '';
+  const senderName = message?.from?.first_name?.trim() || message?.from?.username?.trim() || 'Учасник';
 
   if (!settings.enabled || !settings.botToken || !chatId) {
     return { ignored: true };
@@ -45,18 +81,41 @@ export async function processFunTelegramUpdate(update: TelegramUpdate) {
   if (chatId !== settings.allowedChatId) return { ignored: true };
 
   if (command === '/start' || command === '/help') {
-    await telegramRequest(settings.botToken, 'sendMessage', {
-      chat_id: chatId,
-      text: 'Привіт! Я тестовий бот для доброзичливих жартів. Команда: /joke'
-    });
+    await sendFunTelegramMessage(settings.botToken, chatId, `Привіт! Я тестовий бот для доброзичливих жартів.\n/joke\n${reminderHelp()}`);
     return { handled: 'help' };
   }
   if (command === '/joke') {
-    await telegramRequest(settings.botToken, 'sendMessage', {
-      chat_id: chatId,
-      text: jokes[Math.floor(Math.random() * jokes.length)]
-    });
+    await sendFunTelegramMessage(settings.botToken, chatId, jokes[Math.floor(Math.random() * jokes.length)]);
     return { handled: 'joke' };
+  }
+  if (!senderId) return { ignored: true };
+  if (command === '/remind') {
+    const match = /^\/remind(?:@[^\s]+)?\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s+(.+)$/i.exec(message?.text?.trim() ?? '');
+    const remindAt = match ? kyivDateToUtc(match[1], match[2]) : null;
+    const reminderText = match?.[3]?.trim() ?? '';
+    if (!remindAt || !reminderText || reminderText.length > 1000 || remindAt.getTime() <= Date.now()) {
+      await sendFunTelegramMessage(settings.botToken, chatId, `Не вдалося створити нагадування.\n${reminderHelp()}`);
+      return { handled: 'reminder-invalid' };
+    }
+    const reminder = await createTelegramReminder({ chatId, creatorUserId: senderId, creatorDisplayName: senderName, reminderText, remindAt });
+    await sendFunTelegramMessage(settings.botToken, chatId, `✅ Нагадування #${reminder.id} збережено на ${formatKyiv(remindAt)}.`);
+    return { handled: 'reminder-created', id: reminder.id };
+  }
+  if (command === '/tasks') {
+    const reminders = await listPendingTelegramReminders(chatId, senderId);
+    const text = reminders.length ? reminders.map((reminder) => `#${reminder.id} — ${formatKyiv(reminder.remindAt)}\n${reminder.reminderText}`).join('\n\n') : 'Активних нагадувань немає.';
+    await sendFunTelegramMessage(settings.botToken, chatId, text);
+    return { handled: 'reminders-list', count: reminders.length };
+  }
+  if (command === '/done' || command === '/delete') {
+    const id = Number(message?.text?.trim().split(/\s+/, 2)[1]);
+    if (!Number.isSafeInteger(id) || id < 1) {
+      await sendFunTelegramMessage(settings.botToken, chatId, 'Вкажіть ID: /done 12 або /delete 12');
+      return { handled: 'reminder-id-invalid' };
+    }
+    const changed = await changeTelegramReminderStatus({ id, chatId, creatorUserId: senderId, status: command === '/done' ? 'completed' : 'cancelled' });
+    await sendFunTelegramMessage(settings.botToken, chatId, changed ? `✅ Нагадування #${id} ${command === '/done' ? 'виконано' : 'видалено'}.` : 'Не знайдено активного нагадування з таким ID.');
+    return { handled: 'reminder-status', changed };
   }
   return { ignored: true };
 }
