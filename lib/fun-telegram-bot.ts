@@ -25,9 +25,24 @@ export async function processFunTelegramUpdate(update: TelegramUpdate) {
   const chatId = message?.chat?.id?.toString() ?? '';
   const command = (message?.text?.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? '').replace(/@[^\s]+$/, '');
 
-  if (!settings.enabled || !settings.botToken || !settings.allowedChatId || chatId !== settings.allowedChatId) {
+  if (!settings.enabled || !settings.botToken || !chatId) {
     return { ignored: true };
   }
+
+  // First-run setup: a group administrator can obtain the ID without exposing the bot token.
+  // Only explicit commands are answered; all regular group messages remain ignored.
+  if (!settings.allowedChatId) {
+    if (command === '/start' || command === '/id') {
+      await telegramRequest(settings.botToken, 'sendMessage', {
+        chat_id: chatId,
+        text: `ID цієї тестової групи: ${chatId}\nВнесіть його в адмін-панель, щоб завершити налаштування бота.`
+      });
+      return { handled: 'setup-chat-id' };
+    }
+    return { ignored: true };
+  }
+
+  if (chatId !== settings.allowedChatId) return { ignored: true };
 
   if (command === '/start' || command === '/help') {
     await telegramRequest(settings.botToken, 'sendMessage', {
