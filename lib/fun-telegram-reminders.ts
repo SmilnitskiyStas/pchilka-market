@@ -9,7 +9,8 @@ export async function runFunTelegramReminders() {
   let sent = 0;
   for (const reminder of reminders) {
     try {
-      await sendFunTelegramMessage(settings.botToken, reminder.chatId, `⏰ Нагадування для ${reminder.creatorDisplayName}:\n${reminder.reminderText}`);
+      const recipient = reminder.assigneeUsername ? `@${reminder.assigneeUsername}` : reminder.creatorDisplayName;
+      await sendFunTelegramMessage(settings.botToken, reminder.chatId, `⏰ Нагадування для ${recipient}:\n${reminder.reminderText}`);
       await markTelegramReminderSent(reminder.id);
       sent += 1;
     } catch {

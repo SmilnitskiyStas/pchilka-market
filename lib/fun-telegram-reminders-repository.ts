@@ -7,12 +7,13 @@ export type TelegramReminder = {
   chatId: string;
   creatorUserId: string;
   creatorDisplayName: string;
+  assigneeUsername: string;
   reminderText: string;
   remindAt: Date;
 };
 
 type ReminderRow = RowDataPacket & {
-  id: number; chat_id: string; creator_user_id: string; creator_display_name: string; reminder_text: string; remind_at: string;
+  id: number; chat_id: string; creator_user_id: string; creator_display_name: string; assignee_username: string | null; reminder_text: string; remind_at: string;
 };
 
 function mapRow(row: ReminderRow): TelegramReminder {
@@ -21,6 +22,7 @@ function mapRow(row: ReminderRow): TelegramReminder {
     chatId: row.chat_id,
     creatorUserId: row.creator_user_id,
     creatorDisplayName: row.creator_display_name,
+    assigneeUsername: row.assignee_username ?? '',
     reminderText: row.reminder_text,
     remindAt: new Date(`${row.remind_at.replace(' ', 'T')}Z`)
   };
@@ -32,22 +34,32 @@ function toMySqlUtc(value: Date): string {
 
 export async function createTelegramReminder(input: Omit<TelegramReminder, 'id'>): Promise<TelegramReminder> {
   const [result] = await getDbPool().execute<ResultSetHeader>(
-    `INSERT INTO telegram_reminders (chat_id, creator_user_id, creator_display_name, reminder_text, remind_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [input.chatId, input.creatorUserId, input.creatorDisplayName, input.reminderText, toMySqlUtc(input.remindAt)]
+    `INSERT INTO telegram_reminders (chat_id, creator_user_id, creator_display_name, assignee_username, reminder_text, remind_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [input.chatId, input.creatorUserId, input.creatorDisplayName, input.assigneeUsername || null, input.reminderText, toMySqlUtc(input.remindAt)]
   );
   return { ...input, id: result.insertId };
 }
 
-export async function listPendingTelegramReminders(chatId: string, creatorUserId: string): Promise<TelegramReminder[]> {
+export async function listPendingTelegramReminders(chatId: string, creatorUserId: string, viewerUsername: string): Promise<TelegramReminder[]> {
   const [rows] = await getDbPool().execute<ReminderRow[]>(
-    `SELECT id, chat_id, creator_user_id, creator_display_name, reminder_text,
+    `SELECT id, chat_id, creator_user_id, creator_display_name, assignee_username, reminder_text,
             DATE_FORMAT(remind_at, '%Y-%m-%d %H:%i:%s') AS remind_at
-     FROM telegram_reminders WHERE chat_id = ? AND creator_user_id = ? AND status = 'pending'
+     FROM telegram_reminders
+     WHERE chat_id = ? AND status = 'pending' AND (creator_user_id = ? OR (? <> '' AND assignee_username = ?))
      ORDER BY remind_at ASC LIMIT 20`,
-    [chatId, creatorUserId]
+    [chatId, creatorUserId, viewerUsername, viewerUsername]
   );
   return rows.map(mapRow);
+}
+
+export async function assignTelegramReminder(input: { id: number; chatId: string; creatorUserId: string; assigneeUsername: string }): Promise<boolean> {
+  const [result] = await getDbPool().execute<ResultSetHeader>(
+    `UPDATE telegram_reminders SET assignee_username = ?
+     WHERE id = ? AND chat_id = ? AND creator_user_id = ? AND status = 'pending'`,
+    [input.assigneeUsername, input.id, input.chatId, input.creatorUserId]
+  );
+  return result.affectedRows > 0;
 }
 
 export async function changeTelegramReminderStatus(input: { id: number; chatId: string; creatorUserId: string; status: 'completed' | 'cancelled' }): Promise<boolean> {
@@ -61,7 +73,7 @@ export async function changeTelegramReminderStatus(input: { id: number; chatId: 
 export async function claimDueTelegramReminders(): Promise<TelegramReminder[]> {
   const pool = getDbPool();
   const [rows] = await pool.execute<ReminderRow[]>(
-    `SELECT id, chat_id, creator_user_id, creator_display_name, reminder_text,
+    `SELECT id, chat_id, creator_user_id, creator_display_name, assignee_username, reminder_text,
             DATE_FORMAT(remind_at, '%Y-%m-%d %H:%i:%s') AS remind_at
      FROM telegram_reminders
      WHERE (status = 'pending' AND remind_at <= UTC_TIMESTAMP())

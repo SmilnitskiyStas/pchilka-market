@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS telegram_reminders (
   chat_id VARCHAR(32) NOT NULL,
   creator_user_id VARCHAR(32) NOT NULL,
   creator_display_name VARCHAR(255) NOT NULL,
+  assignee_username VARCHAR(32) NULL,
   reminder_text TEXT NOT NULL,
   remind_at DATETIME NOT NULL,
   status VARCHAR(16) NOT NULL DEFAULT 'pending',

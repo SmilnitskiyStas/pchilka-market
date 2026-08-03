@@ -1230,6 +1230,7 @@ async function ensureTelegramRemindersTable() {
       chat_id VARCHAR(32) NOT NULL,
       creator_user_id VARCHAR(32) NOT NULL,
       creator_display_name VARCHAR(255) NOT NULL,
+      assignee_username VARCHAR(32) NULL,
       reminder_text TEXT NOT NULL,
       remind_at DATETIME NOT NULL,
       status VARCHAR(16) NOT NULL DEFAULT 'pending',
@@ -1241,6 +1242,10 @@ async function ensureTelegramRemindersTable() {
       KEY idx_telegram_reminders_creator (chat_id, creator_user_id, status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+  const columns = await listTableColumns('telegram_reminders');
+  if (!columns.has('assignee_username')) {
+    await pool.query('ALTER TABLE telegram_reminders ADD COLUMN assignee_username VARCHAR(32) NULL AFTER creator_display_name');
+  }
 }
 
 export async function applyInventorySchemaMigrations() {

@@ -22,7 +22,8 @@ Use the real absolute npm and project paths from the server. The task runner cal
 
 ## Group commands
 
-- `/remind 2026-08-01 09:00 Текст задачі` — create a reminder in Kyiv time.
-- `/tasks` — show up to 20 active reminders created by the caller in the current group.
+- `/remind 2026-08-01 09:00 @username Текст задачі` — create a reminder in Kyiv time and assign it to a group member. `@username` is optional.
+- `/assign 12 @username` — reassign an own active reminder.
+- `/tasks` — show up to 20 own or assigned active reminders in the current group.
 - `/done 12` — mark own reminder as completed.
 - `/delete 12` — cancel own reminder.
