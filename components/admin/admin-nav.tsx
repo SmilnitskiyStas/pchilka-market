@@ -126,6 +126,7 @@ export default function AdminNav() {
         label: 'Комунальні нарахування',
         children: [
           { href: '/admin/utility-meters', label: 'Лічильники та показники' },
+          { href: '/admin/utility-meters/missing', label: 'Не внесені показники' },
           { href: '/admin/utility-meters/rates', label: 'Тарифи' },
           { href: '/admin/utility-meters/document', label: 'Документ на оплату' }
         ]
