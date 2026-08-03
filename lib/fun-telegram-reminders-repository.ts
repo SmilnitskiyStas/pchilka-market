@@ -12,25 +12,37 @@ export type TelegramReminder = {
 };
 
 type ReminderRow = RowDataPacket & {
-  id: number; chat_id: string; creator_user_id: string; creator_display_name: string; reminder_text: string; remind_at: Date;
+  id: number; chat_id: string; creator_user_id: string; creator_display_name: string; reminder_text: string; remind_at: string;
 };
 
 function mapRow(row: ReminderRow): TelegramReminder {
-  return { id: row.id, chatId: row.chat_id, creatorUserId: row.creator_user_id, creatorDisplayName: row.creator_display_name, reminderText: row.reminder_text, remindAt: new Date(row.remind_at) };
+  return {
+    id: row.id,
+    chatId: row.chat_id,
+    creatorUserId: row.creator_user_id,
+    creatorDisplayName: row.creator_display_name,
+    reminderText: row.reminder_text,
+    remindAt: new Date(`${row.remind_at.replace(' ', 'T')}Z`)
+  };
+}
+
+function toMySqlUtc(value: Date): string {
+  return value.toISOString().slice(0, 19).replace('T', ' ');
 }
 
 export async function createTelegramReminder(input: Omit<TelegramReminder, 'id'>): Promise<TelegramReminder> {
   const [result] = await getDbPool().execute<ResultSetHeader>(
     `INSERT INTO telegram_reminders (chat_id, creator_user_id, creator_display_name, reminder_text, remind_at)
      VALUES (?, ?, ?, ?, ?)`,
-    [input.chatId, input.creatorUserId, input.creatorDisplayName, input.reminderText, input.remindAt]
+    [input.chatId, input.creatorUserId, input.creatorDisplayName, input.reminderText, toMySqlUtc(input.remindAt)]
   );
   return { ...input, id: result.insertId };
 }
 
 export async function listPendingTelegramReminders(chatId: string, creatorUserId: string): Promise<TelegramReminder[]> {
   const [rows] = await getDbPool().execute<ReminderRow[]>(
-    `SELECT id, chat_id, creator_user_id, creator_display_name, reminder_text, remind_at
+    `SELECT id, chat_id, creator_user_id, creator_display_name, reminder_text,
+            DATE_FORMAT(remind_at, '%Y-%m-%d %H:%i:%s') AS remind_at
      FROM telegram_reminders WHERE chat_id = ? AND creator_user_id = ? AND status = 'pending'
      ORDER BY remind_at ASC LIMIT 20`,
     [chatId, creatorUserId]
@@ -49,7 +61,8 @@ export async function changeTelegramReminderStatus(input: { id: number; chatId: 
 export async function claimDueTelegramReminders(): Promise<TelegramReminder[]> {
   const pool = getDbPool();
   const [rows] = await pool.execute<ReminderRow[]>(
-    `SELECT id, chat_id, creator_user_id, creator_display_name, reminder_text, remind_at
+    `SELECT id, chat_id, creator_user_id, creator_display_name, reminder_text,
+            DATE_FORMAT(remind_at, '%Y-%m-%d %H:%i:%s') AS remind_at
      FROM telegram_reminders
      WHERE (status = 'pending' AND remind_at <= UTC_TIMESTAMP())
         OR (status = 'processing' AND updated_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 MINUTE))
