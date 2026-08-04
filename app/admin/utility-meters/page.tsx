@@ -1070,9 +1070,6 @@ export default function AdminUtilityMetersPage() {
                           >
                             {item.charge?.validationStatus ?? 'missing'}
                           </span>
-                          {item.charge?.validationMessages?.length ? (
-                            <div className="mt-2 max-w-sm text-xs text-slate-600">{item.charge.validationMessages.join(' ')}</div>
-                          ) : null}
                         </td>
                       </tr>
                     ))}
