@@ -26,7 +26,6 @@ export default function AdminNav() {
   const pathname = usePathname();
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [currentLogin, setCurrentLogin] = useState<string>('');
   const [currentRole, setCurrentRole] = useState<'admin' | 'editor'>('editor');
   const [currentPermissions, setCurrentPermissions] = useState<AdminPermission[]>([]);
   const [unprocessedCount, setUnprocessedCount] = useState<number>(0);
@@ -46,7 +45,6 @@ export default function AdminNav() {
       .then(async (response) => ({ response, payload: await response.json() as { user?: { login?: string; role?: 'admin' | 'editor'; permissions?: AdminPermission[] } } }))
       .then(({ response, payload }) => {
         if (cancelled || !response.ok || !payload.user) return;
-        setCurrentLogin(payload.user.login ?? '');
         setCurrentRole(payload.user.role ?? 'editor');
         setCurrentPermissions(payload.user.permissions ?? []);
       })
@@ -284,14 +282,6 @@ export default function AdminNav() {
 
   return (
     <nav className="flex max-h-[calc(100vh-2.5rem)] flex-col rounded-3xl border border-slate-200 bg-white p-2.5 shadow-sm xl:h-full xl:max-h-[calc(100vh-2.5rem)]">
-      {currentLogin ? (
-        <div className="rounded-2xl border border-brand/20 bg-brand/5 px-3 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Admin Session</p>
-          <p className="mt-2 text-sm font-semibold text-slate-900">{currentLogin}</p>
-          <p className="mt-1 text-xs text-slate-600">{currentRole || 'admin'}</p>
-        </div>
-      ) : null}
-
       <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">{renderItems(navGroups)}</div>
 
       <div className="hidden mt-4 border-t border-slate-200 pt-4">
