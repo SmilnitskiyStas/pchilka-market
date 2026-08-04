@@ -25,6 +25,7 @@ export async function GET(request: Request) {
         id: null,
         login: session.username,
         role: 'admin',
+        permissions: [],
         authProvider: 'legacy'
       }
     });
@@ -42,6 +43,7 @@ export async function GET(request: Request) {
       login: user.login,
       displayName: user.displayName,
       role: user.role,
+      permissions: user.permissions,
       authProvider: user.authProvider,
       isActive: user.isActive
     }

@@ -6,9 +6,11 @@ import {
   deleteAdminUserById,
   findAdminUserById,
   findAdminUserByLogin,
-  listAdminUsersFromDb
+  listAdminUsersFromDb,
+  updateAdminUserPermissionsInDb
 } from '@/lib/admin-users-repository';
 import { getAdminSessionFromRequest, unauthorizedAdminResponse } from '@/lib/admin-auth';
+import { normalizeAdminPermissions } from '@/lib/admin-permissions';
 import { hashPassword } from '@/lib/password-hash';
 
 export const runtime = 'nodejs';
@@ -43,6 +45,9 @@ async function getCurrentUser(request: Request) {
 export async function GET(request: Request) {
   const current = await getCurrentUser(request);
   if (!current) return unauthorizedAdminResponse();
+  if (current.role !== 'admin') {
+    return NextResponse.json({ ok: false, error: 'Недостатньо прав для перегляду користувачів.' }, { status: 403 });
+  }
 
   const users = await listAdminUsersFromDb();
   return NextResponse.json({
@@ -52,6 +57,7 @@ export async function GET(request: Request) {
       login: item.login,
       displayName: item.displayName,
       role: item.role,
+      permissions: item.permissions,
       authProvider: item.authProvider,
       isActive: item.isActive,
       lastLoginAt: item.lastLoginAt,
@@ -74,12 +80,14 @@ export async function POST(request: Request) {
       password?: string;
       displayName?: string;
       role?: 'admin' | 'editor';
+      permissions?: string[];
     };
 
     const login = normalizeLogin(String(body?.login ?? ''));
     const password = String(body?.password ?? '');
     const displayName = String(body?.displayName ?? '').trim();
     const role = body?.role === 'editor' ? 'editor' : 'admin';
+    const permissions = normalizeAdminPermissions(body?.permissions);
 
     if (!LOGIN_PATTERN.test(login)) {
       return NextResponse.json(
@@ -103,7 +111,8 @@ export async function POST(request: Request) {
       displayName: displayName || null,
       passwordHash,
       authProvider: 'local',
-      role
+      role,
+      permissions
     });
 
     return NextResponse.json({
@@ -113,6 +122,7 @@ export async function POST(request: Request) {
         login: user.login,
         displayName: user.displayName,
         role: user.role,
+        permissions: user.permissions,
         authProvider: user.authProvider,
         isActive: user.isActive,
         createdAt: user.createdAt
@@ -120,6 +130,30 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не вдалося створити користувача.';
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  const current = await getCurrentUser(request);
+  if (!current) return unauthorizedAdminResponse();
+  if (current.role !== 'admin') {
+    return NextResponse.json({ ok: false, error: 'Недостатньо прав для зміни доступів.' }, { status: 403 });
+  }
+
+  try {
+    const body = (await request.json()) as { userId?: number; permissions?: string[] };
+    const userId = Number(body.userId);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return NextResponse.json({ ok: false, error: 'Некоректний користувач.' }, { status: 400 });
+    }
+    const target = await findAdminUserById(userId);
+    if (!target) return NextResponse.json({ ok: false, error: 'Користувача не знайдено.' }, { status: 404 });
+
+    const user = await updateAdminUserPermissionsInDb(userId, normalizeAdminPermissions(body.permissions));
+    return NextResponse.json({ ok: true, user: user && { id: user.id, permissions: user.permissions } });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Не вдалося оновити доступи.';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

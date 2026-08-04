@@ -32,7 +32,10 @@ function validateBanners(banners: HomeBanner[]) {
   }
 }
 
-export async function getHomeSlides() {
+export async function getHomeSlides(request: Request) {
+  if (!isAdminRequestAuthorized(request)) {
+    return unauthorizedAdminResponse();
+  }
   try {
     const banners = await listBannersFromDb();
     return NextResponse.json({ ok: true, banners });

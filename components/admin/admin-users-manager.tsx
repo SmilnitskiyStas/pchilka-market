@@ -1,12 +1,14 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { ADMIN_PERMISSION_OPTIONS, type AdminAction, type AdminPermission } from '@/lib/admin-permissions';
 
 type AdminUserView = {
   id: number;
   login: string;
   displayName: string | null;
   role: 'admin' | 'editor';
+  permissions: AdminPermission[];
   authProvider: 'local' | 'google';
   isActive: boolean;
   lastLoginAt: string | null;
@@ -44,6 +46,8 @@ export default function AdminUsersManager() {
   const [role, setRole] = useState<'admin' | 'editor'>('editor');
   const [isCreating, setIsCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [permissionDrafts, setPermissionDrafts] = useState<Record<number, AdminPermission[]>>({});
+  const [savingPermissionsId, setSavingPermissionsId] = useState<number | null>(null);
 
   async function loadUsers() {
     setIsLoading(true);
@@ -56,11 +60,36 @@ export default function AdminUsersManager() {
       }
 
       setUsers(payload.users);
+      setPermissionDrafts(Object.fromEntries(payload.users.map((user) => [user.id, user.permissions ?? []])));
       setCurrentUser(payload.currentUser);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити користувачів.');
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  function togglePermission(userId: number, permission: AdminPermission, enabled: boolean) {
+    setPermissionDrafts((previous) => {
+      const current = previous[userId] ?? [];
+      return { ...previous, [userId]: enabled ? [...new Set([...current, permission])] : current.filter((value) => value !== permission) };
+    });
+  }
+
+  async function savePermissions(userId: number) {
+    setError('');
+    setSuccess('');
+    setSavingPermissionsId(userId);
+    try {
+      const response = await fetch('/api/admin/users', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, permissions: permissionDrafts[userId] ?? [] }) });
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Не вдалося зберегти доступи.');
+      setSuccess('Доступи оновлено. Для застосування змін користувачеві потрібно увійти повторно.');
+      await loadUsers();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Не вдалося зберегти доступи.');
+    } finally {
+      setSavingPermissionsId(null);
     }
   }
 
@@ -228,6 +257,21 @@ export default function AdminUsersManager() {
                 </p>
                 <p className="mt-1 text-xs text-slate-600">Останній вхід: {formatDate(item.lastLoginAt)}</p>
                 <p className="mt-1 text-xs text-slate-600">Створено: {formatDate(item.createdAt)}</p>
+
+                {item.role === 'admin' ? (
+                  <p className="mt-3 rounded-lg bg-brand/10 px-2 py-1.5 text-xs font-semibold text-brand">Повний доступ адміністратора</p>
+                ) : (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                    <p className="text-xs font-semibold text-slate-900">Доступи до модулів</p>
+                    <div className="mt-2 overflow-x-auto">
+                      <table className="w-full min-w-[450px] text-xs">
+                        <thead className="text-left text-slate-500"><tr><th className="pb-1">Модуль</th>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => <th key={action} className="pb-1 text-center">{action === 'read' ? 'Перегляд' : action === 'write' ? 'Редагування' : 'Видалення'}</th>)}</tr></thead>
+                        <tbody>{ADMIN_PERMISSION_OPTIONS.filter(({ resource }) => resource !== 'users' && resource !== 'system').map(({ resource, label }) => <tr key={resource} className="border-t border-slate-100"><td className="py-1.5 pr-3">{label}</td>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => { const permission = `${resource}:${action}` as AdminPermission; return <td key={action} className="py-1.5 text-center"><input type="checkbox" checked={(permissionDrafts[item.id] ?? []).includes(permission)} onChange={(event) => togglePermission(item.id, permission, event.target.checked)} /></td>; })}</tr>)}</tbody>
+                      </table>
+                    </div>
+                    <button type="button" onClick={() => void savePermissions(item.id)} disabled={savingPermissionsId === item.id} className="mt-3 rounded-full border border-brand px-3 py-1 text-xs font-semibold text-brand disabled:opacity-60">{savingPermissionsId === item.id ? 'Збереження...' : 'Зберегти доступи'}</button>
+                  </div>
+                )}
 
                 <div className="mt-2">
                   <button

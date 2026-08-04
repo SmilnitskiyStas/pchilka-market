@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import { hasAdminPermission, resourceForAdminPath, type AdminPermission } from '@/lib/admin-permissions';
 
 type MessagesPayload = {
   ok?: boolean;
@@ -25,8 +26,9 @@ export default function AdminNav() {
   const pathname = usePathname();
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [currentLogin] = useState<string>('');
-  const [currentRole] = useState<string>('');
+  const [currentLogin, setCurrentLogin] = useState<string>('');
+  const [currentRole, setCurrentRole] = useState<'admin' | 'editor'>('editor');
+  const [currentPermissions, setCurrentPermissions] = useState<AdminPermission[]>([]);
   const [unprocessedCount, setUnprocessedCount] = useState<number>(0);
   const [currentHash, setCurrentHash] = useState('');
   const [openGroupKeys, setOpenGroupKeys] = useState<Record<string, string>>({});
@@ -36,6 +38,20 @@ export default function AdminNav() {
     syncHash();
     window.addEventListener('hashchange', syncHash);
     return () => window.removeEventListener('hashchange', syncHash);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch('/api/admin/auth/me', { cache: 'no-store' })
+      .then(async (response) => ({ response, payload: await response.json() as { user?: { login?: string; role?: 'admin' | 'editor'; permissions?: AdminPermission[] } } }))
+      .then(({ response, payload }) => {
+        if (cancelled || !response.ok || !payload.user) return;
+        setCurrentLogin(payload.user.login ?? '');
+        setCurrentRole(payload.user.role ?? 'editor');
+        setCurrentPermissions(payload.user.permissions ?? []);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -203,9 +219,10 @@ export default function AdminNav() {
   }
 
   function renderItems(items: NavItem[], depth = 0, parentKey = 'root') {
+    const allowedItems = items.filter(isNavItemAllowed);
     return (
       <ul className={depth === 0 ? 'space-y-0.5' : 'mt-0.5 space-y-0.5 border-l border-slate-200 pl-2'}>
-        {items.map((item, index) => {
+        {allowedItems.map((item, index) => {
           const active = isItemActive(item.href);
           const itemKey = `${parentKey}:${index}:${item.label}`;
           const isManuallyExpanded = openGroupKeys[parentKey] === itemKey;
@@ -258,6 +275,11 @@ export default function AdminNav() {
         })}
       </ul>
     );
+  }
+
+  function isNavItemAllowed(item: NavItem): boolean {
+    if (item.href) return hasAdminPermission(currentRole, currentPermissions, resourceForAdminPath(getPathAndHash(item.href).path));
+    return item.children?.some(isNavItemAllowed) ?? false;
   }
 
   return (

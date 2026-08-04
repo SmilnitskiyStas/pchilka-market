@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { NextResponse } from 'next/server';
 
 import { findAdminUserByLogin } from '@/lib/admin-users-repository';
+import { actionForHttpMethod, hasAdminPermission, resourceForAdminPath, type AdminPermission } from '@/lib/admin-permissions';
 import { verifyPassword } from '@/lib/password-hash';
 
 const SESSION_COOKIE_NAME = 'pchilka_admin_session';
@@ -12,6 +13,8 @@ type SessionPayload = {
   sub: string;
   username: string;
   expiresAt: number;
+  role: 'admin' | 'editor';
+  permissions: AdminPermission[];
 };
 
 function getEnv(name: string): string {
@@ -78,7 +81,7 @@ function normalizeLogin(value: string): string {
 export async function verifyAdminCredentials(
   username: string,
   password: string
-): Promise<{ ok: boolean; username?: string; sub?: string }> {
+): Promise<{ ok: boolean; username?: string; sub?: string; role?: 'admin' | 'editor'; permissions?: AdminPermission[] }> {
   const login = normalizeLogin(username);
   if (!login || !password) return { ok: false };
 
@@ -86,7 +89,7 @@ export async function verifyAdminCredentials(
   if (dbUser && dbUser.isActive && dbUser.authProvider === 'local' && dbUser.passwordHash) {
     const isValid = await verifyPassword(password, dbUser.passwordHash).catch(() => false);
     if (isValid) {
-      return { ok: true, username: dbUser.login, sub: `admin_user:${dbUser.id}` };
+      return { ok: true, username: dbUser.login, sub: `admin_user:${dbUser.id}`, role: dbUser.role, permissions: dbUser.permissions };
     }
   }
 
@@ -94,17 +97,19 @@ export async function verifyAdminCredentials(
   const legacyUser = getLegacyAdminUsername();
   const legacyPassword = getLegacyAdminPassword();
   if (legacyPassword && login === legacyUser.toLowerCase() && password === legacyPassword) {
-    return { ok: true, username: legacyUser, sub: `legacy:${legacyUser}` };
+    return { ok: true, username: legacyUser, sub: `legacy:${legacyUser}`, role: 'admin', permissions: [] };
   }
 
   return { ok: false };
 }
 
-function createAdminSessionToken(payloadInput: { username: string; sub: string }): string {
+function createAdminSessionToken(payloadInput: { username: string; sub: string; role?: 'admin' | 'editor'; permissions?: AdminPermission[] }): string {
   const payload: SessionPayload = {
     sub: payloadInput.sub,
     username: payloadInput.username,
-    expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000
+    expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000,
+    role: payloadInput.role ?? 'admin',
+    permissions: payloadInput.permissions ?? []
   };
   const encodedPayload = toBase64Url(JSON.stringify(payload));
   const signature = signPayload(encodedPayload);
@@ -128,6 +133,8 @@ function parseAdminSessionToken(token: string | undefined): SessionPayload | nul
     if (!payload || typeof payload.username !== 'string' || typeof payload.sub !== 'string') return null;
     if (typeof payload.expiresAt !== 'number') return null;
     if (Date.now() > payload.expiresAt) return null;
+    if (payload.role !== 'admin' && payload.role !== 'editor') return null;
+    if (!Array.isArray(payload.permissions) || !payload.permissions.every((value) => typeof value === 'string')) return null;
     return payload;
   } catch {
     return null;
@@ -138,9 +145,15 @@ export function verifyAdminSessionToken(token: string | undefined): boolean {
   return parseAdminSessionToken(token) !== null;
 }
 
+export function getAdminSessionFromToken(token: string | undefined): { username: string; sub: string; role: 'admin' | 'editor'; permissions: AdminPermission[] } | null {
+  const parsed = parseAdminSessionToken(token);
+  if (!parsed) return null;
+  return { username: parsed.username, sub: parsed.sub, role: parsed.role, permissions: parsed.permissions };
+}
+
 export function applyAdminSessionCookie(
   response: NextResponse,
-  session: { username: string; sub: string },
+  session: { username: string; sub: string; role?: 'admin' | 'editor'; permissions?: AdminPermission[] },
   request?: Request
 ) {
   response.cookies.set(SESSION_COOKIE_NAME, createAdminSessionToken(session), {
@@ -182,15 +195,20 @@ function getCookieValueFromHeader(header: string | null, name: string): string |
 export function isAdminRequestAuthorized(request: Request): boolean {
   const cookieHeader = request.headers.get('cookie');
   const token = getCookieValueFromHeader(cookieHeader, SESSION_COOKIE_NAME);
-  return verifyAdminSessionToken(token);
+  const session = parseAdminSessionToken(token);
+  if (!session) return false;
+
+  const pathname = new URL(request.url).pathname;
+  if (pathname === '/api/admin/auth/me' || pathname === '/api/admin/auth/logout') return true;
+  return hasAdminPermission(session.role, session.permissions, resourceForAdminPath(pathname), actionForHttpMethod(request.method));
 }
 
-export function getAdminSessionFromRequest(request: Request): { username: string; sub: string } | null {
+export function getAdminSessionFromRequest(request: Request): { username: string; sub: string; role: 'admin' | 'editor'; permissions: AdminPermission[] } | null {
   const cookieHeader = request.headers.get('cookie');
   const token = getCookieValueFromHeader(cookieHeader, SESSION_COOKIE_NAME);
   const parsed = parseAdminSessionToken(token);
   if (!parsed) return null;
-  return { username: parsed.username, sub: parsed.sub };
+  return { username: parsed.username, sub: parsed.sub, role: parsed.role, permissions: parsed.permissions };
 }
 
 export function unauthorizedAdminResponse() {

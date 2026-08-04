@@ -1,6 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 
 import { getDbPool } from '@/lib/db';
+import { type AdminPermission, normalizeAdminPermissions } from '@/lib/admin-permissions';
 
 export type AdminUserRecord = {
   id: number;
@@ -11,6 +12,7 @@ export type AdminUserRecord = {
   googleSub: string | null;
   email: string | null;
   role: 'admin' | 'editor';
+  permissions: AdminPermission[];
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -26,6 +28,7 @@ type AdminUserRow = RowDataPacket & {
   google_sub: string | null;
   email: string | null;
   role: 'admin' | 'editor';
+  permissions: string | AdminPermission[] | null;
   is_active: number;
   last_login_at: Date | string | null;
   created_at: Date | string;
@@ -51,6 +54,7 @@ function mapRow(row: AdminUserRow): AdminUserRecord {
     googleSub: row.google_sub,
     email: row.email,
     role: row.role,
+    permissions: normalizeAdminPermissions(typeof row.permissions === 'string' ? JSON.parse(row.permissions) : row.permissions),
     isActive: row.is_active === 1,
     lastLoginAt: toIso(row.last_login_at),
     createdAt: toIso(row.created_at) ?? new Date().toISOString(),
@@ -68,7 +72,7 @@ export async function findAdminUserByLogin(login: string): Promise<AdminUserReco
   const pool = getDbPool();
   const [rows] = await pool.query<AdminUserRow[]>(
     `
-      SELECT id, login, display_name, password_hash, auth_provider, google_sub, email, role, is_active, last_login_at, created_at, updated_at
+      SELECT id, login, display_name, password_hash, auth_provider, google_sub, email, role, permissions, is_active, last_login_at, created_at, updated_at
       FROM admin_users
       WHERE login = ?
       LIMIT 1
@@ -85,7 +89,7 @@ export async function findAdminUserById(id: number): Promise<AdminUserRecord | n
   const pool = getDbPool();
   const [rows] = await pool.query<AdminUserRow[]>(
     `
-      SELECT id, login, display_name, password_hash, auth_provider, google_sub, email, role, is_active, last_login_at, created_at, updated_at
+      SELECT id, login, display_name, password_hash, auth_provider, google_sub, email, role, permissions, is_active, last_login_at, created_at, updated_at
       FROM admin_users
       WHERE id = ?
       LIMIT 1
@@ -106,12 +110,13 @@ export async function createAdminUserInDb(input: {
   googleSub?: string | null;
   email?: string | null;
   role?: 'admin' | 'editor';
+  permissions?: AdminPermission[];
 }): Promise<AdminUserRecord> {
   const pool = getDbPool();
   const [result] = await pool.query<ResultSetHeader>(
     `
-      INSERT INTO admin_users (login, display_name, password_hash, auth_provider, google_sub, email, role, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+      INSERT INTO admin_users (login, display_name, password_hash, auth_provider, google_sub, email, role, permissions, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
     `,
     [
       input.login,
@@ -120,13 +125,14 @@ export async function createAdminUserInDb(input: {
       input.authProvider ?? 'local',
       input.googleSub ?? null,
       input.email ?? null,
-      input.role ?? 'admin'
+      input.role ?? 'admin',
+      JSON.stringify(normalizeAdminPermissions(input.permissions))
     ]
   );
 
   const [rows] = await pool.query<AdminUserRow[]>(
     `
-      SELECT id, login, display_name, password_hash, auth_provider, google_sub, email, role, is_active, last_login_at, created_at, updated_at
+      SELECT id, login, display_name, password_hash, auth_provider, google_sub, email, role, permissions, is_active, last_login_at, created_at, updated_at
       FROM admin_users
       WHERE id = ?
       LIMIT 1
@@ -151,13 +157,19 @@ export async function listAdminUsersFromDb(): Promise<AdminUserRecord[]> {
   const pool = getDbPool();
   const [rows] = await pool.query<AdminUserRow[]>(
     `
-      SELECT id, login, display_name, password_hash, auth_provider, google_sub, email, role, is_active, last_login_at, created_at, updated_at
+      SELECT id, login, display_name, password_hash, auth_provider, google_sub, email, role, permissions, is_active, last_login_at, created_at, updated_at
       FROM admin_users
       ORDER BY created_at DESC
     `
   );
 
   return rows.map(mapRow);
+}
+
+export async function updateAdminUserPermissionsInDb(userId: number, permissions: AdminPermission[]): Promise<AdminUserRecord | null> {
+  const pool = getDbPool();
+  await pool.query('UPDATE admin_users SET permissions = ? WHERE id = ?', [JSON.stringify(normalizeAdminPermissions(permissions)), userId]);
+  return findAdminUserById(userId);
 }
 
 export async function deleteAdminUserById(userId: number): Promise<void> {
