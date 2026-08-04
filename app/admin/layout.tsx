@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 
 import AdminHeader from '@/components/admin/admin-header';
 import AdminNav from '@/components/admin/admin-nav';
+import AdminAccessGuard from '@/components/admin/admin-access-guard';
 import { getAdminSessionCookieName, getAdminSessionFromToken } from '@/lib/admin-auth';
 import { hasAdminPermission, resourceForAdminPath } from '@/lib/admin-permissions';
 
@@ -14,9 +15,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   const currentPath = !pathname || !pathname.startsWith('/') ? '/admin' : pathname;
   const sessionToken = requestCookies.get(getAdminSessionCookieName())?.value;
   const session = getAdminSessionFromToken(sessionToken);
-  const isAuthorized = session && hasAdminPermission(session.role, session.permissions, resourceForAdminPath(currentPath));
-
-  if (!isAuthorized) {
+  if (!session || !hasAdminPermission(session.role, session.permissions, resourceForAdminPath(currentPath))) {
     redirect(`/login?next=${encodeURIComponent(currentPath)}`);
   }
 
@@ -38,9 +37,11 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             <AdminNav />
           </aside>
 
-          <section className="min-w-0 rounded-3xl border border-brand/25 bg-white/95 p-4 shadow-sm sm:p-6 lg:p-7">
-            {children}
-          </section>
+          <AdminAccessGuard role={session.role} permissions={session.permissions}>
+            <section className="min-w-0 rounded-3xl border border-brand/25 bg-white/95 p-4 shadow-sm sm:p-6 lg:p-7">
+              {children}
+            </section>
+          </AdminAccessGuard>
         </div>
       </main>
     </>
