@@ -213,6 +213,28 @@ async function ensureUtilityMeteringSchema() {
         );
       }
 
+      const [readingPeriodIndexes] = await pool.query<Array<RowDataPacket & { Key_name: string }>>(
+        "SHOW INDEX FROM utility_meter_readings WHERE Key_name = 'uq_utility_meter_readings_point_month'"
+      );
+      if (readingPeriodIndexes.length === 0) {
+        await pool.query(
+          `
+            DELETE outdated
+            FROM utility_meter_readings outdated
+            INNER JOIN utility_meter_readings newer
+              ON newer.meter_point_id = outdated.meter_point_id
+             AND newer.period_month = outdated.period_month
+             AND (
+               newer.reading_date > outdated.reading_date
+               OR (newer.reading_date = outdated.reading_date AND newer.id > outdated.id)
+             )
+          `
+        );
+        await pool.query(
+          'ALTER TABLE utility_meter_readings ADD UNIQUE KEY uq_utility_meter_readings_point_month (meter_point_id, period_month)'
+        );
+      }
+
       const additions: Array<{ table: string; column: string; definition: string }> = [
         { table: 'utility_meter_rates', column: 'calculation_mode', definition: "ENUM('rate','fixed_amount') NOT NULL DEFAULT 'rate' AFTER includes_vat" },
         { table: 'utility_meter_rates', column: 'fixed_amount', definition: 'DECIMAL(18,2) NULL AFTER calculation_mode' },
@@ -1667,14 +1689,31 @@ export async function updateUtilityMeterReadingInDb(input: {
     );
     if (!existingRows[0]) throw new Error('Показник не знайдено.');
 
+    const [periodConflictRows] = await conn.query<Array<RowDataPacket & { id: number }>>(
+      `
+        SELECT id
+        FROM utility_meter_readings
+        WHERE meter_point_id = ?
+          AND period_month = ?
+          AND id <> ?
+        LIMIT 1
+      `,
+      [meterPointId, periodMonth, readingId]
+    );
+    const updatedReadingId = periodConflictRows[0]?.id ?? readingId;
+
     await conn.query(
       `
         UPDATE utility_meter_readings
         SET period_month = ?, reading_date = ?, reading_value = ?, status = 'submitted'
         WHERE id = ?
       `,
-      [periodMonth, input.readingDate, readingValue, readingId]
+      [periodMonth, input.readingDate, readingValue, updatedReadingId]
     );
+
+    if (updatedReadingId !== readingId) {
+      await conn.query('DELETE FROM utility_meter_readings WHERE id = ?', [readingId]);
+    }
 
     const [allRows] = await conn.query<Array<RowDataPacket & { id: number }>>(
       `
@@ -1690,7 +1729,7 @@ export async function updateUtilityMeterReadingInDb(input: {
         point,
         storeId: Number(point.storeId),
         readingId: row.id,
-        baselineValue: row.id === readingId ? previousValueOverride : undefined,
+        baselineValue: row.id === updatedReadingId ? previousValueOverride : undefined,
         preserveSavedPreviousValue: false
       });
     }
