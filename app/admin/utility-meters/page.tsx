@@ -516,11 +516,11 @@ export default function AdminUtilityMetersPage() {
   const addReadingsDisabled = !selectedStoreId || !hasConfiguredMeters || !hasRatesForSelectedPeriod || isCreatingAccessLink;
 
   return (
-    <main className="min-h-screen w-full bg-slate-50 px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
-      <div className="flex w-full max-w-none flex-col gap-5">
+    <main className="min-h-screen w-full bg-slate-50 px-3 py-4 text-slate-950 sm:px-4 sm:py-5 lg:px-5 xl:px-6">
+      <div className="flex w-full max-w-none flex-col gap-4 lg:gap-5">
         <section>
           <p className="text-sm font-semibold uppercase tracking-wide text-amber-700">Комунальні нарахування</p>
-          <h1 className="mt-1 text-3xl font-bold">Показники лічильників по магазинах</h1>
+          <h1 className="mt-1 text-2xl font-bold sm:text-3xl">Показники лічильників по магазинах</h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-600">
             Оберіть магазин, щоб бачити його лічильники, внесені показники, автоматичні перевірки та суму до оплати за період.
           </p>
@@ -542,7 +542,7 @@ export default function AdminUtilityMetersPage() {
               />
             </label>
 
-            <label className="block min-w-72 text-sm font-semibold text-slate-700">
+            <label className="block w-full text-sm font-semibold text-slate-700 sm:w-auto sm:min-w-64 xl:min-w-72">
               Магазин
               <select
                 value={selectedStoreId}
@@ -608,10 +608,10 @@ export default function AdminUtilityMetersPage() {
           <div className="rounded-lg bg-red-50 p-4 text-sm font-medium text-red-800 ring-1 ring-red-200">{payload.error}</div>
         ) : null}
 
-        <div className="grid w-full gap-5 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]">
-          <aside className="rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
+        <div className="grid w-full gap-4 lg:grid-cols-[240px_minmax(0,1fr)] xl:gap-5 2xl:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="min-w-0 rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
             <div className="px-2 pb-2 text-sm font-semibold text-slate-700">Магазини</div>
-            <div className="max-h-[640px] space-y-1 overflow-y-auto pr-1">
+            <div className="max-h-[520px] space-y-1 overflow-y-auto pr-1 2xl:max-h-[640px]">
               <button
                 type="button"
                 onClick={() => handleStoreChange('')}
@@ -733,7 +733,7 @@ export default function AdminUtilityMetersPage() {
 
                     <div className="overflow-hidden rounded-lg border border-slate-200">
                       <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <table className="min-w-[760px] divide-y divide-slate-200 text-sm">
                           <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
                             <tr>
                               <th className="px-3 py-3">Лічильник</th>
@@ -997,7 +997,7 @@ export default function AdminUtilityMetersPage() {
             </section>
 
             {payload.totals ? (
-              <section className="grid gap-3 md:grid-cols-5">
+              <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
                 <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
                   <div className="text-sm text-slate-500">Лічильники</div>
                   <div className="text-2xl font-bold">{payload.totals.meters}</div>
@@ -1022,8 +1022,8 @@ export default function AdminUtilityMetersPage() {
             ) : null}
 
             <section className="w-full overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
-              <div className="w-full overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <div className="w-full overflow-x-auto" tabIndex={0} aria-label="Таблиця показників лічильників. Прокрутіть горизонтально, щоб побачити всі колонки.">
+                <table className="min-w-[880px] divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
                     <tr>
                       <th className="px-3 py-3">Магазин</th>
