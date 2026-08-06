@@ -1258,6 +1258,7 @@ export async function listUtilityMeterReadingHistoryByMeterIdsInDb(input: {
         reading_date: Date | string;
         reading_value: string | number;
         previous_reading_id: number | null;
+        previous_reading_date: Date | string | null;
         submitted_by_user_id: number | null;
         submitted_by_name: string | null;
         source_kind: UtilityMeterReadingRecord['sourceKind'];
@@ -1288,6 +1289,7 @@ export async function listUtilityMeterReadingHistoryByMeterIdsInDb(input: {
         r.reading_value,
         r.client_mutation_id,
         r.previous_reading_id,
+        previous.reading_date AS previous_reading_date,
         r.submitted_by_user_id,
         r.submitted_by_name,
         r.source_kind,
@@ -1311,6 +1313,7 @@ export async function listUtilityMeterReadingHistoryByMeterIdsInDb(input: {
         c.validation_messages
       FROM utility_meter_readings r
       LEFT JOIN utility_meter_charges c ON c.reading_id = r.id
+      LEFT JOIN utility_meter_readings previous ON previous.id = r.previous_reading_id
       WHERE r.meter_point_id IN (${placeholders})
       ORDER BY meter_point_id ASC, reading_date DESC, id DESC
     `,
@@ -1328,11 +1331,13 @@ export async function listUtilityMeterReadingHistoryByMeterIdsInDb(input: {
     }
     countsByMeterId[meterPointId] = currentCount + 1;
     historyByMeterId[meterPointId] ??= [];
-    historyByMeterId[meterPointId].push({
-      reading: mapReading({
+    const reading = mapReading({
         ...(row as unknown as ReadingRow),
         period_month: row.reading_period_month
-      })!,
+      })!;
+    reading.previousReadingDate = toIsoDate(row.previous_reading_date);
+    historyByMeterId[meterPointId].push({
+      reading,
       charge: row.charge_id
         ? mapCharge({
             ...(row as unknown as ChargeRow),

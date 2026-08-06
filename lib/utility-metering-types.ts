@@ -44,6 +44,7 @@ export type UtilityMeterReadingRecord = {
   readingValue: number;
   clientMutationId?: string;
   previousReadingId?: string;
+  previousReadingDate?: string;
   submittedByUserId?: string;
   submittedByName: string;
   sourceKind: 'manual' | 'excel_import' | 'system';

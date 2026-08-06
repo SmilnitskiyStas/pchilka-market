@@ -299,9 +299,16 @@ export default function AdminUtilityMeterDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {history.map((item) => (
+                      {history.map((item) => {
+                        const currentMonth = item.reading.readingDate.slice(0, 7);
+                        const previousMonth = item.reading.previousReadingDate?.slice(0, 7);
+                        const periodLabel = previousMonth && previousMonth !== currentMonth
+                          ? `${previousMonth} → ${currentMonth}`
+                          : currentMonth;
+
+                        return (
                         <tr key={item.reading.id}>
-                          <td className="px-3 py-3 align-top font-medium">{item.reading.periodMonth.slice(0, 7)}</td>
+                          <td className="px-3 py-3 align-top font-medium">{periodLabel}</td>
                           <td className="px-3 py-3 align-top">{item.reading.readingDate}</td>
                           <td className="px-3 py-3 align-top">{item.reading.submittedByName || 'Не вказано'}</td>
                           <td className="px-3 py-3 align-top">{formatNumber(item.charge?.previousValue)}</td>
@@ -331,7 +338,8 @@ export default function AdminUtilityMeterDetailPage() {
                             <button type="button" onClick={() => startReadingEdit(item)} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900">Редагувати</button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
