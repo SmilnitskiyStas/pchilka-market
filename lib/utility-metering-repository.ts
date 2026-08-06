@@ -142,7 +142,9 @@ let utilityMeteringSchemaPromise: Promise<void> | null = null;
 
 function toIsoDate(value: Date | string | null | undefined) {
   if (!value) return '';
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (value instanceof Date) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
   return String(value).slice(0, 10);
 }
 function toNumberOrUndefined(value: string | number | null | undefined) {
