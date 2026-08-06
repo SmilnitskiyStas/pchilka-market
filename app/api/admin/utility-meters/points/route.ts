@@ -8,6 +8,7 @@ import {
   listUtilityMeterRatesInDb,
   listUtilityMeterReadingHistoryByMeterIdsInDb,
   listUtilityMetersForStoreInDb,
+  repairUtilityMeterReadingHistoryInDb,
   setUtilityMeterPointActiveStateInDb,
   updateUtilityMeterReadingInDb,
   updateUtilityMeterPointInDb
@@ -30,6 +31,7 @@ export async function GET(request: Request) {
         return NextResponse.json({ ok: false, error: 'Лічильник не знайдено.' }, { status: 404 });
       }
 
+      await repairUtilityMeterReadingHistoryInDb({ meterPointId });
       const historyByMeterId = await listUtilityMeterReadingHistoryByMeterIdsInDb({
         meterPointIds: [meterPointId],
         limitPerMeter: 60

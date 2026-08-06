@@ -1441,7 +1441,7 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
     utilityType: input.point.utilityType,
     previousValue:
       input.baselineValue ??
-      (input.preserveSavedPreviousValue === false ? undefined : savedPreviousValue) ??
+      (input.preserveSavedPreviousValue === true ? savedPreviousValue : undefined) ??
       (previous?.reading_value != null ? Number(previous.reading_value) : input.point.initialReadingValue),
     currentValue: Number(reading.reading_value),
     coefficient: input.point.coefficient,
@@ -1650,6 +1650,61 @@ export async function createUtilityMeterReadingInDb(input: {
       await conn.commit();
       return { periodMonth, calculation: calculationFresh };
     }
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}
+
+export async function repairUtilityMeterReadingHistoryInDb(input: { meterPointId: string | number }) {
+  const meterPointId = Number(input.meterPointId);
+  if (!Number.isFinite(meterPointId) || meterPointId <= 0) return false;
+
+  await ensureUtilityMeteringSchema();
+  const pool = getDbPool();
+  const [pointRows] = await pool.query<MeterPointRow[]>('SELECT * FROM utility_meter_points WHERE id = ? LIMIT 1', [meterPointId]);
+  const point = pointRows[0] ? mapMeterPoint(pointRows[0]) : null;
+  if (!point?.storeId) return false;
+
+  const [needsRepairRows] = await pool.query<Array<RowDataPacket & { id: number }>>(
+    `
+      SELECT r.id
+      FROM utility_meter_readings r
+      INNER JOIN utility_meter_charges c ON c.reading_id = r.id
+      INNER JOIN utility_meter_readings previous ON previous.id = r.previous_reading_id
+      WHERE r.meter_point_id = ?
+        AND c.previous_value = 0
+        AND previous.reading_value <> 0
+      LIMIT 1
+    `,
+    [meterPointId]
+  );
+  if (!needsRepairRows[0]) return false;
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [readingRows] = await conn.query<Array<RowDataPacket & { id: number }>>(
+      `
+        SELECT id
+        FROM utility_meter_readings
+        WHERE meter_point_id = ?
+        ORDER BY reading_date ASC, id ASC
+      `,
+      [meterPointId]
+    );
+    for (const reading of readingRows) {
+      await calculateAndSaveUtilityChargeForReadingInDb(conn, {
+        point,
+        storeId: Number(point.storeId),
+        readingId: reading.id,
+        preserveSavedPreviousValue: false
+      });
+    }
+    await conn.commit();
+    return true;
   } catch (error) {
     await conn.rollback();
     throw error;
