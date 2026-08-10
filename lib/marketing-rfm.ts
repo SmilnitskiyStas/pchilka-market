@@ -5,6 +5,7 @@ export type RfmSegmentId = 'champions' | 'loyal' | 'potential_loyalists' | 'new_
 export type RfmSegment = { id: RfmSegmentId; label: string; description: string; customers: number; turnover: number; averageCheck: number };
 export type RfmReport = { generatedAt: string; period: { from: string; to: string; days: number }; totals: { customers: number; orders: number; turnover: number; averageCheck: number }; segments: RfmSegment[]; recommendations: string[] };
 export type RfmSegmentDetail = { segment: RfmSegment; behavior: { orders: number; ordersPerCustomer: number; averageRecencyDays: number; latestVisit: string | null; averageLifetimeValue: number; totalLifetimeValue: number; busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; share: number }>; topHours: Array<{ label: string; share: number }> }; topProducts: Array<{ code: string; name: string; barcode: string | null; customers: number; orders: number; reach: number }>; recommendation: { trigger: string; action: string; offer: string; warning: string } };
+export type RfmSegmentBehavior = { busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; share: number }>; topHours: Array<{ label: string; share: number }> };
 type CustomerRow = { customer_id: string; orders: string; turnover: string; recency_days: string; latest_visit: string | null; r_score: string; f_score: string; m_score: string };
 
 const meta: Record<RfmSegmentId, Omit<RfmSegment, 'customers' | 'turnover' | 'averageCheck'>> = {
@@ -26,3 +27,29 @@ function segments(rows: CustomerRow[]) { const buckets = new Map<RfmSegmentId, {
 export async function getRfmReport(days: number): Promise<RfmReport> { const { normalizedDays, from, to } = period(days); const rows = await withMarketingSource((client) => customers(client, from, to)); const { buckets, list } = segments(rows); const orders = rows.reduce((sum, row) => sum + +row.orders, 0), turnover = rows.reduce((sum, row) => sum + +row.turnover, 0), champions = buckets.get('champions')!, risk = buckets.get('at_risk')!; return { generatedAt: new Date().toISOString(), period: { from, to, days: normalizedDays }, totals: { customers: rows.length, orders, turnover, averageCheck: orders ? turnover / orders : 0 }, segments: list, recommendations: [champions.customers ? `Збережіть «Чемпіонів»: персональні пропозиції та ранній доступ до акцій для ${number(champions.customers)} покупців.` : 'У вибраному періоді не знайдено достатньо даних для сегмента «Чемпіони».', risk.customers ? `Запустіть win-back кампанію для «Під ризиком»: ${number(risk.customers)} покупців.` : 'Сегмент «Під ризиком» поки що порожній.', 'Перед запуском кампанії перевіряйте маржинальність товарів і не трактуйте цей звіт як причинний ефект акції.'] }; }
 
 export async function getRfmSegmentDetail(days: number, segmentId: string): Promise<RfmSegmentDetail> { if (!ids.includes(segmentId as RfmSegmentId)) throw new Error('Невідомий RFM-сегмент.'); const id = segmentId as RfmSegmentId, { from, to } = period(days); return withMarketingSource(async (client) => { const selected = (await customers(client, from, to)).filter((row) => segmentFor(row) === id); if (!selected.length) throw new Error('У цьому сегменті немає покупців за вибраний період.'); const orders = selected.reduce((sum, row) => sum + +row.orders, 0), turnover = selected.reduce((sum, row) => sum + +row.turnover, 0), recency = selected.reduce((sum, row) => sum + +row.recency_days, 0) / selected.length, latestVisit = selected.map((row) => row.latest_visit).filter(Boolean).sort().at(-1) ?? null, recovery = ['at_risk', 'need_attention', 'about_to_sleep', 'lost'].includes(id); return { segment: { ...meta[id], customers: selected.length, turnover, averageCheck: orders ? turnover / orders : 0 }, behavior: { orders, ordersPerCustomer: orders / selected.length, averageRecencyDays: recency, latestVisit, averageLifetimeValue: turnover / selected.length, totalLifetimeValue: turnover, busiestWeekday: null, busiestHour: null, weekdayDistribution: [], topHours: [] }, topProducts: [], recommendation: recovery ? { trigger: `${number(selected.length)} покупців цього сегмента мають середню давність ${Math.round(recency)} днів.`, action: 'Спершу сформуйте окрему win-back аудиторію та протестуйте персональне повідомлення.', offer: 'Почніть з невеликого контрольованого тесту пропозиції.', warning: 'Не оцінюйте кампанію без контрольної групи.' } : { trigger: `${number(selected.length)} покупців сегмента мають середню давність ${Math.round(recency)} днів.`, action: 'Утримання через цінність, статус або ранній доступ — без масової знижки.', offer: 'Дайте ранній доступ до новинок або персональну добірку.', warning: 'Не девальвуйте лояльність постійними знижками.' } }; }); }
+
+export async function getRfmSegmentBehavior(days: number, segmentId: string): Promise<RfmSegmentBehavior> {
+  if (!ids.includes(segmentId as RfmSegmentId)) throw new Error('Невідомий RFM-сегмент.');
+  const id = segmentId as RfmSegmentId, { from, to } = period(days);
+  return withMarketingSource(async (client) => {
+    const selected = (await customers(client, from, to)).filter((row) => segmentFor(row) === id);
+    if (!selected.length) throw new Error('У цьому сегменті немає покупців за вибраний період.');
+    const result = await client.query<{ weekday: string; hour: string; orders: string }>(`
+      SELECT EXTRACT(DOW FROM date_order)::int::text AS weekday,
+        EXTRACT(HOUR FROM date_order)::int::text AS hour, COUNT(*)::text AS orders
+      FROM pos.order_client
+      WHERE date_order >= $1::date AND date_order < ($2::date + interval '1 day')
+        AND COALESCE(sum_order, 0) > 0 AND code_client = ANY($3::int[])
+      GROUP BY 1, 2
+    `, [from, to, selected.map((row) => Number(row.customer_id))]);
+    const total = selected.reduce((sum, row) => sum + Number(row.orders), 0);
+    const weekdayLabels = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    const weekdayDistribution = weekdayLabels.map((label, weekday) => ({
+      label, share: total ? result.rows.filter((row) => Number(row.weekday) === weekday).reduce((sum, row) => sum + Number(row.orders), 0) / total * 100 : 0
+    }));
+    const topHours = Array.from({ length: 24 }, (_, hour) => ({
+      label: `${String(hour).padStart(2, '0')}:00`, share: total ? result.rows.filter((row) => Number(row.hour) === hour).reduce((sum, row) => sum + Number(row.orders), 0) / total * 100 : 0
+    })).sort((a, b) => b.share - a.share).slice(0, 3);
+    return { busiestWeekday: weekdayDistribution.reduce((best, item) => item.share > best.share ? item : best, weekdayDistribution[0])?.label ?? null, busiestHour: topHours[0]?.label ?? null, weekdayDistribution, topHours };
+  });
+}

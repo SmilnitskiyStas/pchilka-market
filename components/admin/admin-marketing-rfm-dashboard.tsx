@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 
-import type { RfmReport, RfmSegmentDetail } from '@/lib/marketing-rfm';
+import type { RfmReport, RfmSegmentBehavior, RfmSegmentDetail } from '@/lib/marketing-rfm';
 
-type Payload = { ok?: boolean; report?: RfmReport; detail?: RfmSegmentDetail; error?: string };
+type Payload = { ok?: boolean; report?: RfmReport; detail?: RfmSegmentDetail; behavior?: RfmSegmentBehavior; error?: string };
 const number = (value: number) => value.toLocaleString('uk-UA');
 const money = (value: number) => `${Math.round(value).toLocaleString('uk-UA')} ₴`;
 
@@ -17,6 +17,9 @@ export default function AdminMarketingRfmDashboard() {
   const [detail, setDetail] = useState<RfmSegmentDetail | null>(null);
   const [detailError, setDetailError] = useState('');
   const [detailLoading, setDetailLoading] = useState(false);
+  const [behavior, setBehavior] = useState<RfmSegmentBehavior | null>(null);
+  const [behaviorLoading, setBehaviorLoading] = useState(false);
+  const [behaviorError, setBehaviorError] = useState('');
 
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError('');
@@ -29,8 +32,8 @@ export default function AdminMarketingRfmDashboard() {
   }, [days]);
 
   useEffect(() => {
-    if (!selected) { setDetail(null); return; }
-    const controller = new AbortController(); setDetailLoading(true); setDetailError('');
+    if (!selected) { setDetail(null); setBehavior(null); return; }
+    const controller = new AbortController(); setDetailLoading(true); setDetailError(''); setBehavior(null); setBehaviorError('');
     void fetch(`/api/admin/marketing/rfm/${selected}?days=${days}`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => ({ response, payload: await response.json() as Payload }))
       .then(({ response, payload }) => { if (!response.ok || !payload.ok || !payload.detail) throw new Error(payload.error ?? 'Не вдалося завантажити сегмент.'); setDetail(payload.detail); })
@@ -38,6 +41,21 @@ export default function AdminMarketingRfmDashboard() {
       .finally(() => setDetailLoading(false));
     return () => controller.abort();
   }, [days, selected]);
+
+  async function loadBehavior() {
+    if (!selected) return;
+    setBehaviorLoading(true); setBehaviorError('');
+    try {
+      const response = await fetch(`/api/admin/marketing/rfm/${selected}/behavior?days=${days}`, { cache: 'no-store' });
+      const payload = await response.json() as Payload;
+      if (!response.ok || !payload.ok || !payload.behavior) throw new Error(payload.error ?? 'Не вдалося завантажити поведінку.');
+      setBehavior(payload.behavior);
+    } catch (e) {
+      setBehaviorError(e instanceof Error ? e.message : 'Не вдалося завантажити поведінку.');
+    } finally { setBehaviorLoading(false); }
+  }
+
+  const activeBehavior = behavior ?? detail?.behavior;
 
   return <div>
     <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Маркетинг · локальні дані</p><h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">RFM-аналіз покупців</h1><p className="mt-2 max-w-3xl text-sm text-slate-600">Сегментація за давністю останньої покупки, частотою та сумою витрат.</p></div><label className="text-sm font-medium text-slate-700">Період <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="ml-2 rounded-xl border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-900"><option value={90}>90 днів</option><option value={180}>180 днів</option><option value={365}>Рік</option></select></label></div>
@@ -47,8 +65,8 @@ export default function AdminMarketingRfmDashboard() {
       <div className="mt-7 grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.8fr)]"><section><h2 className="text-lg font-bold text-slate-900">Сегменти</h2><p className="mt-1 text-sm text-slate-500">Натисніть сегмент, щоб відкрити деталізацію.</p><div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Сегмент</th><th className="px-4 py-3 text-right">Покупці</th><th className="px-4 py-3 text-right">Оборот</th><th className="px-4 py-3 text-right">Сер. чек</th></tr></thead><tbody>{report.segments.map((segment) => <tr key={segment.id} className={`border-t border-slate-100 ${selected === segment.id ? 'bg-brand/5' : ''}`}><td className="px-4 py-3"><button type="button" onClick={() => setSelected(segment.id)} className="text-left"><span className="font-semibold text-brand hover:underline">{segment.label}</span><span className="mt-0.5 block max-w-md text-xs text-slate-500">{segment.description}</span></button></td><td className="px-4 py-3 text-right font-medium">{number(segment.customers)}</td><td className="px-4 py-3 text-right">{money(segment.turnover)}</td><td className="px-4 py-3 text-right">{money(segment.averageCheck)}</td></tr>)}</tbody></table></div></section><aside className="rounded-2xl border border-brand/25 bg-brand/5 p-5"><h2 className="text-lg font-bold text-slate-900">Перші рекомендації</h2><ul className="mt-3 space-y-3 text-sm leading-6 text-slate-700">{report.recommendations.map((item) => <li key={item} className="border-b border-brand/10 pb-3 last:border-0 last:pb-0">{item}</li>)}</ul></aside></div>
       {detailLoading ? <p className="mt-6 rounded-2xl bg-slate-50 p-5 text-sm text-slate-600">Завантажую деталізацію сегмента…</p> : null}{detailError ? <p className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">{detailError}</p> : null}
       {detail ? <section className="mt-7 rounded-3xl border border-brand/25 bg-white p-5 sm:p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Деталізація сегмента</p><h2 className="mt-1 text-2xl font-bold text-slate-900">{detail.segment.label}</h2><p className="mt-1 text-sm text-slate-600">{detail.segment.description}</p></div><button type="button" onClick={() => setSelected(null)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">Закрити</button></div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[['Чеків', number(detail.behavior.orders)], ['Чеків / покупця', detail.behavior.ordersPerCustomer.toFixed(1)], ['Сер. давність', `${Math.round(detail.behavior.averageRecencyDays)} дн.`], ['Сер. оборот за період', money(detail.behavior.averageLifetimeValue)], ['Останній візит', detail.behavior.latestVisit ?? '—'], ['Піковий день', detail.behavior.busiestWeekday ?? 'Потребує окремого розрахунку'], ['Пікова година', detail.behavior.busiestHour ?? 'Потребує окремого розрахунку'], ['Сумарний оборот', money(detail.behavior.totalLifetimeValue)]].map(([label, value]) => <div key={label} className="rounded-2xl bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-bold text-slate-900">{value}</p></div>)}</div>
-        <div className="mt-7 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]"><div><h3 className="text-lg font-bold text-slate-900">Топ товарів за охопленням</h3><div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Цей важкий розрахунок винесено з відкриття сегмента. Наступним кроком завантажуватимемо його окремо з оптимізованої локальної вітрини даних.</div></div><div><h3 className="text-lg font-bold text-slate-900">Поведінка покупців</h3><div className="mt-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">Розподіл за днями та годинами також буде завантажуватися окремим легким запитом після підготовки індексованої вітрини.</div></div></div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[['Чеків', number(detail.behavior.orders)], ['Чеків / покупця', detail.behavior.ordersPerCustomer.toFixed(1)], ['Сер. давність', `${Math.round(detail.behavior.averageRecencyDays)} дн.`], ['Сер. оборот за період', money(detail.behavior.averageLifetimeValue)], ['Останній візит', detail.behavior.latestVisit ?? '—'], ['Піковий день', activeBehavior?.busiestWeekday ?? 'Потребує окремого розрахунку'], ['Пікова година', activeBehavior?.busiestHour ?? 'Потребує окремого розрахунку'], ['Сумарний оборот', money(detail.behavior.totalLifetimeValue)]].map(([label, value]) => <div key={label} className="rounded-2xl bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-bold text-slate-900">{value}</p></div>)}</div>
+        <div className="mt-7 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]"><div><h3 className="text-lg font-bold text-slate-900">Топ товарів за охопленням</h3><div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Цей важкий розрахунок винесено з відкриття сегмента. Наступним кроком завантажуватимемо його окремо з оптимізованої локальної вітрини даних.</div></div><div><h3 className="text-lg font-bold text-slate-900">Поведінка покупців</h3>{!behavior ? <div className="mt-3 rounded-2xl bg-slate-50 p-4"><p className="text-sm text-slate-600">Розподіл за днями та годинами завантажується окремо, щоб не затримувати відкриття сегмента.</p><button type="button" onClick={() => void loadBehavior()} disabled={behaviorLoading} className="mt-3 rounded-xl bg-brand px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">{behaviorLoading ? 'Розраховую…' : 'Завантажити поведінку'}</button>{behaviorError ? <p className="mt-3 text-sm text-red-700">{behaviorError}</p> : null}</div> : <div className="mt-3 rounded-2xl bg-slate-50 p-4"><p className="text-sm font-semibold text-slate-800">Розподіл за днями</p><div className="mt-3 space-y-2">{behavior.weekdayDistribution.map((item) => <div key={item.label} className="flex items-center gap-2 text-xs"><span className="w-6 text-slate-600">{item.label}</span><span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-brand" style={{ width: `${item.share}%` }} /></span><span className="w-10 text-right text-slate-600">{item.share.toFixed(1)}%</span></div>)}</div><p className="mt-4 text-sm font-semibold text-slate-800">Топ-3 години</p><p className="mt-1 text-sm text-slate-600">{behavior.topHours.map((item) => `${item.label} (${item.share.toFixed(1)}%)`).join(' · ')}</p></div>}</div></div>
         <div className="mt-6 rounded-2xl border border-brand/20 bg-brand/5 p-5"><h3 className="text-lg font-bold text-slate-900">Рекомендація для сегмента</h3><dl className="mt-3 grid gap-3 text-sm">{[['Тригер', detail.recommendation.trigger], ['Дія', detail.recommendation.action], ['Оффер', detail.recommendation.offer], ['Застереження', detail.recommendation.warning]].map(([title, text]) => <div key={title}><dt className="font-semibold text-slate-800">{title}</dt><dd className="mt-1 text-slate-600">{text}</dd></div>)}</dl></div>
       </section> : null}</> : null}
   </div>;
