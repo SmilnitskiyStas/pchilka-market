@@ -9,6 +9,7 @@ export const ADMIN_RESOURCES = [
   'own_brand',
   'seo',
   'integrations',
+  'marketing',
   'telegram',
   'inventory',
   'utility_meters',
@@ -30,6 +31,7 @@ export const ADMIN_PERMISSION_OPTIONS: Array<{ resource: AdminResource; label: s
   { resource: 'own_brand', label: 'Власне виробництво' },
   { resource: 'seo', label: 'SEO' },
   { resource: 'integrations', label: 'Інтеграції' },
+  { resource: 'marketing', label: 'Маркетингова аналітика' },
   { resource: 'telegram', label: 'Telegram-бот' },
   { resource: 'inventory', label: 'Інвентар' },
   { resource: 'utility_meters', label: 'Комунальні нарахування' },
@@ -70,6 +72,7 @@ export function resourceForAdminPath(pathname: string): AdminResource {
   if (pathname.includes('/network') || pathname.includes('/stores') || pathname.includes('/site-profile')) return 'network';
   if (pathname.includes('/seo')) return 'seo';
   if (pathname.includes('/integrations')) return 'integrations';
+  if (pathname.includes('/marketing')) return 'marketing';
   if (pathname.includes('/fun-telegram')) return 'telegram';
   if (pathname.includes('/own-brand')) return 'own_brand';
   if (pathname.includes('/content') || pathname.includes('/blog')) return 'content';
