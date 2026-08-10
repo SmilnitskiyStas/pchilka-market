@@ -608,36 +608,7 @@ export default function AdminUtilityMetersPage() {
           <div className="rounded-lg bg-red-50 p-4 text-sm font-medium text-red-800 ring-1 ring-red-200">{payload.error}</div>
         ) : null}
 
-        <div className="grid w-full gap-4 xl:gap-5 2xl:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="min-w-0 rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
-            <div className="px-2 pb-2 text-sm font-semibold text-slate-700">Магазини</div>
-            <div className="max-h-[360px] space-y-1 overflow-y-auto pr-1 lg:grid lg:max-h-[220px] lg:grid-cols-3 lg:gap-1 lg:space-y-0 xl:grid-cols-4 2xl:block 2xl:max-h-[640px] 2xl:space-y-1">
-              <button
-                type="button"
-                onClick={() => handleStoreChange('')}
-                className={`w-full rounded-md px-3 py-2 text-left text-sm ${
-                  selectedStoreId === '' ? 'bg-amber-100 font-semibold text-slate-950' : 'text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                Усі магазини
-              </button>
-              {activeStores.map((store) => (
-                <button
-                  key={store.id}
-                  type="button"
-                  onClick={() => handleStoreChange(store.id)}
-                  className={`w-full rounded-md px-3 py-2 text-left text-sm ${
-                    selectedStoreId === store.id ? 'bg-amber-100 font-semibold text-slate-950' : 'text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <span className="block">{store.storeCode || `#${store.id}`}</span>
-                  <span className="block truncate text-xs text-slate-500">{store.name || store.addressLine}</span>
-                </button>
-              ))}
-            </div>
-          </aside>
-
-          <div className="flex min-w-0 w-full flex-col gap-5">
+        <div className="flex min-w-0 w-full flex-col gap-5">
             <section className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -1084,7 +1055,6 @@ export default function AdminUtilityMetersPage() {
                 </table>
               </div>
             </section>
-          </div>
         </div>
       </div>
     </main>
