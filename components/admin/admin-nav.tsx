@@ -141,6 +141,7 @@ export default function AdminNav() {
         children: [
           { href: '/admin/utility-meters', label: 'Лічильники та показники' },
           { href: '/admin/utility-meters/missing', label: 'Не внесені показники' },
+          { href: '/admin/utility-meters/missing-rates', label: 'Не внесені тарифи' },
           { href: '/admin/utility-meters/rates', label: 'Тарифи' },
           { href: '/admin/utility-meters/document', label: 'Документ на оплату' }
         ]
