@@ -49,7 +49,7 @@ export async function withMarketingSource<T>(callback: (client: pg.Client) => Pr
     ...getMarketingSourceConfig(),
     application_name: 'pchilka_marketing_rfm',
     connectionTimeoutMillis: Number(process.env.MARKETING_SOURCE_CONNECT_TIMEOUT_MS ?? 10_000),
-    statement_timeout: Number(process.env.MARKETING_SOURCE_STATEMENT_TIMEOUT_MS ?? 60_000),
+    statement_timeout: Number(process.env.MARKETING_SOURCE_STATEMENT_TIMEOUT_MS ?? 180_000),
     options: '-c default_transaction_read_only=on'
   });
   await client.connect();
