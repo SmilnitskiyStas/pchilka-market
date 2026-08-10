@@ -608,10 +608,10 @@ export default function AdminUtilityMetersPage() {
           <div className="rounded-lg bg-red-50 p-4 text-sm font-medium text-red-800 ring-1 ring-red-200">{payload.error}</div>
         ) : null}
 
-        <div className="grid w-full gap-4 lg:grid-cols-[240px_minmax(0,1fr)] xl:gap-5 2xl:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="grid w-full gap-4 xl:gap-5 2xl:grid-cols-[300px_minmax(0,1fr)]">
           <aside className="min-w-0 rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
             <div className="px-2 pb-2 text-sm font-semibold text-slate-700">Магазини</div>
-            <div className="max-h-[520px] space-y-1 overflow-y-auto pr-1 2xl:max-h-[640px]">
+            <div className="max-h-[360px] space-y-1 overflow-y-auto pr-1 lg:grid lg:max-h-[220px] lg:grid-cols-3 lg:gap-1 lg:space-y-0 xl:grid-cols-4 2xl:block 2xl:max-h-[640px] 2xl:space-y-1">
               <button
                 type="button"
                 onClick={() => handleStoreChange('')}
@@ -1023,12 +1023,12 @@ export default function AdminUtilityMetersPage() {
 
             <section className="w-full overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
               <div className="w-full overflow-x-auto" tabIndex={0} aria-label="Таблиця показників лічильників. Прокрутіть горизонтально, щоб побачити всі колонки.">
-                <table className="min-w-[880px] divide-y divide-slate-200 text-sm">
+                <table className="w-full min-w-0 divide-y divide-slate-200 text-sm 2xl:min-w-[880px]">
                   <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
                     <tr>
                       <th className="px-3 py-3">Магазин</th>
                       <th className="px-3 py-3">Лічильник</th>
-                      <th className="px-3 py-3">Власник</th>
+                      <th className="hidden px-3 py-3 2xl:table-cell">Власник</th>
                       <th className="px-3 py-3">Показник</th>
                       <th className="px-3 py-3">Споживання</th>
                       <th className="px-3 py-3">Сума</th>
@@ -1054,7 +1054,7 @@ export default function AdminUtilityMetersPage() {
                             <div className="text-xs text-slate-500">{item.meterNumber || 'Без номера'}</div>
                           </Link>
                         </td>
-                        <td className="px-3 py-3 align-top">{getMeterOwnerLabel(item)}</td>
+                        <td className="hidden px-3 py-3 align-top 2xl:table-cell">{getMeterOwnerLabel(item)}</td>
                         <td className="px-3 py-3 align-top">{item.reading ? item.reading.readingValue : 'Не подано'}</td>
                         <td className="px-3 py-3 align-top">{item.charge?.consumption ?? '—'}</td>
                         <td className="px-3 py-3 align-top">{money(item.charge?.amount)}</td>
