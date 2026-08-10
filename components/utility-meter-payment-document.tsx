@@ -57,7 +57,7 @@ export function UtilityMeterPaymentDocument({ document, actions }: Props) {
                   <th className="px-3 py-3">Показники / дата внесення</th>
                   <th className="px-3 py-3">Споживання</th>
                   <th className="px-3 py-3">Тариф / сума з рахунку</th>
-                  <th className="px-3 py-3 text-right">Сума, грн</th>
+                  <th className="px-3 py-3 text-right">Сума з / без ПДВ, грн</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -104,7 +104,10 @@ export function UtilityMeterPaymentDocument({ document, actions }: Props) {
                         item.rate ?? '—'
                       )}
                     </td>
-                    <td className="px-3 py-3 text-right align-top">{formatUtilityMoney(item.amount)}</td>
+                    <td className="px-3 py-3 text-right align-top">
+                      <div className="font-medium">З ПДВ: {formatUtilityMoney(item.amountWithVat)}</div>
+                      <div className="mt-1 text-xs text-slate-600">Без ПДВ: {formatUtilityMoney(item.amountWithoutVat)}</div>
+                    </td>
                   </tr>
                 ))}
                 {document.rows.length === 0 ? (
@@ -120,7 +123,10 @@ export function UtilityMeterPaymentDocument({ document, actions }: Props) {
                   <td className="px-3 py-3 text-right font-bold" colSpan={7}>
                     Разом
                   </td>
-                  <td className="px-3 py-3 text-right font-bold">{formatUtilityMoney(document.total)}</td>
+                  <td className="px-3 py-3 text-right font-bold">
+                    <div>З ПДВ: {formatUtilityMoney(document.totalWithVat)}</div>
+                    <div className="mt-1 text-xs text-slate-600">Без ПДВ: {formatUtilityMoney(document.totalWithoutVat)}</div>
+                  </td>
                 </tr>
               </tfoot>
             </table>

@@ -85,7 +85,7 @@ function normalizePeriodMonth(value: string | null) {
 }
 
 function getStoreLabel(store: StoreView) {
-  return [store.storeCode, store.name || store.addressLine].filter(Boolean).join(' · ') || `Магазин #${store.id}`;
+  return [store.storeCode, store.city, store.addressLine].filter(Boolean).join(' · ') || store.name || `Магазин #${store.id}`;
 }
 
 function getOwnerKindLabel(ownerKind: UtilityMeterPointRecord['ownerKind']) {
@@ -147,6 +147,11 @@ export default function AdminUtilityMeterRatesPage() {
   const metersForSelectedUtility = useMemo(
     () => meters.filter((meter) => meter.utilityType === form.utilityType),
     [meters, form.utilityType]
+  );
+  const activeMeters = useMemo(() => meters.filter((meter) => meter.isActive), [meters]);
+  const metersWithConfiguredRates = useMemo(
+    () => activeMeters.filter((meter) => rates.some((rate) => rate.meterPointId === meter.id || (!rate.meterPointId && rate.utilityType === meter.utilityType))),
+    [activeMeters, rates]
   );
 
   async function loadStores() {
@@ -594,6 +599,27 @@ export default function AdminUtilityMeterRatesPage() {
                 {isLoading ? 'Оновлення...' : 'Оновити'}
               </button>
             </div>
+
+            {selectedStoreId ? (
+              <div className="mt-4">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-md bg-slate-50 p-3 text-sm"><div className="text-slate-500">Активні лічильники</div><div className="mt-1 text-xl font-bold">{activeMeters.length}</div></div>
+                  <div className="rounded-md bg-emerald-50 p-3 text-sm"><div className="text-emerald-700">З тарифом на період</div><div className="mt-1 text-xl font-bold text-emerald-800">{metersWithConfiguredRates.length}</div></div>
+                  <div className="rounded-md bg-amber-50 p-3 text-sm"><div className="text-amber-700">Потрібно заповнити</div><div className="mt-1 text-xl font-bold text-amber-800">{activeMeters.length - metersWithConfiguredRates.length}</div></div>
+                </div>
+                <div className="mt-3 overflow-x-auto rounded-md border border-slate-200">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-3 py-2">Лічильник</th><th className="px-3 py-2">Послуга</th><th className="px-3 py-2">Тариф на {periodMonth.slice(0, 7)}</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {activeMeters.map((meter) => {
+                        const configured = metersWithConfiguredRates.some((item) => item.id === meter.id);
+                        return <tr key={meter.id}><td className="px-3 py-2"><div className="font-medium">{meter.utilityLabel}</div><div className="text-xs text-slate-500">{meter.meterNumber || 'Без номера'}</div></td><td className="px-3 py-2">{UTILITY_TYPE_OPTIONS.find((item) => item.value === meter.utilityType)?.label ?? meter.utilityType}</td><td className="px-3 py-2"><span className={`rounded px-2 py-1 text-xs font-semibold ${configured ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{configured ? 'Вказано' : 'Не вказано'}</span></td></tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
 
             {!selectedStoreId ? (
               <div className="mt-4 rounded-md bg-slate-50 p-4 text-sm text-slate-600">Оберіть магазин, щоб переглянути та додати тарифи.</div>

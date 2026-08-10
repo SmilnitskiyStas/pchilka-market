@@ -160,7 +160,7 @@ function money(value?: number) {
 }
 
 function getStoreLabel(store: StoreView) {
-  return [store.storeCode, store.name || store.addressLine].filter(Boolean).join(' · ') || `Магазин #${store.id}`;
+  return [store.storeCode, store.city, store.addressLine].filter(Boolean).join(' · ') || store.name || `Магазин #${store.id}`;
 }
 
 function getOwnerKindLabel(ownerKind: UtilityMeterOwnerKind) {

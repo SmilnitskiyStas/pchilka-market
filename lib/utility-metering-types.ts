@@ -65,6 +65,9 @@ export type UtilityMeterChargeRecord = {
   fixedAmount?: number;
   invoiceReference: string;
   amount?: number;
+  includesVat: boolean;
+  amountWithoutVat?: number;
+  amountWithVat?: number;
   validationStatus: UtilityValidationStatus;
   validationMessages: string[];
 };

@@ -37,6 +37,9 @@ export type UtilityPaymentDocumentRow = {
   fixedAmount?: number;
   invoiceReference: string;
   amount?: number;
+  includesVat: boolean;
+  amountWithoutVat?: number;
+  amountWithVat?: number;
 };
 
 export type UtilityPaymentDocumentData = {
@@ -48,6 +51,8 @@ export type UtilityPaymentDocumentData = {
   storeCode: string;
   storeLabel: string;
   total: number;
+  totalWithoutVat: number;
+  totalWithVat: number;
   rows: UtilityPaymentDocumentRow[];
 };
 
@@ -135,7 +140,10 @@ export async function getUtilityPaymentDocumentData(input: {
         calculationMode: item.charge?.calculationMode ?? 'rate',
         fixedAmount: item.charge?.fixedAmount,
         invoiceReference: item.charge?.invoiceReference ?? '',
-        amount: item.charge?.amount
+        amount: item.charge?.amount,
+        includesVat: item.charge?.includesVat ?? true,
+        amountWithoutVat: item.charge?.amountWithoutVat,
+        amountWithVat: item.charge?.amountWithVat
       };
     });
 
@@ -153,6 +161,8 @@ export async function getUtilityPaymentDocumentData(input: {
           ? [store.storeCode, store.name || store.addressLine].filter(Boolean).join(' · ')
           : 'Усі магазини',
     total: rows.reduce((sum, item) => sum + (item.amount ?? 0), 0),
+    totalWithoutVat: rows.reduce((sum, item) => sum + (item.amountWithoutVat ?? 0), 0),
+    totalWithVat: rows.reduce((sum, item) => sum + (item.amountWithVat ?? 0), 0),
     rows
   } satisfies UtilityPaymentDocumentData;
 }

@@ -70,6 +70,9 @@ type ChargeRow = RowDataPacket & {
   coefficient: string | number;
   rate: string | number | null;
   amount: string | number | null;
+  includes_vat?: number | null;
+  amount_without_vat?: string | number | null;
+  amount_with_vat?: string | number | null;
   calculation_mode: UtilityChargeCalculationMode;
   fixed_amount: string | number | null;
   invoice_reference: string | null;
@@ -243,7 +246,10 @@ async function ensureUtilityMeteringSchema() {
         { table: 'utility_meter_rates', column: 'invoice_reference', definition: 'VARCHAR(255) NULL AFTER fixed_amount' },
         { table: 'utility_meter_charges', column: 'calculation_mode', definition: "ENUM('rate','fixed_amount') NOT NULL DEFAULT 'rate' AFTER amount" },
         { table: 'utility_meter_charges', column: 'fixed_amount', definition: 'DECIMAL(18,2) NULL AFTER calculation_mode' },
-        { table: 'utility_meter_charges', column: 'invoice_reference', definition: 'VARCHAR(255) NULL AFTER fixed_amount' }
+        { table: 'utility_meter_charges', column: 'invoice_reference', definition: 'VARCHAR(255) NULL AFTER fixed_amount' },
+        { table: 'utility_meter_charges', column: 'includes_vat', definition: 'TINYINT(1) NOT NULL DEFAULT 1 AFTER invoice_reference' },
+        { table: 'utility_meter_charges', column: 'amount_without_vat', definition: 'DECIMAL(18,2) NULL AFTER amount' },
+        { table: 'utility_meter_charges', column: 'amount_with_vat', definition: 'DECIMAL(18,2) NULL AFTER amount_without_vat' }
       ];
       for (const addition of additions) {
         const [columns] = await pool.query<Array<RowDataPacket & { Field: string }>>(
@@ -320,6 +326,13 @@ function mapCharge(row?: ChargeRow): UtilityMeterChargeRecord | undefined {
     }
   }
 
+  const amount = toNumberOrUndefined(row.amount);
+  const includesVat = row.includes_vat !== 0;
+  const amountWithoutVat = toNumberOrUndefined(row.amount_without_vat) ??
+    (amount == null ? undefined : Math.round(((includesVat ? amount / 1.2 : amount) + Number.EPSILON) * 100) / 100);
+  const amountWithVat = toNumberOrUndefined(row.amount_with_vat) ??
+    (amount == null ? undefined : Math.round(((includesVat ? amount : amount * 1.2) + Number.EPSILON) * 100) / 100);
+
   return {
     id: String(row.id),
     meterPointId: String(row.meter_point_id),
@@ -333,7 +346,10 @@ function mapCharge(row?: ChargeRow): UtilityMeterChargeRecord | undefined {
     calculationMode: row.calculation_mode === 'fixed_amount' ? 'fixed_amount' : 'rate',
     fixedAmount: toNumberOrUndefined(row.fixed_amount),
     invoiceReference: row.invoice_reference ?? '',
-    amount: toNumberOrUndefined(row.amount),
+    amount,
+    includesVat,
+    amountWithoutVat,
+    amountWithVat,
     validationStatus: row.validation_status,
     validationMessages
   };
@@ -1164,6 +1180,9 @@ export async function listUtilityMeterReviewInDb(input: {
     charge_id: number | null;
     reading_meter_point_id: number | null;
     charge_meter_point_id: number | null;
+    charge_includes_vat: number | null;
+    charge_amount_without_vat: string | number | null;
+    charge_amount_with_vat: string | number | null;
   }>>(
     `
       SELECT
@@ -1190,6 +1209,9 @@ export async function listUtilityMeterReviewInDb(input: {
         c.coefficient AS charge_coefficient,
         c.rate,
         c.amount,
+        c.includes_vat AS charge_includes_vat,
+        c.amount_without_vat AS charge_amount_without_vat,
+        c.amount_with_vat AS charge_amount_with_vat,
         c.calculation_mode,
         c.fixed_amount,
         c.invoice_reference,
@@ -1224,7 +1246,10 @@ export async function listUtilityMeterReviewInDb(input: {
           meter_point_id: Number(row.charge_meter_point_id),
           reading_id: Number(row.reading_id),
           period_month: row.charge_period_month,
-          coefficient: row.charge_coefficient
+          coefficient: row.charge_coefficient,
+          includes_vat: row.charge_includes_vat,
+          amount_without_vat: row.charge_amount_without_vat,
+          amount_with_vat: row.charge_amount_with_vat
         } as ChargeRow)
       : undefined;
     return { ...point, reading, charge };
@@ -1273,6 +1298,9 @@ export async function listUtilityMeterReadingHistoryByMeterIdsInDb(input: {
         charge_coefficient: string | number | null;
         rate: string | number | null;
         amount: string | number | null;
+        includes_vat: number | null;
+        amount_without_vat: string | number | null;
+        amount_with_vat: string | number | null;
         validation_status: UtilityMeterChargeRecord['validationStatus'] | null;
         validation_messages: string | string[] | null;
       } & {
@@ -1306,6 +1334,9 @@ export async function listUtilityMeterReadingHistoryByMeterIdsInDb(input: {
         c.coefficient AS charge_coefficient,
         c.rate,
         c.amount,
+        c.includes_vat,
+        c.amount_without_vat,
+        c.amount_with_vat,
         c.calculation_mode,
         c.fixed_amount,
         c.invoice_reference,
@@ -1408,12 +1439,13 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
 
   const [rateRows] = await conn.query<Array<RowDataPacket & {
     rate: string | number;
+    includes_vat: number;
     calculation_mode: UtilityChargeCalculationMode;
     fixed_amount: string | number | null;
     invoice_reference: string | null;
   }>>(
     `
-      SELECT rate, calculation_mode, fixed_amount, invoice_reference
+      SELECT rate, includes_vat, calculation_mode, fixed_amount, invoice_reference
       FROM utility_meter_rates
       WHERE period_month <= ?
         AND utility_type = ?
@@ -1451,6 +1483,13 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
     recentConsumptions: recentRows.map((row) => Number(row.consumption)).filter(Number.isFinite),
     periodMonth: toIsoDate(reading.period_month)
   });
+  const includesVat = rateRows[0]?.includes_vat !== 0;
+  const amountWithoutVat = calculation.amount == null
+    ? undefined
+    : Math.round(((includesVat ? calculation.amount / 1.2 : calculation.amount) + Number.EPSILON) * 100) / 100;
+  const amountWithVat = calculation.amount == null
+    ? undefined
+    : Math.round(((includesVat ? calculation.amount : calculation.amount * 1.2) + Number.EPSILON) * 100) / 100;
 
   await conn.query(
     `
@@ -1465,9 +1504,9 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
     `
       INSERT INTO utility_meter_charges (
         meter_point_id, reading_id, period_month, previous_value, current_value,
-        consumption, coefficient, rate, amount, calculation_mode, fixed_amount, invoice_reference, validation_status, validation_messages
+        consumption, coefficient, rate, amount, amount_without_vat, amount_with_vat, calculation_mode, fixed_amount, invoice_reference, includes_vat, validation_status, validation_messages
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON))
       ON DUPLICATE KEY UPDATE
         previous_value = VALUES(previous_value),
         current_value = VALUES(current_value),
@@ -1475,9 +1514,12 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
         coefficient = VALUES(coefficient),
         rate = VALUES(rate),
         amount = VALUES(amount),
+        amount_without_vat = VALUES(amount_without_vat),
+        amount_with_vat = VALUES(amount_with_vat),
         calculation_mode = VALUES(calculation_mode),
         fixed_amount = VALUES(fixed_amount),
         invoice_reference = VALUES(invoice_reference),
+        includes_vat = VALUES(includes_vat),
         validation_status = VALUES(validation_status),
         validation_messages = VALUES(validation_messages)
     `,
@@ -1491,9 +1533,12 @@ async function calculateAndSaveUtilityChargeForReadingInDb(
       calculation.coefficient,
       calculation.rate ?? null,
       calculation.amount ?? null,
+      amountWithoutVat ?? null,
+      amountWithVat ?? null,
       calculation.calculationMode,
       calculation.fixedAmount ?? null,
       rateRows[0]?.invoice_reference ?? null,
+      includesVat ? 1 : 0,
       calculation.validationStatus,
       JSON.stringify(calculation.validationMessages)
     ]
