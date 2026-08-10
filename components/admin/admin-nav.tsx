@@ -127,6 +127,7 @@ export default function AdminNav() {
         label: 'Маркетинг',
         children: [
           { href: '/admin/marketing/rfm', label: 'RFM-аналіз' },
+          { href: '/admin/marketing/migration', label: 'Міграція покупців' },
           { href: '/admin/promotions', label: 'Акції' },
           { href: '/admin/home-slides', label: 'Банери' },
           { href: '/admin/media', label: 'Медіафайли' },

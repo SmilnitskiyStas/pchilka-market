@@ -1,0 +1,7 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Міграція покупців | Маркетинг | Pchilka Market' };
+
+export default function MarketingMigrationPage() {
+  return <div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Маркетинг · ідентифіковані покупці</p><h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Міграція покупців між магазинами</h1><p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">Цей блок порівнюватиме основний магазин кожного покупця у двох однакових періодах. До розрахунку потрапляють лише чеки з прив’язаним клієнтом Uployal; анонімні касові продажі не впливають на результат.</p><div className="mt-7 grid gap-3 md:grid-cols-2 xl:grid-cols-4">{[['Залишилися','Покупці, для яких основний магазин не змінився'],['Перейшли','Змінили основний магазин у новому періоді'],['Нові для магазину','Купували зараз, але не купували раніше'],['Перестали купувати','Купували раніше, але не повернулися']].map(([title, text]) => <section key={title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><h2 className="font-semibold text-slate-900">{title}</h2><p className="mt-2 text-sm text-slate-600">{text}</p></section>)}</div><p className="mt-7 rounded-2xl border border-brand/25 bg-brand/5 p-4 text-sm text-slate-700">Наступний технічний крок цього блоку — додати агрегований локальний зріз «клієнт × магазин × період». Він дозволить показувати реальні переходи між конкретними магазинами без повільного сканування всіх чеків при кожному відкритті.</p></div>;
+}
