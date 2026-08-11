@@ -6,7 +6,7 @@ export type RfmSegment = { id: RfmSegmentId; label: string; description: string;
 export type RfmReport = { generatedAt: string; period: { from: string; to: string; days: number }; totals: { customers: number; orders: number; turnover: number; averageCheck: number; registeredCustomers: number }; segments: RfmSegment[]; recommendations: string[] };
 export type RfmSegmentDetail = { segment: RfmSegment; behavior: { orders: number; ordersPerCustomer: number; averageRecencyDays: number; latestVisit: string | null; averageLifetimeValue: number; totalLifetimeValue: number; busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; share: number }>; topHours: Array<{ label: string; share: number }> }; topProducts: Array<{ code: string; name: string; barcode: string | null; customers: number; orders: number; reach: number }>; recommendation: { trigger: string; action: string; offer: string; warning: string } };
 export type RfmSegmentBehavior = { busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; share: number }>; topHours: Array<{ label: string; share: number }> };
-export type RfmSegmentCustomer = { customerCode: string; orders: number; turnover: number; lastPurchase: string | null };
+export type RfmSegmentCustomer = { customerCode: string; consumerUid?: string | null; fullName?: string | null; mobilePhone?: string | null; orders: number; turnover: number; lastPurchase: string | null };
 type CustomerRow = { customer_id: string; orders: string; turnover: string; recency_days: string; latest_visit: string | null; r_score: string; f_score: string; m_score: string };
 
 const meta: Record<RfmSegmentId, Omit<RfmSegment, 'customers' | 'turnover' | 'averageCheck'>> = {
@@ -30,6 +30,38 @@ export async function getRfmReport(days: number, storeId?: number): Promise<RfmR
 export async function getRfmSegmentDetail(days: number, segmentId: string): Promise<RfmSegmentDetail> { if (!ids.includes(segmentId as RfmSegmentId)) throw new Error('Невідомий RFM-сегмент.'); const id = segmentId as RfmSegmentId, { from, to } = period(days); return withMarketingSource(async (client) => { const selected = (await customers(client, from, to)).filter((row) => segmentFor(row) === id); if (!selected.length) throw new Error('У цьому сегменті немає покупців за вибраний період.'); const orders = selected.reduce((sum, row) => sum + +row.orders, 0), turnover = selected.reduce((sum, row) => sum + +row.turnover, 0), recency = selected.reduce((sum, row) => sum + +row.recency_days, 0) / selected.length, latestVisit = selected.map((row) => row.latest_visit).filter(Boolean).sort().at(-1) ?? null, recovery = ['at_risk', 'need_attention', 'about_to_sleep', 'lost'].includes(id); return { segment: { ...meta[id], customers: selected.length, turnover, averageCheck: orders ? turnover / orders : 0 }, behavior: { orders, ordersPerCustomer: orders / selected.length, averageRecencyDays: recency, latestVisit, averageLifetimeValue: turnover / selected.length, totalLifetimeValue: turnover, busiestWeekday: null, busiestHour: null, weekdayDistribution: [], topHours: [] }, topProducts: [], recommendation: recovery ? { trigger: `${number(selected.length)} покупців цього сегмента мають середню давність ${Math.round(recency)} днів.`, action: 'Спершу сформуйте окрему win-back аудиторію та протестуйте персональне повідомлення.', offer: 'Почніть з невеликого контрольованого тесту пропозиції.', warning: 'Не оцінюйте кампанію без контрольної групи.' } : { trigger: `${number(selected.length)} покупців сегмента мають середню давність ${Math.round(recency)} днів.`, action: 'Утримання через цінність, статус або ранній доступ — без масової знижки.', offer: 'Дайте ранній доступ до новинок або персональну добірку.', warning: 'Не девальвуйте лояльність постійними знижками.' } }; }); }
 
 export async function getRfmSegmentCustomers(days: number, segmentId: string): Promise<RfmSegmentCustomer[]> { if (!ids.includes(segmentId as RfmSegmentId)) throw new Error('Невідомий RFM-сегмент.'); const { from, to } = period(days); return withMarketingSource(async (client) => (await customers(client, from, to)).filter((row) => segmentFor(row) === segmentId).sort((a,b) => Number(b.turnover) - Number(a.turnover)).slice(0,50).map((row) => ({ customerCode: row.customer_id, orders: Number(row.orders), turnover: Number(row.turnover), lastPurchase: row.latest_visit }))); }
+
+export async function getRfmSegmentCustomersWithProfiles(days: number, segmentId: string, storeId?: number): Promise<RfmSegmentCustomer[]> {
+  if (!ids.includes(segmentId as RfmSegmentId)) throw new Error('Невідомий RFM-сегмент.');
+  const { from, to } = period(days);
+  return withMarketingSource(async (client) => {
+    const selected = (await customers(client, from, to, storeId))
+      .filter((row) => segmentFor(row) === segmentId)
+      .sort((a, b) => Number(b.turnover) - Number(a.turnover))
+      .slice(0, 50);
+    if (!selected.length) return [];
+
+    type ProfileRow = { customer_code: string; consumer_uid: string | null; full_name: string | null; mobile_phone: string | null };
+    const profiles = await client.query<ProfileRow>(`
+      SELECT DISTINCT ON (code_client)
+        code_client::text AS customer_code,
+        NULLIF(add_info::jsonb ->> 'consumer_uid', '') AS consumer_uid,
+        NULLIF(add_info::jsonb ->> 'full_name', '') AS full_name,
+        NULLIF(add_info::jsonb ->> 'mobile_phone', '') AS mobile_phone
+      FROM pos.order_client
+      WHERE code_client = ANY($1::int[])
+        AND date_order >= $2::date AND date_order < ($3::date + interval '1 day')
+        AND ($4::int IS NULL OR code_shop = $4::int)
+        AND add_info IS NOT NULL
+      ORDER BY code_client, date_order DESC NULLS LAST
+    `, [selected.map((row) => Number(row.customer_id)), from, to, storeId ?? null]);
+    const profileByCustomer = new Map(profiles.rows.map((profile) => [profile.customer_code, profile]));
+    return selected.map((row) => {
+      const profile = profileByCustomer.get(row.customer_id);
+      return { customerCode: row.customer_id, consumerUid: profile?.consumer_uid ?? null, fullName: profile?.full_name ?? null, mobilePhone: profile?.mobile_phone ?? null, orders: Number(row.orders), turnover: Number(row.turnover), lastPurchase: row.latest_visit };
+    });
+  });
+}
 
 export async function getRfmSegmentBehavior(days: number, segmentId: string): Promise<RfmSegmentBehavior> {
   if (!ids.includes(segmentId as RfmSegmentId)) throw new Error('Невідомий RFM-сегмент.');
