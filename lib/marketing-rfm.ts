@@ -158,20 +158,21 @@ export async function getRfmProductRelations(days: number, segmentId: string, pr
   });
 }
 
-export async function getRfmSegmentBehavior(days: number, segmentId: string): Promise<RfmSegmentBehavior> {
+export async function getRfmSegmentBehavior(days: number, segmentId: string, storeId?: number): Promise<RfmSegmentBehavior> {
   if (!ids.includes(segmentId as RfmSegmentId)) throw new Error('Невідомий RFM-сегмент.');
   const id = segmentId as RfmSegmentId, { from, to } = period(days);
   return withMarketingSource(async (client) => {
-    const selected = (await customers(client, from, to)).filter((row) => segmentFor(row) === id);
+    const selected = (await customers(client, from, to, storeId)).filter((row) => segmentFor(row) === id);
     if (!selected.length) throw new Error('У цьому сегменті немає покупців за вибраний період.');
     const result = await client.query<{ weekday: string; hour: string; orders: string }>(`
-      SELECT EXTRACT(DOW FROM date_order)::int::text AS weekday,
-        EXTRACT(HOUR FROM date_order)::int::text AS hour, COUNT(*)::text AS orders
+      SELECT EXTRACT(DOW FROM COALESCE(date_receipt, date_close, date_open, date_order))::int::text AS weekday,
+        EXTRACT(HOUR FROM COALESCE(date_receipt, date_close, date_open, date_order))::int::text AS hour, COUNT(*)::text AS orders
       FROM pos.order_client
       WHERE date_order >= $1::date AND date_order < ($2::date + interval '1 day')
-        AND COALESCE(sum_order, 0) > 0 AND COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')) = ANY($3::text[])
+        AND ($3::int IS NULL OR code_shop = $3::int)
+        AND COALESCE(sum_order, 0) > 0 AND COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')) = ANY($4::text[])
       GROUP BY 1, 2
-    `, [from, to, selected.map((row) => row.customer_id)]);
+    `, [from, to, storeId ?? null, selected.map((row) => row.customer_id)]);
     const total = selected.reduce((sum, row) => sum + Number(row.orders), 0);
     const weekdayLabels = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
     const weekdayDistribution = weekdayLabels.map((label, weekday) => ({

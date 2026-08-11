@@ -10,7 +10,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse();
   try {
     const { segmentId } = await params;
-    const behavior = await getRfmSegmentBehavior(Number(request.nextUrl.searchParams.get('days') ?? 180), segmentId);
+    const rawStoreId = request.nextUrl.searchParams.get('storeId');
+    const storeId = rawStoreId ? Number(rawStoreId) : undefined;
+    const behavior = await getRfmSegmentBehavior(Number(request.nextUrl.searchParams.get('days') ?? 180), segmentId, Number.isInteger(storeId) ? storeId : undefined);
     return NextResponse.json({ ok: true, behavior });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося завантажити поведінку.' }, { status: 500 });
