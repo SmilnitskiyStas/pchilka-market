@@ -8,6 +8,10 @@ type Payload = { ok?: boolean; report?: RfmReport; detail?: RfmSegmentDetail; be
 const number = (value: number) => value.toLocaleString('uk-UA');
 const money = (value: number) => `${Math.round(value).toLocaleString('uk-UA')} ₴`;
 
+function InfoNote({ note }: { note: string }) {
+  return <details className="group relative inline-block align-middle"><summary aria-label="Показати пояснення" className="ml-1 inline-flex h-4 w-4 cursor-pointer list-none items-center justify-center rounded-full border border-slate-300 text-[10px] font-bold text-slate-500 [&::-webkit-details-marker]:hidden">i</summary><div role="note" className="absolute right-0 z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-2 text-[11px] font-normal leading-4 text-slate-600 shadow-lg">{note}</div></details>;
+}
+
 export default function AdminMarketingRfmDashboard() {
   const [days, setDays] = useState(180);
   const [storeId, setStoreId] = useState('');
@@ -77,6 +81,7 @@ export default function AdminMarketingRfmDashboard() {
   const storeName = (id: string) => stores.find((store) => store.id === id)?.name ?? `ТП ${id}`;
 
   return <div>
+    <div className="mb-2 flex justify-end"><InfoNote note="Оберіть магазин і період, а потім запустіть розрахунок. RFM-сегменти групують лише розпізнаних покупців за давністю, частотою та сумою покупок. У деталізації сегмента доступні товари, поведінка й рекомендація." /></div>
     <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.2em] text-brand">Маркетинг · локальні дані</p><h1 className="mt-1 text-2xl font-bold text-slate-900">RFM-аналіз покупців</h1></div><div className="flex flex-wrap items-end gap-2 text-sm"><label>Магазин <select value={filterStoreId} onChange={(event) => setFilterStoreId(event.target.value)} className="ml-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5"><option value="">Уся мережа</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label><label>Період <select value={filterDays} onChange={(event) => setFilterDays(Number(event.target.value))} className="ml-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5"><option value={90}>90 днів</option><option value={180}>180 днів</option><option value={365}>Рік</option></select></label><button type="button" onClick={calculateReport} disabled={loading} className="rounded-lg bg-brand px-3 py-1.5 font-semibold text-white disabled:opacity-60">{loading ? 'Розраховую…' : 'Оновити / прорахувати'}</button></div></div>
     {report ? <p className="mt-2 text-xs text-slate-500">Період: {report.period.from} — {report.period.to}</p> : null}{!hasCalculated ? <p className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Оберіть магазин і період, потім натисніть «Оновити / прорахувати».</p> : null}{loading ? <p className="mt-5 text-sm text-slate-600">Розраховую RFM-сегменти…</p> : null}{error ? <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
     {report ? <><div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{[['Покупці', number(report.totals.customers)], ['Оборот', money(report.totals.turnover)], ['Зареєстрована база', number(report.totals.registeredCustomers)], ['Середній чек', money(report.totals.averageCheck)]].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-lg font-bold text-slate-900">{value}</p></div>)}</div>
