@@ -5,7 +5,7 @@ export type RfmSegmentId = 'champions' | 'loyal' | 'potential_loyalists' | 'new_
 export type RfmSegment = { id: RfmSegmentId; label: string; description: string; customers: number; turnover: number; averageCheck: number };
 export type RfmReport = { generatedAt: string; period: { from: string; to: string; days: number }; totals: { customers: number; orders: number; turnover: number; averageCheck: number; registeredCustomers: number }; segments: RfmSegment[]; recommendations: string[] };
 export type RfmSegmentDetail = { segment: RfmSegment; behavior: { orders: number; ordersPerCustomer: number; averageRecencyDays: number; latestVisit: string | null; averageLifetimeValue: number; totalLifetimeValue: number; busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; share: number }>; topHours: Array<{ label: string; share: number }> }; topProducts: Array<{ code: string; name: string; barcode: string | null; customers: number; orders: number; reach: number }>; recommendation: { trigger: string; action: string; offer: string; warning: string } };
-export type RfmSegmentBehavior = { busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; share: number }>; hourlyDistribution: Array<{ label: string; share: number }>; weekdayHourlyDistribution: Array<{ weekday: number; hour: number; orders: number }>; topHours: Array<{ label: string; share: number }> };
+export type RfmSegmentBehavior = { busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; weekday: number; share: number }>; hourlyDistribution: Array<{ label: string; share: number }>; weekdayHourlyDistribution: Array<{ weekday: number; hour: number; orders: number }>; topHours: Array<{ label: string; share: number }> };
 export type RfmSegmentCustomer = { customerCode: string; sourceCode?: string | null; consumerUid?: string | null; fullName?: string | null; mobilePhone?: string | null; orders: number; turnover: number; lastPurchase: string | null };
 export type RfmSegmentTopProduct = { code: string; name: string; customers: number; orders: number; units: number; turnover: number; reach: number };
 export type RfmRelatedProduct = { code: string; name: string; customers: number; sharedOrders: number; baseReach: number; segmentReach: number; affinity: number; togetherShare: number };
@@ -189,15 +189,15 @@ export async function getRfmSegmentBehavior(days: number, segmentId: string, sto
       GROUP BY 1, 2
     `, [from, to, storeId ?? null, selected.map((row) => row.customer_id)]);
     const total = selected.reduce((sum, row) => sum + Number(row.orders), 0);
-    const weekdayLabels = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
-    const weekdayDistribution = weekdayLabels.map((label, weekday) => ({
-      label, share: total ? result.rows.filter((row) => Number(row.weekday) === weekday).reduce((sum, row) => sum + Number(row.orders), 0) / total * 100 : 0
+    const weekdayOrder = [{ label: 'Пн', weekday: 1 }, { label: 'Вт', weekday: 2 }, { label: 'Ср', weekday: 3 }, { label: 'Чт', weekday: 4 }, { label: 'Пт', weekday: 5 }, { label: 'Сб', weekday: 6 }, { label: 'Нд', weekday: 0 }];
+    const weekdayDistribution = weekdayOrder.map(({ label, weekday }) => ({
+      label, weekday, share: total ? result.rows.filter((row) => Number(row.weekday) === weekday).reduce((sum, row) => sum + Number(row.orders), 0) / total * 100 : 0
     }));
     const hourlyDistribution = Array.from({ length: 24 }, (_, hour) => ({
       label: `${String(hour).padStart(2, '0')}:00`, share: total ? result.rows.filter((row) => Number(row.hour) === hour).reduce((sum, row) => sum + Number(row.orders), 0) / total * 100 : 0
     }));
     const topHours = [...hourlyDistribution].sort((a, b) => b.share - a.share).slice(0, 3);
-    const weekdayHourlyDistribution = result.rows.map((row) => ({ weekday: Number(row.weekday), hour: Number(row.hour), orders: Number(row.orders) }));
+    const weekdayHourlyDistribution = result.rows.map((row) => ({ weekday: (Number(row.weekday) + 6) % 7, hour: Number(row.hour), orders: Number(row.orders) }));
     return { busiestWeekday: weekdayDistribution.reduce((best, item) => item.share > best.share ? item : best, weekdayDistribution[0])?.label ?? null, busiestHour: topHours[0]?.label ?? null, weekdayDistribution, hourlyDistribution, weekdayHourlyDistribution, topHours };
   });
 }
