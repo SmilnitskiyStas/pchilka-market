@@ -6,7 +6,7 @@ export type RfmSegment = { id: RfmSegmentId; label: string; description: string;
 export type RfmReport = { generatedAt: string; period: { from: string; to: string; days: number }; totals: { customers: number; orders: number; turnover: number; averageCheck: number; registeredCustomers: number }; segments: RfmSegment[]; recommendations: string[] };
 export type RfmSegmentDetail = { segment: RfmSegment; behavior: { orders: number; ordersPerCustomer: number; averageRecencyDays: number; latestVisit: string | null; averageLifetimeValue: number; totalLifetimeValue: number; busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; share: number }>; topHours: Array<{ label: string; share: number }> }; topProducts: Array<{ code: string; name: string; barcode: string | null; customers: number; orders: number; reach: number }>; recommendation: { trigger: string; action: string; offer: string; warning: string } };
 export type RfmSegmentBehavior = { busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; share: number }>; topHours: Array<{ label: string; share: number }> };
-export type RfmSegmentCustomer = { customerCode: string; consumerUid?: string | null; fullName?: string | null; mobilePhone?: string | null; orders: number; turnover: number; lastPurchase: string | null };
+export type RfmSegmentCustomer = { customerCode: string; sourceCode?: string | null; consumerUid?: string | null; fullName?: string | null; mobilePhone?: string | null; orders: number; turnover: number; lastPurchase: string | null };
 type CustomerRow = { customer_id: string; orders: string; turnover: string; recency_days: string; latest_visit: string | null; r_score: string; f_score: string; m_score: string };
 
 const meta: Record<RfmSegmentId, Omit<RfmSegment, 'customers' | 'turnover' | 'averageCheck'>> = {
@@ -20,7 +20,7 @@ function segmentFor(row: CustomerRow): RfmSegmentId { const r = +row.r_score, f 
 
 async function customers(client: Client, from: string, to: string, storeId?: number) {
   const key = `${from}:${to}:${storeId ?? 'all'}`, hit = cache.get(key); if (hit && hit.expiresAt > Date.now()) return hit.rows;
-  const result = await client.query<CustomerRow>(`WITH metrics AS (SELECT code_client::text AS customer_id, COUNT(*)::bigint AS orders, SUM(COALESCE(sum_order,0))::numeric AS turnover, (CURRENT_DATE-MAX(date_order)::date)::int AS recency_days, MAX(date_order)::date::text AS latest_visit FROM pos.order_client WHERE date_order >= $1::date AND date_order < ($2::date + interval '1 day') AND ($3::int IS NULL OR code_shop=$3::int) AND code_client IS NOT NULL AND code_client <> 0 AND COALESCE(sum_order,0)>0 GROUP BY code_client) SELECT customer_id,orders::text,turnover::text,recency_days::text,latest_visit,NTILE(5) OVER (ORDER BY recency_days DESC)::text AS r_score,NTILE(5) OVER (ORDER BY orders ASC)::text AS f_score,NTILE(5) OVER (ORDER BY turnover ASC)::text AS m_score FROM metrics`, [from, to, storeId ?? null]);
+  const result = await client.query<CustomerRow>(`WITH identified_orders AS (SELECT NULLIF(add_info::jsonb ->> 'consumer_uid', '') AS customer_id, date_order, sum_order FROM pos.order_client WHERE date_order >= $1::date AND date_order < ($2::date + interval '1 day') AND ($3::int IS NULL OR code_shop=$3::int) AND add_info IS NOT NULL AND COALESCE(sum_order,0)>0), metrics AS (SELECT customer_id, COUNT(*)::bigint AS orders, SUM(COALESCE(sum_order,0))::numeric AS turnover, (CURRENT_DATE-MAX(date_order)::date)::int AS recency_days, MAX(date_order)::date::text AS latest_visit FROM identified_orders WHERE customer_id IS NOT NULL GROUP BY customer_id) SELECT customer_id,orders::text,turnover::text,recency_days::text,latest_visit,NTILE(5) OVER (ORDER BY recency_days DESC)::text AS r_score,NTILE(5) OVER (ORDER BY orders ASC)::text AS f_score,NTILE(5) OVER (ORDER BY turnover ASC)::text AS m_score FROM metrics`, [from, to, storeId ?? null]);
   cache.set(key, { rows: result.rows, expiresAt: Date.now() + 5 * 60_000 }); return result.rows;
 }
 function segments(rows: CustomerRow[]) { const buckets = new Map<RfmSegmentId, { customers: number; turnover: number; orders: number }>(); ids.forEach((id) => buckets.set(id, { customers: 0, turnover: 0, orders: 0 })); rows.forEach((row) => { const bucket = buckets.get(segmentFor(row))!; bucket.customers++; bucket.orders += +row.orders; bucket.turnover += +row.turnover; }); return { buckets, list: ids.map((id) => { const b = buckets.get(id)!; return { ...meta[id], customers: b.customers, turnover: b.turnover, averageCheck: b.orders ? b.turnover / b.orders : 0 }; }) }; }
@@ -41,24 +41,25 @@ export async function getRfmSegmentCustomersWithProfiles(days: number, segmentId
       .slice(0, 50);
     if (!selected.length) return [];
 
-    type ProfileRow = { customer_code: string; consumer_uid: string | null; full_name: string | null; mobile_phone: string | null };
+    type ProfileRow = { customer_code: string; source_code: string | null; consumer_uid: string | null; full_name: string | null; mobile_phone: string | null };
     const profiles = await client.query<ProfileRow>(`
-      SELECT DISTINCT ON (code_client)
-        code_client::text AS customer_code,
+      SELECT DISTINCT ON (add_info::jsonb ->> 'consumer_uid')
+        add_info::jsonb ->> 'consumer_uid' AS customer_code,
+        code_client::text AS source_code,
         NULLIF(add_info::jsonb ->> 'consumer_uid', '') AS consumer_uid,
         NULLIF(add_info::jsonb ->> 'full_name', '') AS full_name,
         NULLIF(add_info::jsonb ->> 'mobile_phone', '') AS mobile_phone
       FROM pos.order_client
-      WHERE code_client = ANY($1::int[])
+      WHERE add_info::jsonb ->> 'consumer_uid' = ANY($1::text[])
         AND date_order >= $2::date AND date_order < ($3::date + interval '1 day')
         AND ($4::int IS NULL OR code_shop = $4::int)
         AND add_info IS NOT NULL
-      ORDER BY code_client, date_order DESC NULLS LAST
-    `, [selected.map((row) => Number(row.customer_id)), from, to, storeId ?? null]);
+      ORDER BY add_info::jsonb ->> 'consumer_uid', date_order DESC NULLS LAST
+    `, [selected.map((row) => row.customer_id), from, to, storeId ?? null]);
     const profileByCustomer = new Map(profiles.rows.map((profile) => [profile.customer_code, profile]));
     return selected.map((row) => {
       const profile = profileByCustomer.get(row.customer_id);
-      return { customerCode: row.customer_id, consumerUid: profile?.consumer_uid ?? null, fullName: profile?.full_name ?? null, mobilePhone: profile?.mobile_phone ?? null, orders: Number(row.orders), turnover: Number(row.turnover), lastPurchase: row.latest_visit };
+      return { customerCode: row.customer_id, sourceCode: profile?.source_code ?? null, consumerUid: profile?.consumer_uid ?? null, fullName: profile?.full_name ?? null, mobilePhone: profile?.mobile_phone ?? null, orders: Number(row.orders), turnover: Number(row.turnover), lastPurchase: row.latest_visit };
     });
   });
 }
@@ -74,9 +75,9 @@ export async function getRfmSegmentBehavior(days: number, segmentId: string): Pr
         EXTRACT(HOUR FROM date_order)::int::text AS hour, COUNT(*)::text AS orders
       FROM pos.order_client
       WHERE date_order >= $1::date AND date_order < ($2::date + interval '1 day')
-        AND COALESCE(sum_order, 0) > 0 AND code_client = ANY($3::int[])
+        AND COALESCE(sum_order, 0) > 0 AND add_info::jsonb ->> 'consumer_uid' = ANY($3::text[])
       GROUP BY 1, 2
-    `, [from, to, selected.map((row) => Number(row.customer_id))]);
+    `, [from, to, selected.map((row) => row.customer_id)]);
     const total = selected.reduce((sum, row) => sum + Number(row.orders), 0);
     const weekdayLabels = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
     const weekdayDistribution = weekdayLabels.map((label, weekday) => ({
