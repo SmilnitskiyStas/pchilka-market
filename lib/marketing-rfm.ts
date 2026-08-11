@@ -7,6 +7,7 @@ export type RfmReport = { generatedAt: string; period: { from: string; to: strin
 export type RfmSegmentDetail = { segment: RfmSegment; behavior: { orders: number; ordersPerCustomer: number; averageRecencyDays: number; latestVisit: string | null; averageLifetimeValue: number; totalLifetimeValue: number; busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; share: number }>; topHours: Array<{ label: string; share: number }> }; topProducts: Array<{ code: string; name: string; barcode: string | null; customers: number; orders: number; reach: number }>; recommendation: { trigger: string; action: string; offer: string; warning: string } };
 export type RfmSegmentBehavior = { busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; share: number }>; topHours: Array<{ label: string; share: number }> };
 export type RfmSegmentCustomer = { customerCode: string; sourceCode?: string | null; consumerUid?: string | null; fullName?: string | null; mobilePhone?: string | null; orders: number; turnover: number; lastPurchase: string | null };
+export type RfmSegmentTopProduct = { code: string; name: string; customers: number; orders: number; units: number; turnover: number; reach: number };
 type CustomerRow = { customer_id: string; orders: string; turnover: string; recency_days: string; latest_visit: string | null; r_score: string; f_score: string; m_score: string };
 
 const meta: Record<RfmSegmentId, Omit<RfmSegment, 'customers' | 'turnover' | 'averageCheck'>> = {
@@ -61,6 +62,40 @@ export async function getRfmSegmentCustomersWithProfiles(days: number, segmentId
       const profile = profileByCustomer.get(row.customer_id);
       return { customerCode: row.customer_id, sourceCode: profile?.source_code ?? null, consumerUid: profile?.consumer_uid ?? null, fullName: profile?.full_name ?? null, mobilePhone: profile?.mobile_phone ?? null, orders: Number(row.orders), turnover: Number(row.turnover), lastPurchase: row.latest_visit };
     });
+  });
+}
+
+export async function getRfmSegmentTopProducts(days: number, segmentId: string, storeId?: number): Promise<RfmSegmentTopProduct[]> {
+  if (!ids.includes(segmentId as RfmSegmentId)) throw new Error('Невідомий RFM-сегмент.');
+  const { from, to } = period(days);
+  return withMarketingSource(async (client) => {
+    const selected = (await customers(client, from, to, storeId)).filter((row) => segmentFor(row) === segmentId);
+    if (!selected.length) return [];
+    type ProductRow = { code: string; name: string | null; customers: string; orders: string; units: string; turnover: string };
+    const result = await client.query<ProductRow>(`
+      WITH segment_orders AS (
+        SELECT code_order, code_shop, id_workplace,
+          COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')) AS customer_id
+        FROM pos.order_client
+        WHERE date_order >= $1::date AND date_order < ($2::date + interval '1 day')
+          AND ($3::int IS NULL OR code_shop = $3::int)
+          AND COALESCE(sum_order, 0) > 0
+          AND COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')) = ANY($4::text[])
+      )
+      SELECT wo.code_wares::text AS code, MAX(COALESCE(w.name_wares_receipt, w.name_wares)) AS name,
+        COUNT(DISTINCT so.customer_id)::text AS customers,
+        COUNT(DISTINCT (so.code_order, so.code_shop, so.id_workplace))::text AS orders,
+        SUM(COALESCE(wo.quantity, 0))::text AS units,
+        SUM(COALESCE(wo.sum_position, wo.quantity * wo.price, 0))::text AS turnover
+      FROM segment_orders so
+      JOIN pos.wares_order wo ON wo.code_order = so.code_order AND wo.code_shop = so.code_shop AND wo.id_workplace = so.id_workplace
+      LEFT JOIN pos.wares w ON w.code_wares = wo.code_wares
+      WHERE COALESCE(wo.quantity, 0) > 0
+      GROUP BY wo.code_wares
+      ORDER BY COUNT(DISTINCT so.customer_id) DESC, SUM(COALESCE(wo.sum_position, wo.quantity * wo.price, 0)) DESC
+      LIMIT 20
+    `, [from, to, storeId ?? null, selected.map((row) => row.customer_id)]);
+    return result.rows.map((row) => ({ code: row.code, name: row.name ?? `Товар ${row.code}`, customers: Number(row.customers), orders: Number(row.orders), units: Number(row.units), turnover: Number(row.turnover), reach: Number(row.customers) / selected.length * 100 }));
   });
 }
 
