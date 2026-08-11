@@ -13,7 +13,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const days = Number(request.nextUrl.searchParams.get('days') ?? 180);
-    const report = await getRfmReport(days);
+    const rawStoreId = request.nextUrl.searchParams.get('storeId');
+    const storeId = rawStoreId && /^\d+$/.test(rawStoreId) ? Number(rawStoreId) : undefined;
+    const report = await getRfmReport(days, storeId);
     return NextResponse.json({ ok: true, report });
   } catch (error) {
     console.error('[marketing-rfm]', error);

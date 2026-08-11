@@ -10,6 +10,8 @@ const money = (value: number) => `${Math.round(value).toLocaleString('uk-UA')} �
 
 export default function AdminMarketingRfmDashboard() {
   const [days, setDays] = useState(180);
+  const [storeId, setStoreId] = useState('');
+  const [stores, setStores] = useState<Array<{ id: string; name: string }>>([]);
   const [report, setReport] = useState<RfmReport | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -21,15 +23,16 @@ export default function AdminMarketingRfmDashboard() {
   const [behaviorLoading, setBehaviorLoading] = useState(false);
   const [behaviorError, setBehaviorError] = useState('');
 
+  useEffect(() => { void fetch('/api/admin/marketing/stores').then((r) => r.json()).then((p: { stores?: Array<{ id: string; name: string }> }) => setStores(p.stores ?? [])).catch(() => undefined); }, []);
   useEffect(() => {
     const controller = new AbortController(); setLoading(true); setError('');
-    void fetch(`/api/admin/marketing/rfm?days=${days}`, { cache: 'no-store', signal: controller.signal })
+    void fetch(`/api/admin/marketing/rfm?days=${days}&storeId=${storeId}`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => ({ response, payload: await response.json() as Payload }))
       .then(({ response, payload }) => { if (!response.ok || !payload.ok || !payload.report) throw new Error(payload.error ?? 'Не вдалося завантажити звіт.'); setReport(payload.report); })
       .catch((e: unknown) => { if (!(e instanceof DOMException && e.name === 'AbortError')) { setReport(null); setError(e instanceof Error ? e.message : 'Не вдалося завантажити звіт.'); } })
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [days]);
+  }, [days, storeId]);
 
   useEffect(() => {
     if (!selected) { setDetail(null); setBehavior(null); return; }
@@ -58,7 +61,7 @@ export default function AdminMarketingRfmDashboard() {
   const activeBehavior = behavior ?? detail?.behavior;
 
   return <div>
-    <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Маркетинг · локальні дані</p><h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">RFM-аналіз покупців</h1><p className="mt-2 max-w-3xl text-sm text-slate-600">Сегментація за давністю останньої покупки, частотою та сумою витрат.</p></div><label className="text-sm font-medium text-slate-700">Період <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="ml-2 rounded-xl border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-900"><option value={90}>90 днів</option><option value={180}>180 днів</option><option value={365}>Рік</option></select></label></div>
+    <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Маркетинг · локальні дані</p><h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">RFM-аналіз покупців</h1><p className="mt-2 max-w-3xl text-sm text-slate-600">Сегментація за давністю останньої покупки, частотою та сумою витрат.</p></div><div className="flex flex-wrap gap-2"><label className="text-sm font-medium text-slate-700">Магазин <select value={storeId} onChange={(e) => { setStoreId(e.target.value); setSelected(null); }} className="ml-2 rounded-xl border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-900"><option value="">Уся мережа</option>{stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label><label className="text-sm font-medium text-slate-700">Період <select value={days} onChange={(e) => setDays(Number(e.target.value))} className="ml-2 rounded-xl border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-900"><option value={90}>90 днів</option><option value={180}>180 днів</option><option value={365}>Рік</option></select></label></div></div>
     {report ? <p className="mt-4 text-sm text-slate-500">Період: {report.period.from} — {report.period.to}. Оновлено: {new Date(report.generatedAt).toLocaleString('uk-UA')}.</p> : null}
     {loading ? <p className="mt-8 rounded-2xl bg-slate-50 p-5 text-sm text-slate-600">Розраховую RFM-сегменти…</p> : null}{error ? <p className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">{error}</p> : null}
     {report ? <><div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[['Покупці за період', number(report.totals.customers)], ['Оборот за період', money(report.totals.turnover)], ['Зареєстрована база', number(report.totals.registeredCustomers)], ['Середній чек', money(report.totals.averageCheck)]].map(([label, value]) => <div key={label} className="rounded-2xl border border-slate-200 bg-white p-4"><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-2xl font-bold text-slate-900">{value}</p></div>)}</div><div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">За вибраний період купували <strong>{number(report.totals.customers)}</strong> клієнтів. Картка «Без покупок» потребує повної історії чеків, якої в поточному локальному джерелі ще немає.</div>
