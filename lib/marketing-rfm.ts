@@ -18,6 +18,7 @@ const meta: Record<RfmSegmentId, Omit<RfmSegment, 'customers' | 'turnover' | 'av
 };
 const ids: RfmSegmentId[] = ['champions', 'loyal', 'potential_loyalists', 'new_customers', 'prospective', 'need_attention', 'about_to_sleep', 'at_risk', 'cannot_lose', 'sleeping', 'lost'];
 const cache = new Map<string, { expiresAt: number; rows: CustomerRow[] }>();
+const migrationCache = new Map<string, { expiresAt: number; report: RfmMigrationReport }>();
 const number = (value: number) => value.toLocaleString('uk-UA');
 function period(days: number) { const normalizedDays = days === 90 ? 90 : days === 365 ? 365 : 180; const end = new Date(); const start = new Date(end); start.setUTCDate(start.getUTCDate() - normalizedDays + 1); return { normalizedDays, from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) }; }
 function segmentFor(row: CustomerRow): RfmSegmentId { const r = +row.r_score, f = +row.f_score, m = +row.m_score; if (r >= 4 && f >= 4 && m >= 4) return 'champions'; if (r <= 2 && f >= 4 && m >= 4) return 'cannot_lose'; if (r >= 3 && f >= 3) return 'loyal'; if (r >= 4 && f >= 3) return 'potential_loyalists'; if (r >= 4 && f === 2) return 'prospective'; if (r >= 4 && f === 1) return 'new_customers'; if (r === 1 && f >= 2) return 'sleeping'; if (r === 1 && f === 1) return 'lost'; if (r <= 2 && f >= 3) return 'at_risk'; if (r <= 2 && f <= 2) return 'about_to_sleep'; return 'need_attention'; }
@@ -177,17 +178,27 @@ export async function getRfmProductRelations(days: number, segmentId: string, pr
 export async function getRfmMigrationReport(days: number, sourceStoreId: number): Promise<RfmMigrationReport> {
   if (!Number.isInteger(sourceStoreId)) throw new Error('Оберіть коректний магазин.');
   const { from, to } = period(days);
+  const cacheKey = `${from}:${to}:${sourceStoreId}`;
+  const cached = migrationCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.report;
   const identity = `COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', ''))`;
-  const cte = `WITH source_last AS (SELECT ${identity} AS customer_id, MAX(COALESCE(date_receipt, date_close, date_open, date_order)) AS source_last_visit FROM pos.order_client WHERE code_shop = $3::int AND date_order >= $1::date AND date_order < ($2::date + interval '1 day') AND COALESCE(sum_order, 0) > 0 AND ${identity} IS NOT NULL GROUP BY 1), target_visits AS (SELECT ${identity} AS customer_id, code_shop AS destination_store_id, COALESCE(date_receipt, date_close, date_open, date_order) AS visit_at, NULLIF(add_info::jsonb ->> 'full_name', '') AS full_name, NULLIF(add_info::jsonb ->> 'mobile_phone', '') AS mobile_phone FROM pos.order_client WHERE code_shop <> $3::int AND date_order >= $1::date AND date_order < ($2::date + interval '1 day') AND COALESCE(sum_order, 0) > 0 AND ${identity} IS NOT NULL), migrated AS (SELECT DISTINCT ON (target.customer_id) target.customer_id, target.destination_store_id, target.visit_at, target.full_name, target.mobile_phone FROM target_visits target JOIN source_last source ON source.customer_id = target.customer_id AND target.visit_at > source.source_last_visit ORDER BY target.customer_id, target.visit_at DESC)`;
   return withMarketingSource(async (client) => {
-    type DestinationRow = { store_id: string; customers: string };
-    type CustomerRow = { consumer_uid: string; full_name: string | null; mobile_phone: string | null; destination_store_id: string; last_visit: string | null };
-    const [destinations, customers] = await Promise.all([
-      client.query<DestinationRow>(`${cte} SELECT destination_store_id::text AS store_id, COUNT(*)::text AS customers FROM migrated GROUP BY destination_store_id ORDER BY COUNT(*) DESC LIMIT 10`, [from, to, sourceStoreId]),
-      client.query<CustomerRow>(`${cte} SELECT customer_id AS consumer_uid, full_name, mobile_phone, destination_store_id::text, visit_at::date::text AS last_visit FROM migrated ORDER BY visit_at DESC LIMIT 100`, [from, to, sourceStoreId])
-    ]);
-    const total = customers.rows.length ? Number((await client.query<{ customers: string }>(`${cte} SELECT COUNT(*)::text AS customers FROM migrated`, [from, to, sourceStoreId])).rows[0]?.customers ?? 0) : 0;
-    return { sourceStoreId: String(sourceStoreId), customers: total, destinations: destinations.rows.map((row) => ({ storeId: row.store_id, customers: Number(row.customers), share: total ? Number(row.customers) / total * 100 : 0 })), migratedCustomers: customers.rows.map((row) => ({ consumerUid: row.consumer_uid, fullName: row.full_name, mobilePhone: row.mobile_phone, destinationStoreId: row.destination_store_id, lastVisit: row.last_visit })) };
+    type SourceRow = { customer_id: string; code_client: string; source_last_visit: Date };
+    type TargetRow = { code_client: string; consumer_uid: string | null; full_name: string | null; mobile_phone: string | null; destination_store_id: string; visit_at: Date };
+    const source = await client.query<SourceRow>(`SELECT ${identity} AS customer_id, code_client::text AS code_client, MAX(COALESCE(date_receipt, date_close, date_open, date_order)) AS source_last_visit FROM pos.order_client WHERE code_shop = $3::int AND date_order >= $1::date AND date_order < ($2::date + interval '1 day') AND COALESCE(sum_order, 0) > 0 AND ${identity} IS NOT NULL AND code_client IS NOT NULL GROUP BY 1, 2`, [from, to, sourceStoreId]);
+    const sourceCodes = Array.from(new Set(source.rows.map((row) => Number(row.code_client)).filter(Number.isFinite)));
+    if (!sourceCodes.length) return { sourceStoreId: String(sourceStoreId), customers: 0, destinations: [], migratedCustomers: [] };
+    const targets = await client.query<TargetRow>(`SELECT code_client::text AS code_client, ${identity} AS consumer_uid, NULLIF(add_info::jsonb ->> 'full_name', '') AS full_name, NULLIF(add_info::jsonb ->> 'mobile_phone', '') AS mobile_phone, code_shop::text AS destination_store_id, COALESCE(date_receipt, date_close, date_open, date_order) AS visit_at FROM pos.order_client WHERE code_client = ANY($4::int[]) AND code_shop <> $3::int AND date_order >= $1::date AND date_order < ($2::date + interval '1 day') AND COALESCE(sum_order, 0) > 0`, [from, to, sourceStoreId, sourceCodes]);
+    const sourceVisits = new Map(source.rows.map((row) => [`${row.code_client}:${row.customer_id}`, new Date(row.source_last_visit).getTime()]));
+    const latestByCustomer = new Map<string, TargetRow>();
+    targets.rows.forEach((row) => { if (!row.consumer_uid || sourceVisits.get(`${row.code_client}:${row.consumer_uid}`) === undefined || new Date(row.visit_at).getTime() <= sourceVisits.get(`${row.code_client}:${row.consumer_uid}`)!) return; const previous = latestByCustomer.get(row.consumer_uid); if (!previous || new Date(row.visit_at).getTime() > new Date(previous.visit_at).getTime()) latestByCustomer.set(row.consumer_uid, row); });
+    const result = Array.from(latestByCustomer.values()).sort((a, b) => new Date(b.visit_at).getTime() - new Date(a.visit_at).getTime());
+    const total = result.length;
+    const destinations = new Map<string, number>();
+    result.forEach((row) => destinations.set(row.destination_store_id, (destinations.get(row.destination_store_id) ?? 0) + 1));
+    const report: RfmMigrationReport = { sourceStoreId: String(sourceStoreId), customers: total, destinations: Array.from(destinations, ([storeId, customers]) => ({ storeId, customers, share: total ? customers / total * 100 : 0 })).sort((a, b) => b.customers - a.customers).slice(0, 10), migratedCustomers: result.slice(0, 100).map((row) => ({ consumerUid: row.consumer_uid!, fullName: row.full_name, mobilePhone: row.mobile_phone, destinationStoreId: row.destination_store_id, lastVisit: new Date(row.visit_at).toISOString().slice(0, 10) })) };
+    migrationCache.set(cacheKey, { report, expiresAt: Date.now() + 5 * 60_000 });
+    return report;
   });
 }
 
