@@ -20,7 +20,7 @@ function segmentFor(row: CustomerRow): RfmSegmentId { const r = +row.r_score, f 
 
 async function customers(client: Client, from: string, to: string, storeId?: number) {
   const key = `${from}:${to}:${storeId ?? 'all'}`, hit = cache.get(key); if (hit && hit.expiresAt > Date.now()) return hit.rows;
-  const result = await client.query<CustomerRow>(`WITH identified_orders AS (SELECT NULLIF(add_info::jsonb ->> 'consumer_uid', '') AS customer_id, date_order, sum_order FROM pos.order_client WHERE date_order >= $1::date AND date_order < ($2::date + interval '1 day') AND ($3::int IS NULL OR code_shop=$3::int) AND add_info IS NOT NULL AND COALESCE(sum_order,0)>0), metrics AS (SELECT customer_id, COUNT(*)::bigint AS orders, SUM(COALESCE(sum_order,0))::numeric AS turnover, (CURRENT_DATE-MAX(date_order)::date)::int AS recency_days, MAX(date_order)::date::text AS latest_visit FROM identified_orders WHERE customer_id IS NOT NULL GROUP BY customer_id) SELECT customer_id,orders::text,turnover::text,recency_days::text,latest_visit,NTILE(5) OVER (ORDER BY recency_days DESC)::text AS r_score,NTILE(5) OVER (ORDER BY orders ASC)::text AS f_score,NTILE(5) OVER (ORDER BY turnover ASC)::text AS m_score FROM metrics`, [from, to, storeId ?? null]);
+  const result = await client.query<CustomerRow>(`WITH identified_orders AS (SELECT COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')) AS customer_id, date_order, sum_order FROM pos.order_client WHERE date_order >= $1::date AND date_order < ($2::date + interval '1 day') AND ($3::int IS NULL OR code_shop=$3::int) AND add_info IS NOT NULL AND COALESCE(sum_order,0)>0), metrics AS (SELECT customer_id, COUNT(*)::bigint AS orders, SUM(COALESCE(sum_order,0))::numeric AS turnover, (CURRENT_DATE-MAX(date_order)::date)::int AS recency_days, MAX(date_order)::date::text AS latest_visit FROM identified_orders WHERE customer_id IS NOT NULL GROUP BY customer_id) SELECT customer_id,orders::text,turnover::text,recency_days::text,latest_visit,NTILE(5) OVER (ORDER BY recency_days DESC)::text AS r_score,NTILE(5) OVER (ORDER BY orders ASC)::text AS f_score,NTILE(5) OVER (ORDER BY turnover ASC)::text AS m_score FROM metrics`, [from, to, storeId ?? null]);
   cache.set(key, { rows: result.rows, expiresAt: Date.now() + 5 * 60_000 }); return result.rows;
 }
 function segments(rows: CustomerRow[]) { const buckets = new Map<RfmSegmentId, { customers: number; turnover: number; orders: number }>(); ids.forEach((id) => buckets.set(id, { customers: 0, turnover: 0, orders: 0 })); rows.forEach((row) => { const bucket = buckets.get(segmentFor(row))!; bucket.customers++; bucket.orders += +row.orders; bucket.turnover += +row.turnover; }); return { buckets, list: ids.map((id) => { const b = buckets.get(id)!; return { ...meta[id], customers: b.customers, turnover: b.turnover, averageCheck: b.orders ? b.turnover / b.orders : 0 }; }) }; }
@@ -43,18 +43,18 @@ export async function getRfmSegmentCustomersWithProfiles(days: number, segmentId
 
     type ProfileRow = { customer_code: string; source_code: string | null; consumer_uid: string | null; full_name: string | null; mobile_phone: string | null };
     const profiles = await client.query<ProfileRow>(`
-      SELECT DISTINCT ON (add_info::jsonb ->> 'consumer_uid')
-        add_info::jsonb ->> 'consumer_uid' AS customer_code,
+      SELECT DISTINCT ON (COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')))
+        COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')) AS customer_code,
         code_client::text AS source_code,
-        NULLIF(add_info::jsonb ->> 'consumer_uid', '') AS consumer_uid,
+        COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')) AS consumer_uid,
         NULLIF(add_info::jsonb ->> 'full_name', '') AS full_name,
         NULLIF(add_info::jsonb ->> 'mobile_phone', '') AS mobile_phone
       FROM pos.order_client
-      WHERE add_info::jsonb ->> 'consumer_uid' = ANY($1::text[])
+      WHERE COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')) = ANY($1::text[])
         AND date_order >= $2::date AND date_order < ($3::date + interval '1 day')
         AND ($4::int IS NULL OR code_shop = $4::int)
         AND add_info IS NOT NULL
-      ORDER BY add_info::jsonb ->> 'consumer_uid', date_order DESC NULLS LAST
+      ORDER BY COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')), date_order DESC NULLS LAST
     `, [selected.map((row) => row.customer_id), from, to, storeId ?? null]);
     const profileByCustomer = new Map(profiles.rows.map((profile) => [profile.customer_code, profile]));
     return selected.map((row) => {
@@ -75,7 +75,7 @@ export async function getRfmSegmentBehavior(days: number, segmentId: string): Pr
         EXTRACT(HOUR FROM date_order)::int::text AS hour, COUNT(*)::text AS orders
       FROM pos.order_client
       WHERE date_order >= $1::date AND date_order < ($2::date + interval '1 day')
-        AND COALESCE(sum_order, 0) > 0 AND add_info::jsonb ->> 'consumer_uid' = ANY($3::text[])
+        AND COALESCE(sum_order, 0) > 0 AND COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')) = ANY($3::text[])
       GROUP BY 1, 2
     `, [from, to, selected.map((row) => row.customer_id)]);
     const total = selected.reduce((sum, row) => sum + Number(row.orders), 0);
