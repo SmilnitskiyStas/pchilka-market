@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server';
+import type { RowDataPacket } from 'mysql2/promise';
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
-import { withMarketingSource } from '@/lib/marketing-source-db';
+import { getDbPool } from '@/lib/db';
 export const runtime = 'nodejs';
 export async function GET(request: Request) {
   if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse();
-  const stores = await withMarketingSource(async (client) => (await client.query<{ id: string; name: string }>("SELECT code_shop::text id, name_shop name FROM pos.shops WHERE NULLIF(TRIM(name_shop), '') IS NOT NULL ORDER BY name_shop")).rows);
+  const pool = getDbPool();
+  const [stores] = await pool.query<Array<RowDataPacket & { id: string; name: string }>>(`
+    SELECT CAST(tp_code AS CHAR) AS id, store_code AS name
+    FROM stores
+    WHERE tp_code IS NOT NULL
+    ORDER BY tp_code
+  `);
   return NextResponse.json({ ok: true, stores });
 }
