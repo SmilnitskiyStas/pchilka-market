@@ -6,6 +6,9 @@ export type IntegrationsSettings = {
   ga4MeasurementId: string;
   gtmContainerId: string;
   metaPixelId: string;
+  aiEnabled: boolean;
+  aiModel: string;
+  aiApiKeyConfigured: boolean;
   updatedAt: string;
 };
 
@@ -17,6 +20,9 @@ export const defaultIntegrationsSettings: IntegrationsSettings = {
   ga4MeasurementId: '',
   gtmContainerId: '',
   metaPixelId: '',
+  aiEnabled: false,
+  aiModel: 'gpt-5.6-luna',
+  aiApiKeyConfigured: false,
   updatedAt: ''
 };
 
@@ -27,6 +33,9 @@ export function normalizeIntegrationsSettings(raw: Partial<IntegrationsSettings>
     ga4MeasurementId: (raw?.ga4MeasurementId ?? '').trim().toUpperCase(),
     gtmContainerId: (raw?.gtmContainerId ?? '').trim().toUpperCase(),
     metaPixelId: (raw?.metaPixelId ?? '').trim(),
+    aiEnabled: raw?.aiEnabled === true,
+    aiModel: isValidAiModel(String(raw?.aiModel ?? '')) ? String(raw?.aiModel).trim() || 'gpt-5.6-luna' : 'gpt-5.6-luna',
+    aiApiKeyConfigured: raw?.aiApiKeyConfigured === true,
     updatedAt: String(raw?.updatedAt ?? '')
   };
 }
@@ -44,4 +53,8 @@ export function isValidGtm(value: string) {
 export function isValidMetaPixel(value: string) {
   if (!value) return true;
   return /^\d{5,32}$/.test(value);
+}
+
+export function isValidAiModel(value: string) {
+  return !value || /^[a-zA-Z0-9._:-]{2,100}$/.test(value.trim());
 }

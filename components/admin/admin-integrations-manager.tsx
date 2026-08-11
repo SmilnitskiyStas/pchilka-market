@@ -29,11 +29,11 @@ async function fetchSettings(): Promise<IntegrationsSettings> {
   return normalizeIntegrationsSettings(payload.settings);
 }
 
-async function saveSettings(settings: IntegrationsSettings): Promise<IntegrationsSettings> {
+async function saveSettings(settings: IntegrationsSettings, aiApiKey?: string, clearAiApiKey = false): Promise<IntegrationsSettings> {
   const response = await fetch('/api/admin/integrations', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ settings })
+    body: JSON.stringify({ settings, aiApiKey, clearAiApiKey })
   });
 
   const payload = (await response.json()) as { ok?: boolean; settings?: Partial<IntegrationsSettings>; error?: string };
@@ -51,14 +51,16 @@ export default function AdminIntegrationsManager() {
   const [isSaved, setIsSaved] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [aiApiKey, setAiApiKey] = useState('');
 
   const activeServicesCount = useMemo(() => {
     let count = 0;
     if (settings.ga4MeasurementId) count += 1;
     if (settings.gtmContainerId) count += 1;
     if (settings.metaPixelId) count += 1;
+    if (settings.aiEnabled && settings.aiApiKeyConfigured) count += 1;
     return count;
-  }, [settings.ga4MeasurementId, settings.gtmContainerId, settings.metaPixelId]);
+  }, [settings.aiEnabled, settings.aiApiKeyConfigured, settings.ga4MeasurementId, settings.gtmContainerId, settings.metaPixelId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,8 +127,9 @@ export default function AdminIntegrationsManager() {
         gtmContainerId: gtm,
         metaPixelId: pixel,
         updatedAt: new Date().toISOString()
-      });
+      }, aiApiKey);
       setSettings(saved);
+      setAiApiKey('');
       setIsSaved(true);
       setError('');
     } catch (saveError) {
@@ -144,8 +147,9 @@ export default function AdminIntegrationsManager() {
       const saved = await saveSettings({
         ...defaultIntegrationsSettings,
         updatedAt: new Date().toISOString()
-      });
+      }, undefined, true);
       setSettings(saved);
+      setAiApiKey('');
       setError('');
       setIsSaved(true);
     } catch (saveError) {
@@ -195,6 +199,30 @@ export default function AdminIntegrationsManager() {
             <option value="dev">dev (локальна перевірка)</option>
           </select>
         </div>
+
+        <section className="rounded-xl border border-brand/25 bg-brand/5 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">AI-помічник для RFM-аналізу</h2>
+              <p className="mt-1 text-xs text-slate-600">Використовується у розділі «Маркетинг → RFM-аналіз» для плану дій та рекомендацій.</p>
+            </div>
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <input type="checkbox" checked={settings.aiEnabled} onChange={(event) => update('aiEnabled', event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand" />
+              Увімкнути AI
+            </label>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label htmlFor="ai-model" className="block text-sm font-semibold text-slate-900">AI-модель</label>
+              <input id="ai-model" value={settings.aiModel} onChange={(event) => update('aiModel', event.target.value)} placeholder="gpt-5.6-luna" className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none transition focus:border-brand" />
+            </div>
+            <div>
+              <label htmlFor="ai-api-key" className="block text-sm font-semibold text-slate-900">OpenAI API key</label>
+              <input id="ai-api-key" type="password" value={aiApiKey} onChange={(event) => setAiApiKey(event.target.value)} autoComplete="new-password" placeholder={settings.aiApiKeyConfigured ? 'Ключ збережено — введіть для заміни' : 'sk-...'} className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none transition focus:border-brand" />
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs"><p className={settings.aiApiKeyConfigured ? 'font-semibold text-emerald-700' : 'text-slate-600'}>{settings.aiApiKeyConfigured ? 'API key збережено в зашифрованому вигляді.' : 'API key ще не додано.'}</p>{settings.aiApiKeyConfigured ? <button type="button" disabled={isSyncing} onClick={() => { void saveSettings(settings, undefined, true).then((saved) => { setSettings(saved); setIsSaved(true); }).catch((saveError: unknown) => setError(saveError instanceof Error ? saveError.message : 'Не вдалося видалити API key.')); }} className="font-semibold text-red-700 hover:underline disabled:opacity-60">Видалити ключ</button> : null}</div>
+        </section>
 
         <div>
           <label htmlFor="ga4-id" className="block text-sm font-semibold text-slate-900">

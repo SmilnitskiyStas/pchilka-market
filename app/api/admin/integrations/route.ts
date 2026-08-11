@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import {
   isValidGa4,
+  isValidAiModel,
   isValidGtm,
   isValidMetaPixel,
   normalizeIntegrationsSettings,
@@ -12,7 +13,10 @@ import { getIntegrationsSettingsFromDb, saveIntegrationsSettingsToDb } from '@/l
 
 export const runtime = 'nodejs';
 
-export async function GET() {
+export async function GET(request: Request) {
+  if (!isAdminRequestAuthorized(request)) {
+    return unauthorizedAdminResponse();
+  }
   try {
     const settings = await getIntegrationsSettingsFromDb();
     return NextResponse.json({ ok: true, settings });
@@ -28,7 +32,7 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const body = (await request.json()) as { settings?: Partial<IntegrationsSettings> };
+    const body = (await request.json()) as { settings?: Partial<IntegrationsSettings>; aiApiKey?: string; clearAiApiKey?: boolean };
     const normalized = normalizeIntegrationsSettings(body?.settings);
 
     if (!isValidGa4(normalized.ga4MeasurementId)) {
@@ -40,11 +44,17 @@ export async function PUT(request: Request) {
     if (!isValidMetaPixel(normalized.metaPixelId)) {
       return NextResponse.json({ ok: false, error: 'Некоректний Meta Pixel ID.' }, { status: 400 });
     }
+    if (!isValidAiModel(normalized.aiModel)) {
+      return NextResponse.json({ ok: false, error: 'Некоректна назва AI-моделі.' }, { status: 400 });
+    }
+    if (typeof body.aiApiKey !== 'undefined' && (typeof body.aiApiKey !== 'string' || body.aiApiKey.length > 500)) {
+      return NextResponse.json({ ok: false, error: 'Некоректний AI API key.' }, { status: 400 });
+    }
 
     const saved = await saveIntegrationsSettingsToDb({
       ...normalized,
       updatedAt: new Date().toISOString()
-    });
+    }, { aiApiKey: body.aiApiKey, clearAiApiKey: body.clearAiApiKey === true });
 
     return NextResponse.json({ ok: true, settings: saved });
   } catch (error) {
