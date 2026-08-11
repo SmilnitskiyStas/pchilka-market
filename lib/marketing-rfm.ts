@@ -10,6 +10,7 @@ export type RfmSegmentCustomer = { customerCode: string; sourceCode?: string | n
 export type RfmSegmentTopProduct = { code: string; name: string; customers: number; orders: number; units: number; turnover: number; reach: number };
 export type RfmRelatedProduct = { code: string; name: string; customers: number; sharedOrders: number; baseReach: number; segmentReach: number; affinity: number; togetherShare: number };
 export type RfmProductRelations = { baseCustomers: number; baseOrders: number; affinity: RfmRelatedProduct[]; together: RfmRelatedProduct[] };
+export type RfmMigrationReport = { sourceStoreId: string; customers: number; destinations: Array<{ storeId: string; customers: number; share: number }>; migratedCustomers: Array<{ consumerUid: string; fullName: string | null; mobilePhone: string | null; destinationStoreId: string; lastVisit: string | null }> };
 type CustomerRow = { customer_id: string; orders: string; turnover: string; recency_days: string; latest_visit: string | null; r_score: string; f_score: string; m_score: string };
 
 const meta: Record<RfmSegmentId, Omit<RfmSegment, 'customers' | 'turnover' | 'averageCheck'>> = {
@@ -170,6 +171,23 @@ export async function getRfmProductRelations(days: number, segmentId: string, pr
     });
     const baseCustomers = Number(result.rows[0]?.base_customers ?? 0), baseOrders = Number(result.rows[0]?.base_orders ?? 0);
     return { baseCustomers, baseOrders, affinity: [...rows].sort((a, b) => b.affinity - a.affinity || b.customers - a.customers).slice(0, 20), together: [...rows].sort((a, b) => b.togetherShare - a.togetherShare || b.sharedOrders - a.sharedOrders).slice(0, 20) };
+  });
+}
+
+export async function getRfmMigrationReport(days: number, sourceStoreId: number): Promise<RfmMigrationReport> {
+  if (!Number.isInteger(sourceStoreId)) throw new Error('Оберіть коректний магазин.');
+  const { from, to } = period(days);
+  const identity = `COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', ''))`;
+  const cte = `WITH source_last AS (SELECT ${identity} AS customer_id, MAX(COALESCE(date_receipt, date_close, date_open, date_order)) AS source_last_visit FROM pos.order_client WHERE code_shop = $3::int AND date_order >= $1::date AND date_order < ($2::date + interval '1 day') AND COALESCE(sum_order, 0) > 0 AND ${identity} IS NOT NULL GROUP BY 1), target_visits AS (SELECT ${identity} AS customer_id, code_shop AS destination_store_id, COALESCE(date_receipt, date_close, date_open, date_order) AS visit_at, NULLIF(add_info::jsonb ->> 'full_name', '') AS full_name, NULLIF(add_info::jsonb ->> 'mobile_phone', '') AS mobile_phone FROM pos.order_client WHERE code_shop <> $3::int AND date_order >= $1::date AND date_order < ($2::date + interval '1 day') AND COALESCE(sum_order, 0) > 0 AND ${identity} IS NOT NULL), migrated AS (SELECT DISTINCT ON (target.customer_id) target.customer_id, target.destination_store_id, target.visit_at, target.full_name, target.mobile_phone FROM target_visits target JOIN source_last source ON source.customer_id = target.customer_id AND target.visit_at > source.source_last_visit ORDER BY target.customer_id, target.visit_at DESC)`;
+  return withMarketingSource(async (client) => {
+    type DestinationRow = { store_id: string; customers: string };
+    type CustomerRow = { consumer_uid: string; full_name: string | null; mobile_phone: string | null; destination_store_id: string; last_visit: string | null };
+    const [destinations, customers] = await Promise.all([
+      client.query<DestinationRow>(`${cte} SELECT destination_store_id::text AS store_id, COUNT(*)::text AS customers FROM migrated GROUP BY destination_store_id ORDER BY COUNT(*) DESC LIMIT 10`, [from, to, sourceStoreId]),
+      client.query<CustomerRow>(`${cte} SELECT customer_id AS consumer_uid, full_name, mobile_phone, destination_store_id::text, visit_at::date::text AS last_visit FROM migrated ORDER BY visit_at DESC LIMIT 100`, [from, to, sourceStoreId])
+    ]);
+    const total = customers.rows.length ? Number((await client.query<{ customers: string }>(`${cte} SELECT COUNT(*)::text AS customers FROM migrated`, [from, to, sourceStoreId])).rows[0]?.customers ?? 0) : 0;
+    return { sourceStoreId: String(sourceStoreId), customers: total, destinations: destinations.rows.map((row) => ({ storeId: row.store_id, customers: Number(row.customers), share: total ? Number(row.customers) / total * 100 : 0 })), migratedCustomers: customers.rows.map((row) => ({ consumerUid: row.consumer_uid, fullName: row.full_name, mobilePhone: row.mobile_phone, destinationStoreId: row.destination_store_id, lastVisit: row.last_visit })) };
   });
 }
 
