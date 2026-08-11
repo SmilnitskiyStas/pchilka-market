@@ -8,6 +8,8 @@ export type RfmSegmentDetail = { segment: RfmSegment; behavior: { orders: number
 export type RfmSegmentBehavior = { busiestWeekday: string | null; busiestHour: string | null; weekdayDistribution: Array<{ label: string; share: number }>; topHours: Array<{ label: string; share: number }> };
 export type RfmSegmentCustomer = { customerCode: string; sourceCode?: string | null; consumerUid?: string | null; fullName?: string | null; mobilePhone?: string | null; orders: number; turnover: number; lastPurchase: string | null };
 export type RfmSegmentTopProduct = { code: string; name: string; customers: number; orders: number; units: number; turnover: number; reach: number };
+export type RfmRelatedProduct = { code: string; name: string; customers: number; sharedOrders: number; baseReach: number; segmentReach: number; affinity: number; togetherShare: number };
+export type RfmProductRelations = { baseCustomers: number; baseOrders: number; affinity: RfmRelatedProduct[]; together: RfmRelatedProduct[] };
 type CustomerRow = { customer_id: string; orders: string; turnover: string; recency_days: string; latest_visit: string | null; r_score: string; f_score: string; m_score: string };
 
 const meta: Record<RfmSegmentId, Omit<RfmSegment, 'customers' | 'turnover' | 'averageCheck'>> = {
@@ -96,6 +98,63 @@ export async function getRfmSegmentTopProducts(days: number, segmentId: string, 
       LIMIT 20
     `, [from, to, storeId ?? null, selected.map((row) => row.customer_id)]);
     return result.rows.map((row) => ({ code: row.code, name: row.name ?? `Товар ${row.code}`, customers: Number(row.customers), orders: Number(row.orders), units: Number(row.units), turnover: Number(row.turnover), reach: Number(row.customers) / selected.length * 100 }));
+  });
+}
+
+export async function getRfmProductRelations(days: number, segmentId: string, productCode: string, storeId?: number): Promise<RfmProductRelations> {
+  if (!ids.includes(segmentId as RfmSegmentId)) throw new Error('Невідомий RFM-сегмент.');
+  if (!/^\d+$/.test(productCode)) throw new Error('Некоректний код товару.');
+  const { from, to } = period(days);
+  return withMarketingSource(async (client) => {
+    const selected = (await customers(client, from, to, storeId)).filter((row) => segmentFor(row) === segmentId);
+    if (!selected.length) return { baseCustomers: 0, baseOrders: 0, affinity: [], together: [] };
+    type RelationRow = { code: string; name: string | null; customers: string; shared_orders: string; segment_customers: string; base_customers: string; base_orders: string };
+    const result = await client.query<RelationRow>(`
+      WITH segment_orders AS (
+        SELECT code_order, code_shop, id_workplace,
+          COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')) AS customer_id
+        FROM pos.order_client
+        WHERE date_order >= $1::date AND date_order < ($2::date + interval '1 day')
+          AND ($3::int IS NULL OR code_shop = $3::int)
+          AND COALESCE(sum_order, 0) > 0
+          AND COALESCE(NULLIF(add_info::jsonb -> 'UPLOYAL' ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'consumer_uid', ''), NULLIF(add_info::jsonb ->> 'uployal_client_id', '')) = ANY($4::text[])
+      ), base_orders AS (
+        SELECT DISTINCT so.code_order, so.code_shop, so.id_workplace, so.customer_id
+        FROM segment_orders so
+        JOIN pos.wares_order wo ON wo.code_order = so.code_order AND wo.code_shop = so.code_shop AND wo.id_workplace = so.id_workplace
+        WHERE wo.code_wares = $5::int AND COALESCE(wo.quantity, 0) > 0
+      ), base_summary AS (
+        SELECT COUNT(DISTINCT customer_id)::text AS base_customers, COUNT(*)::text AS base_orders FROM base_orders
+      ), co_products AS (
+        SELECT wo.code_wares::text AS code, MAX(COALESCE(w.name_wares_receipt, w.name_wares)) AS name,
+          COUNT(DISTINCT bo.customer_id)::text AS customers, COUNT(DISTINCT (bo.code_order, bo.code_shop, bo.id_workplace))::text AS shared_orders
+        FROM base_orders bo
+        JOIN pos.wares_order wo ON wo.code_order = bo.code_order AND wo.code_shop = bo.code_shop AND wo.id_workplace = bo.id_workplace
+        LEFT JOIN pos.wares w ON w.code_wares = wo.code_wares
+        WHERE wo.code_wares <> $5::int AND COALESCE(wo.quantity, 0) > 0
+        GROUP BY wo.code_wares
+      ), segment_product_reach AS (
+        SELECT wo.code_wares::text AS code, COUNT(DISTINCT so.customer_id)::text AS segment_customers
+        FROM segment_orders so
+        JOIN pos.wares_order wo ON wo.code_order = so.code_order AND wo.code_shop = so.code_shop AND wo.id_workplace = so.id_workplace
+        WHERE COALESCE(wo.quantity, 0) > 0
+        GROUP BY wo.code_wares
+      )
+      SELECT co.code, co.name, co.customers, co.shared_orders, reach.segment_customers, summary.base_customers, summary.base_orders
+      FROM co_products co
+      JOIN segment_product_reach reach ON reach.code = co.code
+      CROSS JOIN base_summary summary
+      ORDER BY co.customers DESC
+      LIMIT 100
+    `, [from, to, storeId ?? null, selected.map((row) => row.customer_id), Number(productCode)]);
+    const rows = result.rows.map((row) => {
+      const baseCustomers = Number(row.base_customers), baseOrders = Number(row.base_orders), customers = Number(row.customers), segmentCustomers = Number(row.segment_customers);
+      const baseReach = baseCustomers ? customers / baseCustomers * 100 : 0;
+      const segmentReach = selected.length ? segmentCustomers / selected.length * 100 : 0;
+      return { code: row.code, name: row.name ?? `Товар ${row.code}`, customers, sharedOrders: Number(row.shared_orders), baseReach, segmentReach, affinity: segmentReach ? baseReach / segmentReach : 0, togetherShare: baseOrders ? Number(row.shared_orders) / baseOrders * 100 : 0 };
+    });
+    const baseCustomers = Number(result.rows[0]?.base_customers ?? 0), baseOrders = Number(result.rows[0]?.base_orders ?? 0);
+    return { baseCustomers, baseOrders, affinity: [...rows].sort((a, b) => b.affinity - a.affinity || b.customers - a.customers).slice(0, 20), together: [...rows].sort((a, b) => b.togetherShare - a.togetherShare || b.sharedOrders - a.sharedOrders).slice(0, 20) };
   });
 }
 
