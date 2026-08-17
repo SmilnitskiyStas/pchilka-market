@@ -52,6 +52,18 @@ type AccessLinkPayload = {
   error?: string;
 };
 
+type ReminderRunPayload = {
+  ok?: boolean;
+  result?: {
+    candidates: number;
+    missingMeters: number;
+    notificationsSent: number;
+    skippedAlreadySent: number;
+    failed: number;
+  };
+  error?: string;
+};
+
 type MeterPointsPayload = {
   ok?: boolean;
   meters?: UtilityMeterPointRecord[];
@@ -188,6 +200,8 @@ export default function AdminUtilityMetersPage() {
   const [accessLinkStatus, setAccessLinkStatus] = useState('');
   const [isCreatingDocumentShareLink, setIsCreatingDocumentShareLink] = useState(false);
   const [documentActionStatus, setDocumentActionStatus] = useState('');
+  const [isSendingMeterReminders, setIsSendingMeterReminders] = useState(false);
+  const [meterReminderStatus, setMeterReminderStatus] = useState('');
   const [storesError, setStoresError] = useState('');
   const [storeMeters, setStoreMeters] = useState<UtilityMeterPointRecord[]>([]);
   const [metersError, setMetersError] = useState('');
@@ -490,6 +504,35 @@ export default function AdminUtilityMetersPage() {
     }
   }
 
+  async function sendMeterReminders() {
+    setIsSendingMeterReminders(true);
+    setMeterReminderStatus('');
+    try {
+      const response = await fetch('/api/admin/utility-meters/reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ periodMonth })
+      });
+      const result = (await response.json()) as ReminderRunPayload;
+      if (!response.ok || !result.ok || !result.result) {
+        throw new Error(result.error || 'Не вдалося надіслати нагадування.');
+      }
+
+      const summary = result.result;
+      setMeterReminderStatus(
+        summary.notificationsSent > 0
+          ? `Надіслано: ${summary.notificationsSent}. Лічильників без показника: ${summary.missingMeters}.`
+          : summary.skippedAlreadySent > 0
+            ? 'Нагадування для цих працівників уже надсилалися сьогодні.'
+            : 'Немає керівників магазинів з активними лічильниками без показників.'
+      );
+    } catch (error) {
+      setMeterReminderStatus(error instanceof Error ? error.message : 'Не вдалося надіслати нагадування.');
+    } finally {
+      setIsSendingMeterReminders(false);
+    }
+  }
+
   const documentHref = `/admin/utility-meters/document?${new URLSearchParams({
     periodMonth,
     audience: 'stores',
@@ -566,6 +609,14 @@ export default function AdminUtilityMetersPage() {
             >
               {isLoading ? 'Оновлення...' : 'Оновити'}
             </button>
+            <button
+              type="button"
+              onClick={() => { void sendMeterReminders(); }}
+              disabled={isSendingMeterReminders}
+              className="rounded-md bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {isSendingMeterReminders ? 'Надсилання...' : 'Нагадати про показники'}
+            </button>
             <div className="flex flex-wrap items-center gap-2">
               <a
                 href={documentHref}
@@ -598,6 +649,7 @@ export default function AdminUtilityMetersPage() {
             </div>
           </div>
           {documentActionStatus ? <div className="mt-2 text-sm font-medium text-slate-700">{documentActionStatus}</div> : null}
+          {meterReminderStatus ? <div className="mt-2 text-sm font-medium text-slate-700">{meterReminderStatus}</div> : null}
         </section>
 
         {storesError ? (
