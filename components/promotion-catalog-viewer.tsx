@@ -48,6 +48,7 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
   const [currentPage, setCurrentPage] = useState(1);
   const [isPreparing, setIsPreparing] = useState(false);
   const [viewerMode, setViewerMode] = useState<'flipbook' | 'iframe'>('iframe');
+  const [flipbookError, setFlipbookError] = useState('');
   const [flippingPage, setFlippingPage] = useState<{ imageSrc: string; direction: 'next' | 'prev' } | null>(null);
   const flipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartX = useRef<number | null>(null);
@@ -69,6 +70,7 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
     setTotalPages(activeCatalog?.pageCount ?? 1);
     setIsPreparing(false);
     setFlippingPage(null);
+    setFlipbookError('');
   }, [activeCatalog]);
 
   useEffect(() => () => {
@@ -94,7 +96,9 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
     setPageImages([]);
 
     try {
-      const pdfjs = await import('pdfjs-dist');
+      // The legacy browser build includes compatibility shims required by
+      // browsers where the standard PDF.js build falls back to the iframe.
+      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
       const loadingTask = pdfjs.getDocument({
         url: activeCatalog.url,
         disableWorker: true
@@ -132,7 +136,9 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
       setPageImages(renderedImages.filter(Boolean));
       setViewerMode('flipbook');
       setCurrentPage(1);
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Не вдалося підготувати 3D-перегляд.';
+      setFlipbookError(message);
       setViewerMode('iframe');
     } finally {
       setIsPreparing(false);
@@ -289,6 +295,12 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
           {!canEnableFlipbook ? (
             <p className="mt-3 text-xs text-slate-500">
               Для великих каталогів автоматично використовується швидкий PDF-режим для кращої продуктивності.
+            </p>
+          ) : null}
+
+          {viewerMode === 'iframe' && flipbookError ? (
+            <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              3D-перегляд тимчасово недоступний: {flipbookError}
             </p>
           ) : null}
 
