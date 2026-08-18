@@ -11,9 +11,38 @@ export type PromotionCatalogMetadata = {
 };
 
 const METADATA_FILE_NAME = 'catalog-metadata.json';
+const SETTINGS_FILE_NAME = 'catalog-settings.json';
+
+export type PromotionCatalogSettings = {
+  showArchive: boolean;
+};
 
 function metadataFilePath(): string {
   return path.join(getUploadsDir(), 'promotions', 'catalogs', METADATA_FILE_NAME);
+}
+
+function settingsFilePath(): string {
+  return path.join(getUploadsDir(), 'promotions', 'catalogs', SETTINGS_FILE_NAME);
+}
+
+export async function getPromotionCatalogSettings(): Promise<PromotionCatalogSettings> {
+  try {
+    const raw = await fs.readFile(settingsFilePath(), 'utf8');
+    const parsed = JSON.parse(raw) as Partial<PromotionCatalogSettings>;
+    return { showArchive: parsed.showArchive === true };
+  } catch {
+    return { showArchive: false };
+  }
+}
+
+export async function savePromotionCatalogSettings(
+  settings: Partial<PromotionCatalogSettings>
+): Promise<PromotionCatalogSettings> {
+  const normalized = { showArchive: settings.showArchive === true };
+  const filePath = settingsFilePath();
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify(normalized, null, 2), 'utf8');
+  return normalized;
 }
 
 function normalizeMetadata(value: Partial<PromotionCatalogMetadata>): PromotionCatalogMetadata {

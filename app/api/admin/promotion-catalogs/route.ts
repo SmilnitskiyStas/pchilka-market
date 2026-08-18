@@ -7,6 +7,8 @@ import {
   getPromotionCatalogMetadata,
   removePromotionCatalogMetadata,
   savePromotionCatalogMetadata,
+  getPromotionCatalogSettings,
+  savePromotionCatalogSettings,
   type PromotionCatalogMetadata
 } from '@/lib/promotion-catalog-metadata';
 import { buildMediaUrl, getUploadsDir, resolveUploadPath } from '@/lib/uploads';
@@ -87,7 +89,8 @@ async function listCatalogs(): Promise<CatalogFile[]> {
 
 export async function GET(request: Request) {
   if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse();
-  return NextResponse.json({ ok: true, catalogs: await listCatalogs() });
+  const [catalogs, settings] = await Promise.all([listCatalogs(), getPromotionCatalogSettings()]);
+  return NextResponse.json({ ok: true, catalogs, settings });
 }
 
 export async function POST(request: Request) {
@@ -165,7 +168,15 @@ export async function PUT(request: Request) {
   if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse();
 
   try {
-    const { id, metadata } = (await request.json()) as { id?: string; metadata?: PromotionCatalogMetadata };
+    const { id, metadata, settings } = (await request.json()) as {
+      id?: string;
+      metadata?: PromotionCatalogMetadata;
+      settings?: { showArchive?: boolean };
+    };
+    if (settings) {
+      const savedSettings = await savePromotionCatalogSettings(settings);
+      return NextResponse.json({ ok: true, settings: savedSettings });
+    }
     const relativePath = typeof id === 'string' ? id.split('/').filter(Boolean) : [];
     if (relativePath.length === 0 || path.extname(relativePath.at(-1) ?? '').toLowerCase() !== '.pdf') {
       return NextResponse.json({ ok: false, error: 'Некоректний каталог.' }, { status: 400 });

@@ -19,11 +19,15 @@ type MediaAsset = {
   url: string;
 };
 
-async function requestCatalogs(): Promise<Catalog[]> {
+type CatalogSettings = {
+  showArchive: boolean;
+};
+
+async function requestCatalogs(): Promise<{ catalogs: Catalog[]; settings: CatalogSettings }> {
   const response = await fetch('/api/admin/promotion-catalogs', { cache: 'no-store' });
-  const payload = (await response.json()) as { ok?: boolean; catalogs?: Catalog[]; error?: string };
+  const payload = (await response.json()) as { ok?: boolean; catalogs?: Catalog[]; settings?: CatalogSettings; error?: string };
   if (!response.ok || !payload.ok) throw new Error(payload.error || 'Не вдалося завантажити каталоги.');
-  return payload.catalogs ?? [];
+  return { catalogs: payload.catalogs ?? [], settings: payload.settings ?? { showArchive: false } };
 }
 
 export default function AdminPromotionCatalogManager() {
@@ -39,10 +43,15 @@ export default function AdminPromotionCatalogManager() {
   const [seoTitle, setSeoTitle] = useState('');
   const [seoDescription, setSeoDescription] = useState('');
   const [seoKeywords, setSeoKeywords] = useState('');
+  const [settings, setSettings] = useState<CatalogSettings>({ showArchive: false });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   useEffect(() => {
     void requestCatalogs()
-      .then(setCatalogs)
+      .then((payload) => {
+        setCatalogs(payload.catalogs);
+        setSettings(payload.settings);
+      })
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити каталоги.'))
       .finally(() => setIsLoading(false));
   }, []);
@@ -180,10 +189,35 @@ export default function AdminPromotionCatalogManager() {
     }
   }
 
+  async function updateArchiveVisibility(showArchive: boolean) {
+    setIsSavingSettings(true);
+    setError('');
+    try {
+      const response = await fetch('/api/admin/promotion-catalogs', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { showArchive } })
+      });
+      const payload = (await response.json()) as { ok?: boolean; settings?: CatalogSettings; error?: string };
+      if (!response.ok || !payload.ok || !payload.settings) throw new Error(payload.error || 'Не вдалося зберегти налаштування архіву.');
+      setSettings(payload.settings);
+      setSuccess('Налаштування відображення архіву збережено.');
+    } catch (settingsError) {
+      setError(settingsError instanceof Error ? settingsError.message : 'Не вдалося зберегти налаштування архіву.');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
   return (
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
       <h2 className="text-lg font-semibold text-slate-900">Каталог акцій</h2>
       <p className="mt-2 text-sm text-slate-600">Додайте PDF із комп’ютера або оберіть файл із «Медіафайлів». Найновіший каталог автоматично буде основним на сторінці каталогу, інші залишаться в архіві.</p>
+
+      <label className="mt-4 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-900">
+        <input type="checkbox" checked={settings.showArchive} disabled={isSavingSettings} onChange={(event) => { void updateArchiveVisibility(event.target.checked); }} className="h-4 w-4 rounded border-slate-300 text-brand" />
+        Показувати архів каталогів на публічній сторінці
+      </label>
 
       <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
         <label className="text-sm font-semibold text-slate-900">Назва каталогу

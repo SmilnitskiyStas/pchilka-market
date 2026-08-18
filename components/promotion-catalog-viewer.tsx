@@ -20,6 +20,7 @@ export type PromotionCatalog = {
 
 type PromotionCatalogViewerProps = {
   catalogs: PromotionCatalog[];
+  showArchive?: boolean;
 };
 
 type FlipPageProps = {
@@ -52,7 +53,7 @@ function clampPage(page: number, total: number) {
   return Math.min(Math.max(1, page), Math.max(1, total));
 }
 
-export default function PromotionCatalogViewer({ catalogs }: PromotionCatalogViewerProps) {
+export default function PromotionCatalogViewer({ catalogs, showArchive = false }: PromotionCatalogViewerProps) {
   const [activeId, setActiveId] = useState(catalogs[0]?.id ?? '');
   const [pageImages, setPageImages] = useState<string[]>([]);
   const [totalPages, setTotalPages] = useState(catalogs[0]?.pageCount ?? 1);
@@ -245,14 +246,20 @@ export default function PromotionCatalogViewer({ catalogs }: PromotionCatalogVie
               &#8250;
             </button>
 
-            <div className="h-[62vh] overflow-hidden rounded-xl border border-slate-400 bg-white shadow-[0_10px_24px_rgba(0,0,0,0.12)] sm:h-[68vh] lg:h-[72vh]">
+            <div
+              className={`rounded-xl border border-slate-400 bg-white shadow-[0_10px_24px_rgba(0,0,0,0.12)] ${
+                viewerMode === 'flipbook'
+                  ? 'min-h-[62vh] overflow-auto sm:min-h-[68vh] lg:min-h-[72vh]'
+                  : 'h-[62vh] overflow-hidden sm:h-[68vh] lg:h-[72vh]'
+              }`}
+            >
               {isPreparing ? (
-                <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-slate-500">
+                <div className="flex min-h-[62vh] flex-col items-center justify-center gap-3 text-sm text-slate-500 sm:min-h-[68vh] lg:min-h-[72vh]">
                   <span className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-brand" />
                   <span>Підготовка книжкового режиму...</span>
                 </div>
               ) : viewerMode === 'flipbook' && pageImages.length > 0 ? (
-                <div className="flex h-full items-center justify-center bg-[#f1f1f1]">
+                <div className="flex min-h-[62vh] items-center justify-center bg-[#f1f1f1] p-2 sm:min-h-[68vh] sm:p-4 lg:min-h-[72vh]">
                   <HTMLFlipBook
                     ref={flipBookRef}
                     style={{}}
@@ -349,15 +356,12 @@ export default function PromotionCatalogViewer({ catalogs }: PromotionCatalogVie
         </div>
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      {showArchive && archivedCatalogs.length > 0 ? <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <h2 className="text-lg font-semibold text-slate-900">Архів каталогів</h2>
         <p className="mt-1 text-sm text-slate-600">Застарілі каталоги показані меншими картками. Клік перемикає активний каталог.</p>
 
-        {archivedCatalogs.length === 0 ? (
-          <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Поки що додано лише один поточний каталог.</p>
-        ) : (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {archivedCatalogs.map((catalog) => (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {archivedCatalogs.map((catalog) => (
               <button
                 key={catalog.id}
                 type="button"
@@ -369,10 +373,9 @@ export default function PromotionCatalogViewer({ catalogs }: PromotionCatalogVie
                 <p className="mt-1 text-xs text-slate-500">Сторінок: {catalog.pageCount}</p>
                 <p className="mt-3 inline-block rounded-full bg-brand/10 px-3 py-1 text-xs font-semibold text-brand">Відкрити тут</p>
               </button>
-            ))}
-          </div>
-        )}
-      </section>
+          ))}
+        </div>
+      </section> : null}
     </div>
   );
 }
