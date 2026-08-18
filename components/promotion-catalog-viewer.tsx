@@ -71,7 +71,7 @@ export default function PromotionCatalogViewer({ catalogs }: PromotionCatalogVie
   useEffect(() => {
     setCurrentPage(1);
     setPageImages([]);
-    setViewerMode('iframe');
+    setViewerMode(canEnableFlipbook ? 'flipbook' : 'iframe');
     setTotalPages(activeCatalog?.pageCount ?? 1);
     setIsPreparing(false);
   }, [activeCatalog]);
@@ -139,6 +139,11 @@ export default function PromotionCatalogViewer({ catalogs }: PromotionCatalogVie
       setIsPreparing(false);
     }
   };
+
+  useEffect(() => {
+    if (!canEnableFlipbook) return;
+    void enableFlipbook();
+  }, [activeCatalog?.id]);
 
   const goFirst = () => {
     if (viewerMode === 'flipbook' && flipBookRef.current?.pageFlip) {
