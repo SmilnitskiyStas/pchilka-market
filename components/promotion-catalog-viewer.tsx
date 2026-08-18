@@ -12,6 +12,10 @@ export type PromotionCatalog = {
   url: string;
   updatedAt: string;
   pageCount: number;
+  title?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  seoKeywords?: string;
 };
 
 type PromotionCatalogViewerProps = {
@@ -182,7 +186,7 @@ export default function PromotionCatalogViewer({ catalogs }: PromotionCatalogVie
       <section className="overflow-hidden rounded-[2rem] border border-brand/30 bg-gradient-to-br from-lime-50 via-white to-emerald-50 shadow-sm">
         <div className="border-b border-brand/20 px-5 py-5 sm:px-8">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Каталог акцій</p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{activeCatalog.name}</h1>
+          <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{activeCatalog.title || activeCatalog.name}</h1>
           <p className="mt-1 text-sm text-slate-600">
             Оновлено: {formatUpdatedAt(activeCatalog.updatedAt)} | Сторінок: {totalPages}
           </p>
@@ -360,7 +364,7 @@ export default function PromotionCatalogViewer({ catalogs }: PromotionCatalogVie
                 onClick={() => setActiveId(catalog.id)}
                 className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-brand hover:bg-white"
               >
-                <p className="line-clamp-2 text-sm font-semibold text-slate-900">{catalog.name}</p>
+                <p className="line-clamp-2 text-sm font-semibold text-slate-900">{catalog.title || catalog.name}</p>
                 <p className="mt-2 text-xs text-slate-500">Оновлено: {formatUpdatedAt(catalog.updatedAt)}</p>
                 <p className="mt-1 text-xs text-slate-500">Сторінок: {catalog.pageCount}</p>
                 <p className="mt-3 inline-block rounded-full bg-brand/10 px-3 py-1 text-xs font-semibold text-brand">Відкрити тут</p>
