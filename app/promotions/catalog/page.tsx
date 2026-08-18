@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import PromotionCatalogViewer, { type PromotionCatalog } from '@/components/promotion-catalog-viewer';
+import { buildMediaUrl, getUploadsDir } from '@/lib/uploads';
 
 async function readPdfPageCount(absolutePath: string): Promise<number> {
   try {
@@ -18,35 +19,44 @@ async function readPdfPageCount(absolutePath: string): Promise<number> {
   }
 }
 
-async function getPromotionCatalogs(): Promise<PromotionCatalog[]> {
-  const catalogsDir = path.join(process.cwd(), 'public', 'pdf', 'promotions');
+async function readCatalogs(
+  directory: string,
+  buildUrl: (relativePath: string) => string,
+  idPrefix: string,
+  relativeDirectory = ''
+): Promise<PromotionCatalog[]> {
+  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
+      const absolutePath = path.join(directory, entry.name);
 
-  let entries: Awaited<ReturnType<typeof fs.readdir>> = [];
-  try {
-    entries = await fs.readdir(catalogsDir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
+      if (entry.isDirectory()) return readCatalogs(absolutePath, buildUrl, idPrefix, relativePath);
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.pdf')) return [];
 
-  const files = await Promise.all(
-    entries
-      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.pdf'))
-      .map(async (entry) => {
-        const absolutePath = path.join(catalogsDir, entry.name);
-        const stats = await fs.stat(absolutePath);
-        const pageCount = await readPdfPageCount(absolutePath);
-
-        return {
-          id: entry.name,
-          name: entry.name.replace(/\.pdf$/i, ''),
-          url: `/pdf/promotions/${encodeURIComponent(entry.name)}`,
-          updatedAt: stats.mtime.toISOString(),
-          pageCount
-        };
-      })
+      const stats = await fs.stat(absolutePath);
+      return [{
+        id: `${idPrefix}:${relativePath}`,
+        name: entry.name.replace(/\.pdf$/i, ''),
+        url: buildUrl(relativePath),
+        updatedAt: stats.mtime.toISOString(),
+        pageCount: await readPdfPageCount(absolutePath)
+      }];
+    })
   );
 
-  return files.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  return nested.flat();
+}
+
+async function getPromotionCatalogs(): Promise<PromotionCatalog[]> {
+  const legacyDir = path.join(process.cwd(), 'public', 'pdf', 'promotions');
+  const uploadedDir = path.join(getUploadsDir(), 'promotions', 'catalogs');
+  const [legacyCatalogs, uploadedCatalogs] = await Promise.all([
+    readCatalogs(legacyDir, (relativePath) => `/pdf/promotions/${relativePath.split('/').map(encodeURIComponent).join('/')}`, 'legacy'),
+    readCatalogs(uploadedDir, (relativePath) => buildMediaUrl(['promotions', 'catalogs', ...relativePath.split('/')]), 'uploaded')
+  ]);
+
+  return [...uploadedCatalogs, ...legacyCatalogs].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 export default async function PromotionsCatalogPage() {

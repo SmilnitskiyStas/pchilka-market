@@ -79,7 +79,7 @@ export default function PromotionCatalogViewer({ catalogs }: PromotionCatalogVie
   if (!activeCatalog) {
     return (
       <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-600">
-        У папці `public/pdf/promotions` ще немає PDF-каталогів.
+        Актуальних PDF-каталогів ще немає.
       </div>
     );
   }

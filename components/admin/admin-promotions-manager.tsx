@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import type { PromotionRecord } from '@/lib/promotion-types';
+import AdminPromotionCatalogManager from '@/components/admin/admin-promotion-catalog-manager';
 import AdminShockPriceManager from '@/components/admin/admin-shock-price-manager';
 import {
   defaultShockPriceSettings,
@@ -76,6 +77,7 @@ async function saveShockPriceSettings(settings: ShockPriceSettings): Promise<Sho
 }
 
 export default function AdminPromotionsManager() {
+  const [activeTab, setActiveTab] = useState<'promotions' | 'catalog'>('promotions');
   const [promotions, setPromotions] = useState<PromotionRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -270,6 +272,13 @@ export default function AdminPromotionsManager() {
       <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Керування акціями</h1>
       <p className="mt-3 text-sm text-slate-700 sm:text-base">CRUD для акцій зберігається у БД та доступний для подальшого підключення публічних сторінок.</p>
       {isLoading ? <p className="mt-2 text-sm font-semibold text-slate-600">Завантаження акцій з БД...</p> : null}
+
+      <div className="mt-5 flex gap-2 border-b border-slate-200">
+        <button type="button" onClick={() => setActiveTab('promotions')} className={`border-b-2 px-4 py-2 text-sm font-semibold ${activeTab === 'promotions' ? 'border-brand text-brand' : 'border-transparent text-slate-600'}`}>Акції</button>
+        <button type="button" onClick={() => setActiveTab('catalog')} className={`border-b-2 px-4 py-2 text-sm font-semibold ${activeTab === 'catalog' ? 'border-brand text-brand' : 'border-transparent text-slate-600'}`}>Каталог</button>
+      </div>
+
+      {activeTab === 'catalog' ? <AdminPromotionCatalogManager /> : <>
 
       <form onSubmit={handleSubmit} className="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
         <div>
@@ -493,6 +502,7 @@ export default function AdminPromotionsManager() {
       </section>
 
       <AdminShockPriceManager />
+      </>}
     </div>
   );
 }
