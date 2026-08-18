@@ -3,7 +3,7 @@ import path from 'path';
 import Link from 'next/link';
 import BannerCarousel from '@/components/banner-carousel';
 import { latestBlogPosts } from '@/content/blog';
-import { defaultHomeBanners } from '@/content/home-banners';
+import type { HomeBanner } from '@/content/home-banners';
 import { isBannerInPublishRange } from '@/lib/banner-datetime';
 import { listBannersFromDb } from '@/lib/banners-repository';
 import { listPublishedEntriesByType } from '@/lib/public-content-repository';
@@ -114,12 +114,11 @@ async function readNetworkStats(): Promise<NetworkStats> {
 }
 
 export default async function HomePage() {
-  let activeBanners = defaultHomeBanners;
+  let activeBanners: HomeBanner[] = [];
   try {
-    const dbBanners = await listBannersFromDb();
-    if (dbBanners.length > 0) activeBanners = dbBanners;
+    activeBanners = await listBannersFromDb();
   } catch {
-    activeBanners = defaultHomeBanners;
+    // Do not show replacement banners when the configured list is unavailable.
   }
 
   const bannerSlides = activeBanners

@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
-import { defaultHomeBanners, type HomeBanner } from '@/content/home-banners';
+import type { HomeBanner } from '@/content/home-banners';
 import { mainMenu } from '@/content/menu';
 import { doesBannerMatchDate, getBannerPublicationState } from '@/lib/banner-datetime';
 
@@ -257,7 +257,7 @@ async function saveBanners(banners: HomeBanner[]): Promise<HomeBanner[]> {
 }
 
 export default function AdminBannersManager() {
-  const [banners, setBanners] = useState<HomeBanner[]>(defaultHomeBanners);
+  const [banners, setBanners] = useState<HomeBanner[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -290,7 +290,7 @@ export default function AdminBannersManager() {
       setIsLoading(true);
       try {
         const remote = await fetchBanners();
-        if (!cancelled) setBanners(remote.length > 0 ? remote : defaultHomeBanners);
+        if (!cancelled) setBanners(remote);
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : 'Не вдалося завантажити банери.';
