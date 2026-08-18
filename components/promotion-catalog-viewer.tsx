@@ -1,7 +1,6 @@
 ﻿'use client';
 
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
-import HTMLFlipBook from 'react-pageflip';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const FLIP_DURATION_MS = 800;
 const MAX_AUTO_FLIPBOOK_PAGES = 16;
@@ -22,19 +21,6 @@ type PromotionCatalogViewerProps = {
   catalogs: PromotionCatalog[];
   showArchive?: boolean;
 };
-
-type FlipPageProps = {
-  imageSrc: string;
-  pageNumber: number;
-};
-
-const FlipPage = forwardRef<HTMLDivElement, FlipPageProps>(function FlipPage({ imageSrc, pageNumber }, ref) {
-  return (
-    <div ref={ref} className="h-full w-full bg-white">
-      <img src={imageSrc} alt={`Сторінка ${pageNumber}`} draggable={false} className="h-full w-full object-contain" />
-    </div>
-  );
-});
 
 function formatUpdatedAt(iso: string) {
   const date = new Date(iso);
@@ -62,8 +48,9 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
   const [currentPage, setCurrentPage] = useState(1);
   const [isPreparing, setIsPreparing] = useState(false);
   const [viewerMode, setViewerMode] = useState<'flipbook' | 'iframe'>('iframe');
-
-  const flipBookRef = useRef<any>(null);
+  const [flippingPage, setFlippingPage] = useState<{ imageSrc: string; direction: 'next' | 'prev' } | null>(null);
+  const flipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartX = useRef<number | null>(null);
 
   const activeCatalog = useMemo(
     () => catalogs.find((catalog) => catalog.id === activeId) ?? catalogs[0],
@@ -81,7 +68,12 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
     setViewerMode(canEnableFlipbook ? 'flipbook' : 'iframe');
     setTotalPages(activeCatalog?.pageCount ?? 1);
     setIsPreparing(false);
+    setFlippingPage(null);
   }, [activeCatalog]);
+
+  useEffect(() => () => {
+    if (flipTimer.current) clearTimeout(flipTimer.current);
+  }, []);
 
   if (!activeCatalog) {
     return (
@@ -152,37 +144,26 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
     void enableFlipbook();
   }, [activeCatalog?.id]);
 
-  const goFirst = () => {
-    if (viewerMode === 'flipbook' && flipBookRef.current?.pageFlip) {
-      flipBookRef.current.pageFlip().flip(0);
+  const goToPage = (page: number) => {
+    const nextPage = clampPage(page, totalPages);
+    if (nextPage === currentPage || flippingPage) return;
+
+    if (viewerMode !== 'flipbook' || !pageImages[currentPage - 1]) {
+      setCurrentPage(nextPage);
+      return;
     }
-    setCurrentPage(1);
+
+    const direction = nextPage > currentPage ? 'next' : 'prev';
+    setFlippingPage({ imageSrc: pageImages[currentPage - 1], direction });
+    setCurrentPage(nextPage);
+    if (flipTimer.current) clearTimeout(flipTimer.current);
+    flipTimer.current = setTimeout(() => setFlippingPage(null), FLIP_DURATION_MS);
   };
 
-  const goPrev = () => {
-    if (!canGoPrev) return;
-    if (viewerMode === 'flipbook' && flipBookRef.current?.pageFlip) {
-      flipBookRef.current.pageFlip().flipPrev();
-    } else {
-      setCurrentPage((prev) => Math.max(1, prev - 1));
-    }
-  };
-
-  const goNext = () => {
-    if (!canGoNext) return;
-    if (viewerMode === 'flipbook' && flipBookRef.current?.pageFlip) {
-      flipBookRef.current.pageFlip().flipNext();
-    } else {
-      setCurrentPage((prev) => Math.min(totalPages, prev + 1));
-    }
-  };
-
-  const goLast = () => {
-    if (viewerMode === 'flipbook' && flipBookRef.current?.pageFlip) {
-      flipBookRef.current.pageFlip().flip(Math.max(0, totalPages - 1));
-    }
-    setCurrentPage(totalPages);
-  };
+  const goFirst = () => goToPage(1);
+  const goPrev = () => goToPage(currentPage - 1);
+  const goNext = () => goToPage(currentPage + 1);
+  const goLast = () => goToPage(totalPages);
 
   return (
     <div className="space-y-6">
@@ -261,41 +242,38 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
                   <span>Підготовка книжкового режиму...</span>
                 </div>
               ) : viewerMode === 'flipbook' && pageImages.length > 0 ? (
-                <div className="flex min-h-[62vh] items-center justify-center bg-[#f1f1f1] p-2 sm:min-h-[68vh] sm:p-4 lg:min-h-[72vh]">
-                  <HTMLFlipBook
-                    ref={flipBookRef}
-                    style={{}}
-                    width={700}
-                    height={900}
-                    minWidth={280}
-                    maxWidth={1300}
-                    minHeight={360}
-                    maxHeight={1600}
-                    size="stretch"
-                    startPage={0}
-                    drawShadow
-                    flippingTime={FLIP_DURATION_MS}
-                    usePortrait
-                    startZIndex={0}
-                    autoSize
-                    maxShadowOpacity={0.45}
-                    showCover={false}
-                    showPageCorners
-                    disableFlipByClick={false}
-                    mobileScrollSupport={false}
-                    clickEventForward
-                    useMouseEvents
-                    swipeDistance={20}
-                    onFlip={(event: any) => {
-                      const next = (event?.data ?? 0) + 1;
-                      setCurrentPage(clampPage(next, totalPages));
-                    }}
-                    className="mx-auto"
-                  >
-                    {pageImages.map((src, index) => (
-                      <FlipPage key={`${activeCatalog.id}-page-${index + 1}`} imageSrc={src} pageNumber={index + 1} />
-                    ))}
-                  </HTMLFlipBook>
+                <div
+                  className="flex min-h-[62vh] touch-pan-y items-center justify-center bg-[#20251f] p-3 sm:min-h-[68vh] sm:p-6 lg:min-h-[72vh]"
+                  onTouchStart={(event) => { touchStartX.current = event.touches[0]?.clientX ?? null; }}
+                  onTouchEnd={(event) => {
+                    if (touchStartX.current === null) return;
+                    const delta = event.changedTouches[0].clientX - touchStartX.current;
+                    touchStartX.current = null;
+                    if (Math.abs(delta) < 45) return;
+                    if (delta < 0) goNext(); else goPrev();
+                  }}
+                >
+                  <div className="relative w-full max-w-[680px]" style={{ perspective: '2200px' }}>
+                    <div className="absolute inset-y-2 left-1/2 z-20 w-px -translate-x-1/2 bg-black/30 shadow-[0_0_18px_5px_rgba(0,0,0,0.3)]" />
+                    <div className="relative overflow-hidden rounded-r-md rounded-l-xl bg-white shadow-[0_26px_48px_rgba(0,0,0,0.48)]">
+                      <img
+                        src={pageImages[currentPage - 1]}
+                        alt={`Сторінка ${currentPage}`}
+                        draggable={false}
+                        className="block h-auto max-h-[72vh] w-full object-contain"
+                      />
+                      {flippingPage ? (
+                        <div
+                          className={`absolute inset-0 z-30 ${flippingPage.direction === 'next' ? 'book-flip-next' : 'book-flip-prev'}`}
+                          style={{ transformOrigin: flippingPage.direction === 'next' ? 'left center' : 'right center' }}
+                        >
+                          <img src={flippingPage.imageSrc} alt="" draggable={false} className="h-full w-full object-cover" />
+                          <span className="absolute inset-0 bg-gradient-to-r from-black/45 via-transparent to-white/20" />
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="pointer-events-none absolute inset-x-4 bottom-0 h-5 rounded-full bg-black/35 blur-lg" />
+                  </div>
                 </div>
               ) : (
                 <iframe
