@@ -3,6 +3,10 @@ import path from 'path';
 import PromotionCatalogViewer, { type PromotionCatalog } from '@/components/promotion-catalog-viewer';
 import { buildMediaUrl, getUploadsDir } from '@/lib/uploads';
 
+// Catalogs are added through the admin panel after deployment, so this page
+// must read the file list anew for every request instead of using build output.
+export const dynamic = 'force-dynamic';
+
 async function readPdfPageCount(absolutePath: string): Promise<number> {
   try {
     const fileBuffer = await fs.readFile(absolutePath);
