@@ -99,9 +99,9 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
       // The legacy browser build includes compatibility shims required by
       // browsers where the standard PDF.js build falls back to the iframe.
       const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      pdfjs.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.mjs';
       const loadingTask = pdfjs.getDocument({
-        url: activeCatalog.url,
-        disableWorker: true
+        url: activeCatalog.url
       } as any);
       const pdf = await loadingTask.promise;
 
