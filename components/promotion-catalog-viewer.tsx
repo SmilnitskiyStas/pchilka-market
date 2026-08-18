@@ -46,7 +46,9 @@ function formatUpdatedAt(iso: string) {
 }
 
 function buildPdfViewerUrl(url: string, page: number) {
-  return `${url}#page=${page}&view=FitH&toolbar=0&navpanes=0&scrollbar=0`;
+  // `FitH` fits the page width and cuts off tall pages inside the viewer.
+  // `page-fit` keeps the whole PDF page visible within the available frame.
+  return `${url}#page=${page}&zoom=page-fit&toolbar=0&navpanes=0&scrollbar=0`;
 }
 
 function clampPage(page: number, total: number) {
