@@ -82,20 +82,39 @@ export async function POST(request: Request) {
   if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse();
 
   try {
-    const formData = await request.formData();
-    const file = formData.get('file');
-    if (!(file instanceof File) || path.extname(file.name).toLowerCase() !== '.pdf') {
-      return NextResponse.json({ ok: false, error: 'Оберіть PDF-файл каталогу.' }, { status: 400 });
-    }
-
     const now = new Date();
     const year = String(now.getFullYear());
     const month = String(now.getMonth() + 1).padStart(2, '0');
-    const fileName = `${Date.now()}-${normalizeFileName(file.name) || 'catalog'}.pdf`;
-    const targetParts = [...CATALOG_FOLDER, year, month, fileName];
-    const targetPath = resolveUploadPath(targetParts);
+    const formData = await request.formData();
+    const sourcePath = formData.get('sourcePath');
+    const file = formData.get('file');
+    let sourceFileName = '';
+    let sourceFilePath = '';
+
+    if (typeof sourcePath === 'string' && sourcePath.startsWith('/media/')) {
+      const sourceParts = sourcePath.replace(/^\/media\//, '').split('/').filter(Boolean);
+      sourceFileName = sourceParts.at(-1) ?? '';
+      if (path.extname(sourceFileName).toLowerCase() !== '.pdf') {
+        return NextResponse.json({ ok: false, error: 'Оберіть PDF-файл із медіафайлів.' }, { status: 400 });
+      }
+      sourceFilePath = resolveUploadPath(sourceParts);
+      if (!(await fs.stat(sourceFilePath)).isFile()) {
+        return NextResponse.json({ ok: false, error: 'Файл у медіафайлах не знайдено.' }, { status: 404 });
+      }
+    } else if (file instanceof File && path.extname(file.name).toLowerCase() === '.pdf') {
+      sourceFileName = file.name;
+    } else {
+      return NextResponse.json({ ok: false, error: 'Оберіть PDF-файл каталогу.' }, { status: 400 });
+    }
+
+    const fileName = `${Date.now()}-${normalizeFileName(sourceFileName) || 'catalog'}.pdf`;
+    const targetPath = resolveUploadPath([...CATALOG_FOLDER, year, month, fileName]);
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
-    await fs.writeFile(targetPath, Buffer.from(await file.arrayBuffer()));
+    if (sourceFilePath) {
+      await fs.copyFile(sourceFilePath, targetPath);
+    } else if (file instanceof File) {
+      await fs.writeFile(targetPath, Buffer.from(await file.arrayBuffer()));
+    }
 
     return NextResponse.json({ ok: true, catalogs: await listCatalogs() });
   } catch (error) {

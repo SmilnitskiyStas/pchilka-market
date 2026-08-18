@@ -49,14 +49,14 @@ async function readCatalogs(
 }
 
 async function getPromotionCatalogs(): Promise<PromotionCatalog[]> {
-  const legacyDir = path.join(process.cwd(), 'public', 'pdf', 'promotions');
   const uploadedDir = path.join(getUploadsDir(), 'promotions', 'catalogs');
-  const [legacyCatalogs, uploadedCatalogs] = await Promise.all([
-    readCatalogs(legacyDir, (relativePath) => `/pdf/promotions/${relativePath.split('/').map(encodeURIComponent).join('/')}`, 'legacy'),
-    readCatalogs(uploadedDir, (relativePath) => buildMediaUrl(['promotions', 'catalogs', ...relativePath.split('/')]), 'uploaded')
-  ]);
+  const catalogs = await readCatalogs(
+    uploadedDir,
+    (relativePath) => buildMediaUrl(['promotions', 'catalogs', ...relativePath.split('/')]),
+    'uploaded'
+  );
 
-  return [...uploadedCatalogs, ...legacyCatalogs].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  return catalogs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 export default async function PromotionsCatalogPage() {
