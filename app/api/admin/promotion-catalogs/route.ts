@@ -11,6 +11,7 @@ import {
   savePromotionCatalogSettings,
   type PromotionCatalogMetadata
 } from '@/lib/promotion-catalog-metadata';
+import { removePromotionCatalogRender, renderPromotionCatalog } from '@/lib/promotion-catalog-renderer';
 import { buildMediaUrl, getUploadsDir, resolveUploadPath } from '@/lib/uploads';
 
 export const runtime = 'nodejs';
@@ -136,7 +137,9 @@ export async function POST(request: Request) {
     } else if (file instanceof File) {
       await fs.writeFile(targetPath, Buffer.from(await file.arrayBuffer()));
     }
-    await savePromotionCatalogMetadata(`${year}/${month}/${fileName}`, metadata);
+    const catalogId = `${year}/${month}/${fileName}`;
+    await savePromotionCatalogMetadata(catalogId, metadata);
+    await renderPromotionCatalog(catalogId);
 
     return NextResponse.json({ ok: true, catalogs: await listCatalogs() });
   } catch (error) {
@@ -157,6 +160,7 @@ export async function DELETE(request: Request) {
 
     await fs.unlink(resolveUploadPath([...CATALOG_FOLDER, ...relativePath]));
     await removePromotionCatalogMetadata(relativePath.join('/'));
+    await removePromotionCatalogRender(relativePath.join('/'));
     return NextResponse.json({ ok: true, catalogs: await listCatalogs() });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не вдалося видалити каталог.';

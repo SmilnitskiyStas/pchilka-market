@@ -3,6 +3,7 @@ import path from 'path';
 import type { Metadata } from 'next';
 import PromotionCatalogViewer, { type PromotionCatalog } from '@/components/promotion-catalog-viewer';
 import { getPromotionCatalogMetadata, getPromotionCatalogSettings } from '@/lib/promotion-catalog-metadata';
+import { renderPromotionCatalog } from '@/lib/promotion-catalog-renderer';
 import { buildMediaUrl, getUploadsDir } from '@/lib/uploads';
 
 // Catalogs are added through the admin panel after deployment, so this page
@@ -42,12 +43,14 @@ async function readCatalogs(
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.pdf')) return [];
 
       const stats = await fs.stat(absolutePath);
+      const pageImages = await renderPromotionCatalog(relativePath).catch(() => []);
       return [{
         id: `${idPrefix}:${relativePath}`,
         name: entry.name.replace(/\.pdf$/i, ''),
         url: buildUrl(relativePath),
         updatedAt: stats.mtime.toISOString(),
         pageCount: await readPdfPageCount(absolutePath),
+        pageImages,
         ...metadata[relativePath]
       }];
     })

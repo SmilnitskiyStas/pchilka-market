@@ -15,6 +15,7 @@ export type PromotionCatalog = {
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string;
+  pageImages?: string[];
 };
 
 type PromotionCatalogViewerProps = {
@@ -52,6 +53,7 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
   const [flippingPage, setFlippingPage] = useState<{ imageSrc: string; direction: 'next' | 'prev' } | null>(null);
   const flipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartX = useRef<number | null>(null);
+  const renderSession = useRef(0);
 
   const activeCatalog = useMemo(
     () => catalogs.find((catalog) => catalog.id === activeId) ?? catalogs[0],
@@ -71,6 +73,15 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
     setIsPreparing(false);
     setFlippingPage(null);
     setFlipbookError('');
+    renderSession.current += 1;
+  }, [activeCatalog]);
+
+  useEffect(() => {
+    if (!activeCatalog?.pageImages?.length) return;
+    setPageImages(activeCatalog.pageImages);
+    setTotalPages(activeCatalog.pageImages.length);
+    setViewerMode('flipbook');
+    setIsPreparing(false);
   }, [activeCatalog]);
 
   useEffect(() => () => {
@@ -85,15 +96,22 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
     );
   }
 
-  const canGoPrev = currentPage > 1;
-  const canGoNext = currentPage < totalPages;
   const canEnableFlipbook = totalPages <= MAX_AUTO_FLIPBOOK_PAGES;
+  const canGoPrev = currentPage > 1 && (viewerMode !== 'flipbook' || Boolean(pageImages[currentPage - 2]));
+  const canGoNext = currentPage < totalPages && (viewerMode !== 'flipbook' || Boolean(pageImages[currentPage]));
 
   const enableFlipbook = async () => {
+    if (activeCatalog.pageImages?.length) {
+      setPageImages(activeCatalog.pageImages);
+      setTotalPages(activeCatalog.pageImages.length);
+      setViewerMode('flipbook');
+      return;
+    }
     if (isPreparing || !canEnableFlipbook) return;
 
     setIsPreparing(true);
     setPageImages([]);
+    const sessionId = renderSession.current;
 
     try {
       // The legacy browser build includes compatibility shims required by
@@ -106,18 +124,16 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
       const pdf = await loadingTask.promise;
 
       const pagesCount = pdf.numPages || activeCatalog.pageCount || 1;
-      const renderedImages: string[] = new Array(pagesCount);
-
-      for (let i = 1; i <= pagesCount; i += 1) {
-        const page = await pdf.getPage(i);
+      const renderPage = async (pageNumber: number): Promise<string> => {
+        const page = await pdf.getPage(pageNumber);
         const viewportAtOne = page.getViewport({ scale: 1 });
-        const targetWidth = 1200;
+        const targetWidth = 900;
         const scale = targetWidth / viewportAtOne.width;
         const viewport = page.getViewport({ scale });
 
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
-        if (!context) continue;
+        if (!context) throw new Error('Браузер не підтримує рендеринг сторінок каталогу.');
 
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
@@ -128,20 +144,42 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
           viewport
         }).promise;
 
-        renderedImages[i - 1] = canvas.toDataURL('image/webp', 0.9);
+        return canvas.toDataURL('image/webp', 0.88);
+      };
+
+      const firstPage = await renderPage(1);
+      if (renderSession.current !== sessionId) {
+        await pdf.destroy();
+        return;
+      }
+
+      setTotalPages(pagesCount);
+      setPageImages([firstPage]);
+      setViewerMode('flipbook');
+      setCurrentPage(1);
+      setIsPreparing(false);
+
+      for (let pageNumber = 2; pageNumber <= pagesCount; pageNumber += 1) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        const image = await renderPage(pageNumber);
+        if (renderSession.current !== sessionId) {
+          await pdf.destroy();
+          return;
+        }
+        setPageImages((previous) => {
+          const next = [...previous];
+          next[pageNumber - 1] = image;
+          return next;
+        });
       }
 
       await pdf.destroy();
-      setTotalPages(pagesCount);
-      setPageImages(renderedImages.filter(Boolean));
-      setViewerMode('flipbook');
-      setCurrentPage(1);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не вдалося підготувати 3D-перегляд.';
       setFlipbookError(message);
       setViewerMode('iframe');
     } finally {
-      setIsPreparing(false);
+      if (renderSession.current === sessionId) setIsPreparing(false);
     }
   };
 
@@ -260,8 +298,8 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
                   }}
                 >
                   <div className="relative w-full max-w-[680px]" style={{ perspective: '2200px' }}>
-                    <div className="absolute inset-y-2 left-1/2 z-20 w-px -translate-x-1/2 bg-black/30 shadow-[0_0_18px_5px_rgba(0,0,0,0.3)]" />
-                    <div className="relative overflow-hidden rounded-r-md rounded-l-xl bg-white shadow-[0_26px_48px_rgba(0,0,0,0.48)]">
+                    <div className="absolute inset-y-2 left-3 right-1 z-0 rounded-md bg-black/45 shadow-[0_22px_36px_rgba(0,0,0,0.65)]" />
+                    <div className="relative z-10 overflow-hidden rounded-md bg-white shadow-[0_26px_48px_rgba(0,0,0,0.48)]">
                       <img
                         src={pageImages[currentPage - 1]}
                         alt={`Сторінка ${currentPage}`}
@@ -278,7 +316,7 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
                         </div>
                       ) : null}
                     </div>
-                    <div className="pointer-events-none absolute inset-x-4 bottom-0 h-5 rounded-full bg-black/35 blur-lg" />
+                    <div className="pointer-events-none absolute inset-x-4 bottom-0 z-0 h-5 rounded-full bg-black/35 blur-lg" />
                   </div>
                 </div>
               ) : (
