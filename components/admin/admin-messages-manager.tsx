@@ -253,14 +253,14 @@ export default function AdminMessagesManager() {
         {!isLoading && requests.length > 0 ? (
           <ul className="mt-4 space-y-2">
             {requests.map((item) => (
-              <li key={item.id} className={`rounded-xl border p-3 ${item.status === 'new' ? 'border-amber-300 bg-amber-50 shadow-sm ring-1 ring-amber-100' : 'border-slate-200 bg-slate-50'}`}>
+              <li key={item.id} className={`rounded-xl border p-3 ${item.status === 'new' ? 'border-amber-300 bg-amber-50 shadow-sm ring-1 ring-amber-100' : item.status === 'in_progress' ? 'border-sky-300 bg-sky-50 shadow-sm ring-1 ring-sky-100' : 'border-slate-200 bg-slate-50'}`}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold text-slate-900">{formatRequestType(item.requestType)}</p>{item.status === 'new' ? <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Нова</span> : null}</div>
-                    <p className={`mt-0.5 truncate text-xs ${item.status === 'new' ? 'font-semibold text-slate-800' : 'text-slate-600'}`}>
+                    <div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold text-slate-900">{formatRequestType(item.requestType)}</p>{item.status === 'new' ? <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">Нова</span> : null}{item.status === 'in_progress' ? <span className="rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">В роботі</span> : null}</div>
+                    <p className={`mt-0.5 truncate text-xs ${item.status === 'new' || item.status === 'in_progress' ? 'font-semibold text-slate-800' : 'text-slate-600'}`}>
                       #{item.id} • {item.fullName || item.contactPerson || item.companyName || item.email || 'без імені'}
                     </p>
-                    <p className={`mt-0.5 text-xs ${item.status === 'new' ? 'text-amber-800' : 'text-slate-500'}`}>{formatDateTime(item.createdAt)}</p>
+                    <p className={`mt-0.5 text-xs ${item.status === 'new' ? 'text-amber-800' : item.status === 'in_progress' ? 'text-sky-800' : 'text-slate-500'}`}>{formatDateTime(item.createdAt)}</p>
                   </div>
 
                   <div className="w-full sm:w-52">
@@ -269,7 +269,7 @@ export default function AdminMessagesManager() {
                       value={item.status}
                       disabled={isUpdatingId === item.id}
                       onChange={(event) => void updateStatus(item.id, event.target.value as IncomingRequestStatus)}
-                      className={`mt-1.5 w-full rounded-xl border p-2.5 text-sm outline-none focus:border-brand disabled:opacity-60 ${item.status === 'new' ? 'border-amber-400 bg-white font-semibold text-amber-900' : 'border-slate-300'}`}
+                      className={`mt-1.5 w-full rounded-xl border p-2.5 text-sm outline-none focus:border-brand disabled:opacity-60 ${item.status === 'new' ? 'border-amber-400 bg-white font-semibold text-amber-900' : item.status === 'in_progress' ? 'border-sky-400 bg-white font-semibold text-sky-900' : 'border-slate-300'}`}
                     >
                       {incomingRequestStatuses.map((status) => (
                         <option key={status} value={status}>
