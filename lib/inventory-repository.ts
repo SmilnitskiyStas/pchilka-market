@@ -1248,6 +1248,23 @@ async function ensureTelegramRemindersTable() {
   }
 }
 
+async function ensureCareerTelegramSessionsTable() {
+  const pool = getDbPool();
+  await pool.query(`CREATE TABLE IF NOT EXISTS career_telegram_sessions (
+    chat_id VARCHAR(32) NOT NULL,
+    step ENUM('phone', 'full_name', 'city', 'district') NOT NULL,
+    phone VARCHAR(60) NULL,
+    full_name VARCHAR(120) NULL,
+    city VARCHAR(120) NULL,
+    telegram_user_id VARCHAR(32) NULL,
+    telegram_username VARCHAR(64) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (chat_id),
+    KEY idx_career_telegram_sessions_updated (updated_at)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+}
+
 async function ensureMarketingStoreTpCodes() {
   const pool = getDbPool();
   const columns = await listTableColumns('stores');
@@ -1332,6 +1349,7 @@ export async function applyInventorySchemaMigrations() {
   await ensureProductChangeLogsTable();
   await ensureProductImportReviewQueueTable();
   await ensureTelegramRemindersTable();
+  await ensureCareerTelegramSessionsTable();
   await ensureMarketingStoreTpCodes();
   await ensureMarketingAnalyticsMart();
 

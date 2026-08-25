@@ -161,6 +161,7 @@ export default function AdminNav() {
         children: [
           { href: '/admin/users', label: 'Користувачі' },
           { href: '/admin/integrations', label: 'Інтеграції' },
+          { href: '/admin/career-telegram', label: 'Telegram бот вакансій' },
           { href: '/admin/fun-telegram', label: 'Telegram бот (тест)' },
           {
             label: 'Налаштування',

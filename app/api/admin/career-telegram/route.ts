@@ -1,0 +1,13 @@
+import { NextResponse } from 'next/server';
+import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
+import { buildCareerTelegramStartUrl, buildCareerTelegramWebhookUrl, isValidTelegramBotToken, isValidTelegramBotUsername, isValidTelegramChatId, isValidWebhookSecret, normalizeCareerTelegramSettings, type CareerTelegramSettings } from '@/lib/career-telegram-settings';
+import { getCareerTelegramSettings, saveCareerTelegramSettings } from '@/lib/career-telegram-settings-repository';
+import { registerCareerTelegramWebhook } from '@/lib/career-telegram-bot';
+export const runtime = 'nodejs';
+export async function GET(request: Request) { if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse(); const settings = await getCareerTelegramSettings(); return NextResponse.json({ ok: true, settings, webhookUrl: buildCareerTelegramWebhookUrl(settings), startUrl: buildCareerTelegramStartUrl(settings) }); }
+export async function PUT(request: Request) {
+  if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse();
+  try { const body = await request.json() as { settings?: Partial<CareerTelegramSettings> }; const settings = normalizeCareerTelegramSettings({ ...body.settings, updatedAt: new Date().toISOString() }); const invalid = [!isValidTelegramBotToken(settings.botToken) && 'Bot token', !isValidTelegramBotUsername(settings.botUsername) && 'Username бота', !isValidTelegramChatId(settings.hrChatId) && 'ID HR-чату', !isValidWebhookSecret(settings.webhookSecret) && 'Webhook secret'].filter(Boolean); if (invalid.length) return NextResponse.json({ ok: false, error: `Некоректні поля: ${invalid.join(', ')}.` }, { status: 400 }); const saved = await saveCareerTelegramSettings(settings); return NextResponse.json({ ok: true, settings: saved, webhookUrl: buildCareerTelegramWebhookUrl(saved), startUrl: buildCareerTelegramStartUrl(saved) }); }
+  catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 }); }
+}
+export async function POST(request: Request) { if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse(); try { if ((await request.json() as { action?: string }).action !== 'register-webhook') return NextResponse.json({ ok: false, error: 'Unknown action.' }, { status: 400 }); return NextResponse.json({ ok: true, ...(await registerCareerTelegramWebhook()) }); } catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 }); } }

@@ -56,6 +56,11 @@ export const adminSections: AdminSection[] = [
     description: 'Поля для налаштувань GA4, GTM та Meta Pixel.'
   },
   {
+    href: '/admin/career-telegram',
+    title: 'Telegram бот вакансій',
+    description: 'QR-посилання, анкета кандидата, надходження заявки в адмінку та HR-чат.'
+  },
+  {
     href: '/admin/fun-telegram',
     title: 'Telegram бот (тест)',
     description: 'Налаштування тестового бота з командами /start, /help та /joke для однієї групи.'
