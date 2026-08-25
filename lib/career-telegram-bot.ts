@@ -1,8 +1,6 @@
 import { createIncomingRequestInDb } from '@/lib/incoming-requests-repository';
 import { getCareerTelegramSettings, listCareerTelegramCities, listCareerTelegramStores } from '@/lib/career-telegram-settings-repository';
 import { deleteCareerTelegramSession, getCareerTelegramSession, saveCareerTelegramSession, type CareerTelegramSession } from '@/lib/career-telegram-sessions-repository';
-import { getSiteProfileFromDb } from '@/lib/site-profile-repository';
-import { getSiteLogoUrl } from '@/lib/site-branding';
 
 type TelegramMessage = { chat?: { id?: number | string }; from?: { id?: number | string; username?: string }; text?: string; contact?: { phone_number?: string; user_id?: number | string } };
 type TelegramUpdate = { message?: TelegramMessage };
@@ -19,17 +17,6 @@ const cancelKeyboard = { keyboard: [[{ text: '❌ Скасувати' }]], resiz
 const menuKeyboard = { keyboard: [[{ text: 'Заповнити анкету' }]], resize_keyboard: true };
 function clean(value: string, max: number) { return value.trim().replace(/\s+/g, ' ').slice(0, max); }
 function phoneIsValid(value: string) { const length = value.replace(/\D/g, '').length; return length >= 10 && length <= 15; }
-
-async function sendWelcome(settings: Awaited<ReturnType<typeof getCareerTelegramSettings>>, chatId: string) {
-  const caption = '🐝 Бот вакансій «Пчілка Маркет»\n\nЩо вміє цей бот?\n\n1️⃣ Допоможе швидко залишити заявку на вакансію в нашій команді.\n2️⃣ Анкета займе близько однієї хвилини.\n3️⃣ HR зателефонує вам найближчим часом.\n\nПочнемо? 👇';
-  try {
-    const profile = await getSiteProfileFromDb();
-    const logoUrl = new URL(getSiteLogoUrl(profile), `${settings.publicBaseUrl}/`).toString();
-    await callTelegram(settings.botToken, 'sendPhoto', { chat_id: chatId, photo: logoUrl, caption, reply_markup: menuKeyboard });
-  } catch {
-    await message(settings.botToken, chatId, caption, menuKeyboard);
-  }
-}
 
 function freshSession(chatId: string, userId: string, username: string): CareerTelegramSession { return { chatId, step: 'phone', phone: '', fullName: '', city: '', storeLabel: '', telegramUserId: userId, telegramUsername: username }; }
 
@@ -49,7 +36,7 @@ export async function processCareerTelegramUpdate(update: TelegramUpdate) {
   if (!settings.enabled) return { ignored: true };
   if (text === '/start' || text.startsWith('/start ') || text === '❌ Скасувати') {
     await deleteCareerTelegramSession(chatId);
-    await sendWelcome(settings, chatId);
+    await message(settings.botToken, chatId, 'Оберіть дію 👇', menuKeyboard);
     return { handled: 'menu' };
   }
   if (text === 'Заповнити анкету') {
@@ -109,7 +96,7 @@ export async function registerCareerTelegramWebhook() {
   if (!settings.botToken || !settings.webhookSecret || !url) throw new Error('Заповніть токен, secret і публічну адресу сайту.');
   await callTelegram(settings.botToken, 'setWebhook', { url, secret_token: settings.webhookSecret, allowed_updates: ['message'] });
   await callTelegram(settings.botToken, 'setMyCommands', { commands: [{ command: 'start', description: 'Почати заповнення анкети' }, { command: 'id', description: 'Показати ID поточного чату' }] });
-  await callTelegram(settings.botToken, 'setMyDescription', { description: 'Бот вакансій Пчілка Маркет. Залиште заявку на роботу в нашій команді за одну хвилину.' });
+  await callTelegram(settings.botToken, 'setMyDescription', { description: '🐝 Бот вакансій «Пчілка Маркет»\n\nТут ви швидко та зручно залишите заявку на вакансію в нашій команді. Анкета займе близько однієї хвилини, а HR зателефонує вам найближчим часом.' });
   await callTelegram(settings.botToken, 'setMyShortDescription', { short_description: 'Вакансії та анкета кандидата Пчілка Маркет.' });
   return { webhookUrl: url };
 }
