@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   incomingRequestStatuses,
@@ -99,19 +99,23 @@ export default function AdminMessagesManager() {
   const [statusFilter, setStatusFilter] = useState<'all' | IncomingRequestStatus>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | IncomingRequestType>('all');
   const [query, setQuery] = useState('');
+  const activeFiltersRef = useRef({ status: 'all' as 'all' | IncomingRequestStatus, type: 'all' as 'all' | IncomingRequestType, query: '' });
+  const isPollingRef = useRef(false);
 
   const requestTypeOptions = useMemo(() => ['all', ...incomingRequestTypes] as const, []);
   const statusOptions = useMemo(() => ['all', ...incomingRequestStatuses] as const, []);
 
-  async function loadRequests() {
-    setIsLoading(true);
-    setError('');
+  async function loadRequests(silent = false) {
+    if (silent && isPollingRef.current) return;
+    const filters = activeFiltersRef.current;
+    if (silent) isPollingRef.current = true;
+    else { setIsLoading(true); setError(''); }
 
     try {
       const params = new URLSearchParams();
-      if (statusFilter !== 'all') params.set('status', statusFilter);
-      if (typeFilter !== 'all') params.set('type', typeFilter);
-      if (query.trim()) params.set('q', query.trim());
+      if (filters.status !== 'all') params.set('status', filters.status);
+      if (filters.type !== 'all') params.set('type', filters.type);
+      if (filters.query.trim()) params.set('q', filters.query.trim());
 
       const response = await fetch(`/api/admin/messages?${params.toString()}`, { cache: 'no-store' });
       const payload = (await response.json()) as IncomingRequestsPayload;
@@ -125,17 +129,23 @@ export default function AdminMessagesManager() {
         return payload.requests?.find((item) => item.id === prev.id) ?? null;
       });
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити повідомлення.');
+      if (!silent) setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити повідомлення.');
     } finally {
-      setIsLoading(false);
+      if (silent) isPollingRef.current = false;
+      else setIsLoading(false);
     }
   }
 
   useEffect(() => {
     void loadRequests();
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadRequests(true);
+    }, 5000);
+    return () => window.clearInterval(intervalId);
   }, []);
 
   async function applyFilters() {
+    activeFiltersRef.current = { status: statusFilter, type: typeFilter, query };
     await loadRequests();
   }
 
@@ -229,7 +239,7 @@ export default function AdminMessagesManager() {
 
       <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-slate-900">Список заявок</h2>
+          <div><h2 className="text-lg font-semibold text-slate-900">Список заявок</h2><p className="mt-0.5 text-xs text-slate-500">Оновлюється автоматично кожні 5 секунд.</p></div>
           <p className="text-xs font-semibold text-slate-600">Усього: {requests.length}</p>
         </div>
 
