@@ -1252,10 +1252,11 @@ async function ensureCareerTelegramSessionsTable() {
   const pool = getDbPool();
   await pool.query(`CREATE TABLE IF NOT EXISTS career_telegram_sessions (
     chat_id VARCHAR(32) NOT NULL,
-    step ENUM('phone', 'full_name', 'city', 'district') NOT NULL,
+    step ENUM('phone', 'full_name', 'city', 'store', 'district') NOT NULL,
     phone VARCHAR(60) NULL,
     full_name VARCHAR(120) NULL,
     city VARCHAR(120) NULL,
+    store_label VARCHAR(255) NULL,
     telegram_user_id VARCHAR(32) NULL,
     telegram_username VARCHAR(64) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1263,6 +1264,11 @@ async function ensureCareerTelegramSessionsTable() {
     PRIMARY KEY (chat_id),
     KEY idx_career_telegram_sessions_updated (updated_at)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  const columns = await listTableColumns('career_telegram_sessions');
+  if (!columns.has('store_label')) {
+    await pool.query('ALTER TABLE career_telegram_sessions ADD COLUMN store_label VARCHAR(255) NULL AFTER city');
+  }
+  await pool.query("ALTER TABLE career_telegram_sessions MODIFY COLUMN step ENUM('phone', 'full_name', 'city', 'store', 'district') NOT NULL");
 }
 
 async function ensureMarketingStoreTpCodes() {

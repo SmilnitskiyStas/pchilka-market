@@ -1,5 +1,5 @@
 import { createIncomingRequestInDb } from '@/lib/incoming-requests-repository';
-import { getCareerTelegramSettings, listCareerTelegramCities } from '@/lib/career-telegram-settings-repository';
+import { getCareerTelegramSettings, listCareerTelegramCities, listCareerTelegramStores } from '@/lib/career-telegram-settings-repository';
 import { deleteCareerTelegramSession, getCareerTelegramSession, saveCareerTelegramSession, type CareerTelegramSession } from '@/lib/career-telegram-sessions-repository';
 
 type TelegramMessage = { chat?: { id?: number | string }; from?: { id?: number | string; username?: string }; text?: string; contact?: { phone_number?: string; user_id?: number | string } };
@@ -18,7 +18,7 @@ const menuKeyboard = { keyboard: [[{ text: 'Заповнити анкету' }]]
 function clean(value: string, max: number) { return value.trim().replace(/\s+/g, ' ').slice(0, max); }
 function phoneIsValid(value: string) { const length = value.replace(/\D/g, '').length; return length >= 10 && length <= 15; }
 
-function freshSession(chatId: string, userId: string, username: string): CareerTelegramSession { return { chatId, step: 'phone', phone: '', fullName: '', city: '', telegramUserId: userId, telegramUsername: username }; }
+function freshSession(chatId: string, userId: string, username: string): CareerTelegramSession { return { chatId, step: 'phone', phone: '', fullName: '', city: '', storeLabel: '', telegramUserId: userId, telegramUsername: username }; }
 
 export async function processCareerTelegramUpdate(update: TelegramUpdate) {
   const settings = await getCareerTelegramSettings();
@@ -70,16 +70,20 @@ export async function processCareerTelegramUpdate(update: TelegramUpdate) {
   if (session.step === 'city') {
     const city = clean(text, 120);
     if (!city || city === '❌ Скасувати') return { handled: 'cancelled' };
-    await saveCareerTelegramSession({ ...session, city, step: 'district' });
-    await message(settings.botToken, chatId, 'Район проживання', cancelKeyboard);
-    return { handled: 'district-requested' };
+    const stores = await listCareerTelegramStores(city);
+    if (!stores.length) { await message(settings.botToken, chatId, 'У цьому місті поки немає активних магазинів. Оберіть інше місто.', cancelKeyboard); return { handled: 'stores-missing' }; }
+    await saveCareerTelegramSession({ ...session, city, step: 'store' });
+    await message(settings.botToken, chatId, 'Оберіть магазин, у якому бажаєте працювати', { keyboard: [...stores.map((store) => [{ text: store.label }]), [{ text: '❌ Скасувати' }]], resize_keyboard: true, one_time_keyboard: true });
+    return { handled: 'store-requested' };
   }
-  const district = clean(text, 120);
-  if (district.length < 2) { await message(settings.botToken, chatId, 'Вкажіть, будь ласка, район проживання.', cancelKeyboard); return { handled: 'district-invalid' }; }
-  const created = await createIncomingRequestInDb({ requestType: 'career_application', fullName: session.fullName, phone: session.phone, city: session.city, message: `Анкета з Telegram. Район проживання: ${district}.`, sourcePage: 'telegram://career-bot', metadata: { district, channel: 'telegram', telegramUserId: session.telegramUserId, telegramUsername: session.telegramUsername } });
+  const stores = await listCareerTelegramStores(session.city);
+  const selectedStore = stores.find((store) => store.label === text);
+  if (!selectedStore) { await message(settings.botToken, chatId, 'Оберіть, будь ласка, магазин кнопкою нижче.', { keyboard: [...stores.map((store) => [{ text: store.label }]), [{ text: '❌ Скасувати' }]], resize_keyboard: true }); return { handled: 'store-invalid' }; }
+  const storeLabel = `${selectedStore.name}${selectedStore.addressLine ? ` — ${selectedStore.addressLine}` : ''}`;
+  const created = await createIncomingRequestInDb({ requestType: 'career_application', fullName: session.fullName, phone: session.phone, city: session.city, targetStore: storeLabel, message: `Анкета з Telegram. Обраний магазин: ${storeLabel}.`, sourcePage: 'telegram://career-bot', metadata: { store: storeLabel, channel: 'telegram', telegramUserId: session.telegramUserId, telegramUsername: session.telegramUsername } });
   await deleteCareerTelegramSession(chatId);
   if (settings.hrChatId) {
-    try { await message(settings.botToken, settings.hrChatId, `📩 Нова заявка #${created.id} з Telegram\n\nПІБ: ${session.fullName}\nТелефон: ${session.phone}\nМісто: ${session.city}\nРайон: ${district}${session.telegramUsername ? `\nTelegram: @${session.telegramUsername}` : ''}`); }
+    try { await message(settings.botToken, settings.hrChatId, `📩 Нова заявка #${created.id} з Telegram\n\nПІБ: ${session.fullName}\nТелефон: ${session.phone}\nМісто: ${session.city}\nМагазин: ${storeLabel}${session.telegramUsername ? `\nTelegram: @${session.telegramUsername}` : ''}`); }
     catch (error) { console.error('Could not send career application to HR chat:', error); }
   }
   await message(settings.botToken, chatId, 'Дякуємо за відповіді! Ми вам зателефонуємо найближчим часом.', menuKeyboard);

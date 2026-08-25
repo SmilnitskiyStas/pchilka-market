@@ -27,3 +27,17 @@ export async function listCareerTelegramCities(): Promise<string[]> {
   return [...new Set(stores.filter((store) => store.isActive).map((store) => store.city.trim()).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, 'uk'));
 }
+
+export type CareerTelegramStore = { name: string; addressLine: string; label: string };
+
+export async function listCareerTelegramStores(city: string): Promise<CareerTelegramStore[]> {
+  const normalizedCity = city.trim();
+  const stores = await listStoresFromDb();
+  return stores
+    .filter((store) => store.isActive && store.city.trim() === normalizedCity)
+    .map((store) => {
+      const name = store.name.trim();
+      const addressLine = store.addressLine.trim();
+      return { name, addressLine, label: `${name}${addressLine ? ` — ${addressLine}` : ''}`.slice(0, 64) };
+    });
+}
