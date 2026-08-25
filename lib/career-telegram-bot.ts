@@ -4,6 +4,7 @@ import { deleteCareerTelegramSession, getCareerTelegramSession, saveCareerTelegr
 
 type TelegramMessage = { chat?: { id?: number | string }; from?: { id?: number | string; username?: string }; text?: string; contact?: { phone_number?: string; user_id?: number | string } };
 type TelegramUpdate = { message?: TelegramMessage };
+type TelegramWebhookInfo = { url?: string; pending_update_count?: number; last_error_message?: string };
 
 async function callTelegram(token: string, method: string, body: Record<string, unknown>) {
   const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -91,4 +92,19 @@ export async function registerCareerTelegramWebhook() {
   await callTelegram(settings.botToken, 'setWebhook', { url, secret_token: settings.webhookSecret, allowed_updates: ['message'] });
   await callTelegram(settings.botToken, 'setMyCommands', { commands: [{ command: 'start', description: 'Почати заповнення анкети' }, { command: 'id', description: 'Показати ID поточного чату' }] });
   return { webhookUrl: url };
+}
+
+export async function getCareerTelegramWebhookInfo() {
+  const settings = await getCareerTelegramSettings();
+  const webhookUrl = settings.publicBaseUrl ? `${settings.publicBaseUrl}/api/career-telegram/webhook` : '';
+  if (!settings.botToken) return { configured: false, webhookUrl, info: null };
+  const response = await fetch(`https://api.telegram.org/bot${settings.botToken}/getWebhookInfo`);
+  const payload = (await response.json().catch(() => null)) as { ok?: boolean; result?: TelegramWebhookInfo; description?: string } | null;
+  if (!response.ok || !payload?.ok) throw new Error(payload?.description || 'Не вдалося отримати статус webhook від Telegram.');
+  const info = payload.result ?? null;
+  return {
+    configured: Boolean(info?.url),
+    webhookUrl,
+    info: info ? { url: info.url ?? '', pendingUpdateCount: Number(info.pending_update_count ?? 0), lastErrorMessage: info.last_error_message ?? '' } : null
+  };
 }
