@@ -1,5 +1,5 @@
 import { createIncomingRequestInDb } from '@/lib/incoming-requests-repository';
-import { getCareerTelegramSettings } from '@/lib/career-telegram-settings-repository';
+import { getCareerTelegramSettings, listCareerTelegramCities } from '@/lib/career-telegram-settings-repository';
 import { deleteCareerTelegramSession, getCareerTelegramSession, saveCareerTelegramSession, type CareerTelegramSession } from '@/lib/career-telegram-sessions-repository';
 
 type TelegramMessage = { chat?: { id?: number | string }; from?: { id?: number | string; username?: string }; text?: string; contact?: { phone_number?: string; user_id?: number | string } };
@@ -60,7 +60,8 @@ export async function processCareerTelegramUpdate(update: TelegramUpdate) {
   if (session.step === 'full_name') {
     if (text.length < 3) { await message(settings.botToken, chatId, "Вкажіть, будь ласка, ваше прізвище та ім'я.", cancelKeyboard); return { handled: 'name-invalid' }; }
     await saveCareerTelegramSession({ ...session, fullName: clean(text, 120), step: 'city' });
-    const cityButtons = settings.cities.map((city) => ({ text: city }));
+    const cities = await listCareerTelegramCities();
+    const cityButtons = (cities.length ? cities : settings.cities).map((city) => ({ text: city }));
     const keyboard = cityButtons.reduce<Array<Array<{ text: string }>>>((rows, button, index) => { if (index % 2 === 0) rows.push([button]); else rows[rows.length - 1].push(button); return rows; }, []);
     keyboard.push([{ text: '❌ Скасувати' }]);
     await message(settings.botToken, chatId, 'Місто', { keyboard, resize_keyboard: true, one_time_keyboard: true });

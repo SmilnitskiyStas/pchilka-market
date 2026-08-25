@@ -1,5 +1,6 @@
 import type { RowDataPacket } from 'mysql2/promise';
 import { getDbPool } from '@/lib/db';
+import { listStoresFromDb } from '@/lib/stores-repository';
 import { CAREER_TELEGRAM_SETTINGS_KEY, defaultCareerTelegramSettings, normalizeCareerTelegramSettings, type CareerTelegramSettings } from '@/lib/career-telegram-settings';
 
 type Row = RowDataPacket & { setting_value: unknown };
@@ -19,4 +20,10 @@ export async function saveCareerTelegramSettings(settings: CareerTelegramSetting
     [CAREER_TELEGRAM_SETTINGS_KEY, JSON.stringify(normalized)]
   );
   return normalized;
+}
+
+export async function listCareerTelegramCities(): Promise<string[]> {
+  const stores = await listStoresFromDb();
+  return [...new Set(stores.filter((store) => store.isActive).map((store) => store.city.trim()).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, 'uk'));
 }
