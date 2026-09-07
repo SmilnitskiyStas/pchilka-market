@@ -138,6 +138,17 @@ function getMeterLabel(meter: UtilityMeterPointRecord) {
     .join(' | ');
 }
 
+function previousMonthEnd(value: string) {
+  const match = /^(\d{4})-(\d{2})-\d{2}$/.exec(value);
+  if (!match) return '';
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || month < 1 || month > 12) return '';
+
+  return new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 10);
+}
+
 const utilityFilterOptions: Array<{ value: UtilityFilter; label: string }> = [
   { value: 'all', label: 'Усі послуги' },
   { value: 'water', label: 'Вода' },
@@ -182,6 +193,7 @@ export default function UtilityMetersPage() {
   const [syncTotal, setSyncTotal] = useState(0);
   const [isServerReachable, setIsServerReachable] = useState<boolean | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [missingPeriodConfirmation, setMissingPeriodConfirmation] = useState<{ previousMonthEnd: string } | null>(null);
   const [clientMutationId, setClientMutationId] = useState(buildLocalId());
   const lastDraftKeyRef = useRef('');
   const isSyncingOutboxRef = useRef(false);
@@ -498,8 +510,7 @@ export default function UtilityMetersPage() {
     return () => window.removeEventListener('online', handleOnline);
   }, [flushPendingReadings]);
 
-  async function submitReading(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveReading(readingDateToSave: string) {
     if (!selectedMeterId) {
       setStatus('Спочатку оберіть лічильник.');
       return;
@@ -522,7 +533,7 @@ export default function UtilityMetersPage() {
       const { response, result } = await postReading({
         token,
         meterPointId: selectedMeterId,
-        readingDate,
+        readingDate: readingDateToSave,
         readingValue: normalizedReadingValue,
         clientMutationId,
         previousValueOverride: normalizedPreviousValue,
@@ -557,7 +568,7 @@ export default function UtilityMetersPage() {
           clientMutationId,
           token,
           meterPointId: selectedMeterId,
-          readingDate,
+          readingDate: readingDateToSave,
           readingValue: normalizedReadingValue,
           previousValueOverride: normalizedPreviousValue,
           notes
@@ -578,6 +589,23 @@ export default function UtilityMetersPage() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  function submitReading(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const missingPreviousMonthEnd = previousMonthEnd(readingDate);
+    const previousMonthIsMissing =
+      monthFromDate(readingDate) === monthFromDate(todayIso()) &&
+      Boolean(missingPreviousMonthEnd) &&
+      !meterHistory.some((item) => monthFromDate(item.reading.periodMonth) === monthFromDate(missingPreviousMonthEnd));
+
+    if (previousMonthIsMissing) {
+      setMissingPeriodConfirmation({ previousMonthEnd: missingPreviousMonthEnd });
+      return;
+    }
+
+    void saveReading(readingDate);
   }
 
   const syncPercent = syncTotal > 0 ? Math.round((syncProcessed / syncTotal) * 100) : 0;
@@ -856,6 +884,51 @@ export default function UtilityMetersPage() {
           </div>
         )}
       </div>
+
+      {missingPeriodConfirmation ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="missing-period-title">
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+            <h2 id="missing-period-title" className="text-lg font-bold text-slate-950">Не внесено показник за попередній місяць</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-700">
+              Дані за {formatPeriodMonth(missingPeriodConfirmation.previousMonthEnd)} не було вказано. Ви вносите показник за цей місяць?
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => {
+                  const previousDate = missingPeriodConfirmation.previousMonthEnd;
+                  setMissingPeriodConfirmation(null);
+                  setReadingDate(previousDate);
+                  void saveReading(previousDate);
+                }}
+                className="rounded-md bg-amber-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Так, за {formatPeriodMonth(missingPeriodConfirmation.previousMonthEnd)}
+              </button>
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={() => {
+                  setMissingPeriodConfirmation(null);
+                  void saveReading(readingDate);
+                }}
+                className="rounded-md border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Ні, за поточний місяць
+              </button>
+            </div>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => setMissingPeriodConfirmation(null)}
+              className="mt-3 w-full px-4 py-2 text-sm font-medium text-slate-600 underline disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Скасувати
+            </button>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
