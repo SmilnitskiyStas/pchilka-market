@@ -234,6 +234,19 @@ function periodLabel(periodMonth: string) {
   return new Intl.DateTimeFormat('uk-UA', { month: 'short', year: 'numeric' }).format(new Date(`${periodMonth}T00:00:00`));
 }
 
+function utilityTypeBadge(utilityType: UtilityType) {
+  const badges: Record<UtilityType, { label: string; className: string }> = {
+    electricity_active: { label: 'Електрика', className: 'bg-amber-100 text-amber-900' },
+    electricity_reactive: { label: 'Реакт. ел.', className: 'bg-orange-100 text-orange-900' },
+    water: { label: 'Вода', className: 'bg-sky-100 text-sky-900' },
+    waste: { label: 'Відходи', className: 'bg-lime-100 text-lime-900' },
+    maintenance: { label: 'Обслуг.', className: 'bg-violet-100 text-violet-900' },
+    rent: { label: 'Оренда', className: 'bg-rose-100 text-rose-900' },
+    other: { label: 'Інше', className: 'bg-slate-100 text-slate-700' }
+  };
+  return badges[utilityType];
+}
+
 function getStoreLabel(store: StoreView) {
   return [store.storeCode, store.city, store.addressLine].filter(Boolean).join(' · ') || store.name || `Магазин #${store.id}`;
 }
@@ -955,7 +968,7 @@ export default function AdminUtilityMetersPage() {
                     {(statisticsPayload.items ?? []).map((item) => (
                       <tr key={item.id}>
                         <td className="px-3 py-3 align-top"><div className="font-semibold">{item.storeCode || item.storeLabel || '—'}</div><div className="text-xs text-slate-500">{[item.region, item.city, item.addressLine].filter(Boolean).join(' · ')}</div></td>
-                        <td className="px-3 py-3 align-top"><div className="font-medium">{item.utilityLabel}</div><div className="text-xs text-slate-500">{item.meterNumber || 'Без номера'}</div></td>
+                        <td className="px-3 py-3 align-top"><div className="flex flex-wrap items-center gap-2"><span className={`rounded px-2 py-1 text-xs font-semibold ${utilityTypeBadge(item.utilityType).className}`}>{utilityTypeBadge(item.utilityType).label}</span><div className="font-medium">{item.utilityLabel}</div></div><div className="mt-1 text-xs text-slate-500">{item.meterNumber || 'Без номера'}</div></td>
                         <td className="px-3 py-3 align-top">{item.readings}</td>
                         <td className="px-3 py-3 align-top">{number(item.consumption)}</td>
                         <td className="px-3 py-3 align-top">{money(item.amount)}</td>
