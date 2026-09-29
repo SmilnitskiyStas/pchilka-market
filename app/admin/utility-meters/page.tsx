@@ -1345,7 +1345,7 @@ export default function AdminUtilityMetersPage() {
             </section>
 
             {payload.totals ? (
-              <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+              <section className="order-first grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
                 <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
                   <div className="text-sm text-slate-500">Лічильники</div>
                   <div className="text-2xl font-bold">{payload.totals.meters}</div>
