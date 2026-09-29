@@ -980,12 +980,6 @@ export default function AdminUtilityMetersPage() {
           {statisticsPayload.error ? <div className="mt-4 rounded-md bg-red-50 p-3 text-sm font-medium text-red-800 ring-1 ring-red-200">{statisticsPayload.error}</div> : null}
           {statisticsPayload.totals ? (
             <>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-md bg-slate-50 p-3"><div className="text-sm text-slate-500">Лічильники з даними</div><div className="text-xl font-bold">{statisticsPayload.totals.meters}</div></div>
-                <div className="rounded-md bg-slate-50 p-3"><div className="text-sm text-slate-500">Подано показників</div><div className="text-xl font-bold">{statisticsPayload.totals.readings}</div></div>
-                <div className="rounded-md bg-slate-50 p-3"><div className="text-sm text-slate-500">Споживання</div><div className="text-xl font-bold">{number(statisticsPayload.totals.consumption)}</div></div>
-                <div className="rounded-md bg-slate-50 p-3"><div className="text-sm text-slate-500">Сума</div><div className="text-xl font-bold">{money(statisticsPayload.totals.amount)}</div></div>
-              </div>
               <div className="mt-4 overflow-x-auto rounded-md border border-slate-200">
                 <table className="min-w-[840px] w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-3 py-3">Регіон / магазин</th><th className="px-3 py-3">Лічильник</th><th className="px-3 py-3">Періодів</th><th className="px-3 py-3">Споживання</th><th className="px-3 py-3">Сума</th><th className="px-3 py-3">Графік</th></tr></thead>
