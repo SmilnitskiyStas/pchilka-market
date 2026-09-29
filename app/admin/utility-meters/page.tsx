@@ -831,20 +831,20 @@ export default function AdminUtilityMetersPage() {
                 className="rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900"
                 target="_blank"
               >
-                Документ на оплату
+                Переглянути документ
               </a>
               <a
                 href={documentPdfHref}
                 className="rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900"
                 target="_blank"
               >
-                PDF
+                Завантажити PDF
               </a>
               <a
                 href={documentExcelHref}
                 className="rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900"
               >
-                Excel
+                Завантажити Excel
               </a>
               <button
                 type="button"
@@ -852,7 +852,7 @@ export default function AdminUtilityMetersPage() {
                 disabled={isCreatingDocumentShareLink}
                 className="rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 disabled:opacity-60"
               >
-                {isCreatingDocumentShareLink ? 'Формування...' : 'Посилання'}
+                {isCreatingDocumentShareLink ? 'Формування...' : 'Скопіювати посилання'}
               </button>
             </div>
             </div>
@@ -984,6 +984,7 @@ export default function AdminUtilityMetersPage() {
         </section>
 
         <div className="flex min-w-0 w-full flex-col gap-5">
+            {selectedStore ? (
             <section className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -1335,6 +1336,7 @@ export default function AdminUtilityMetersPage() {
                 </div>
               )}
             </section>
+            ) : null}
 
             <section className="hidden rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
               <div className="text-sm text-slate-500">Поточний перегляд</div>

@@ -52,8 +52,8 @@ export default async function UtilityMetersDocumentPage({ searchParams }: PagePr
     <UtilityMeterPaymentDocument
       document={document}
       actions={
-        <>
-          <nav className="flex flex-wrap gap-2" aria-label="Тип рахунку">
+        <div className="flex flex-col gap-4">
+          <nav className="flex w-fit flex-wrap gap-1 rounded-lg bg-slate-100 p-1" aria-label="Тип рахунку">
             {(['stores', 'tenants'] as const).map((item) => (
               <Link
                 key={item}
@@ -62,7 +62,7 @@ export default async function UtilityMetersDocumentPage({ searchParams }: PagePr
                   audience: item,
                   ...(storeIdsValue ? { storeIds: storeIdsValue } : storeId ? { storeId } : {})
                 }).toString()}`}
-                className={`rounded-md px-4 py-2.5 text-sm font-semibold ${
+                className={`rounded-md px-4 py-2.5 text-sm font-semibold transition-colors ${
                   item === audience ? 'bg-slate-950 text-white' : 'border border-slate-300 bg-white text-slate-900'
                 }`}
               >
@@ -82,7 +82,7 @@ export default async function UtilityMetersDocumentPage({ searchParams }: PagePr
             shareApiUrl="/api/admin/utility-meters/document-share"
             sharePayload={{ periodMonth, audience, ...(storeIdsValue ? { storeIds: storeIdsValue } : storeId ? { storeId } : {}) }}
           />
-        </>
+        </div>
       }
     />
   );
