@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 import type {
@@ -117,6 +117,18 @@ type ReminderPreviewPayload = {
   };
   error?: string;
 };
+
+function UtilityMeterReviewTotals({ totals }: { totals: NonNullable<ReviewPayload['totals']> }) {
+  return (
+    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Лічильники</div><div className="text-2xl font-bold">{totals.meters}</div></div>
+      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Подано</div><div className="text-2xl font-bold">{totals.submitted}</div></div>
+      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Ок</div><div className="text-2xl font-bold text-green-700">{totals.ok}</div></div>
+      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Зауваження</div><div className="text-2xl font-bold text-amber-700">{totals.warning + totals.error}</div></div>
+      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Сума</div><div className="text-2xl font-bold">{money(totals.amount)}</div></div>
+    </section>
+  );
+}
 
 type MeterPointsPayload = {
   ok?: boolean;
@@ -302,6 +314,8 @@ export default function AdminUtilityMetersPage() {
   const [isMeterFormOpen, setIsMeterFormOpen] = useState(false);
   const [storeRates, setStoreRates] = useState<UtilityMeterRateView[]>([]);
   const [isLoadingRates, setIsLoadingRates] = useState(false);
+  const reviewRequestId = useRef(0);
+  const statisticsRequestId = useRef(0);
 
   const monthInputValue = useMemo(() => periodMonth.slice(0, 7), [periodMonth]);
   const activeStores = useMemo(() => stores.filter((store) => store.isActive), [stores]);
@@ -333,6 +347,7 @@ export default function AdminUtilityMetersPage() {
   }
 
   async function loadReview(nextPeriod = periodMonth, nextStoreId = selectedStoreId) {
+    const requestId = ++reviewRequestId.current;
     setIsLoading(true);
     try {
       const params = new URLSearchParams({ periodMonth: nextPeriod });
@@ -341,11 +356,11 @@ export default function AdminUtilityMetersPage() {
         cache: 'no-store'
       });
       const nextPayload = (await response.json()) as ReviewPayload;
-      setPayload(nextPayload);
+      if (requestId === reviewRequestId.current) setPayload(nextPayload);
     } catch (error) {
-      setPayload({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося завантажити перевірку.' });
+      if (requestId === reviewRequestId.current) setPayload({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося завантажити перевірку.' });
     } finally {
-      setIsLoading(false);
+      if (requestId === reviewRequestId.current) setIsLoading(false);
     }
   }
 
@@ -355,6 +370,7 @@ export default function AdminUtilityMetersPage() {
     nextStoreIds = statisticsStoreIds,
     nextRegions = statisticsRegions
   ) {
+    const requestId = ++statisticsRequestId.current;
     setIsLoadingStatistics(true);
     try {
       const params = new URLSearchParams({ periodFrom: nextPeriodFrom, periodTo: nextPeriodTo });
@@ -363,11 +379,11 @@ export default function AdminUtilityMetersPage() {
       const response = await fetch(`/api/admin/utility-meters/statistics?${params.toString()}`, { cache: 'no-store' });
       const result = (await response.json()) as ConsumptionStatisticsPayload;
       if (!response.ok || !result.ok) throw new Error(result.error || 'Не вдалося завантажити статистику споживання.');
-      setStatisticsPayload(result);
+      if (requestId === statisticsRequestId.current) setStatisticsPayload(result);
     } catch (error) {
-      setStatisticsPayload({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося завантажити статистику споживання.' });
+      if (requestId === statisticsRequestId.current) setStatisticsPayload({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося завантажити статистику споживання.' });
     } finally {
-      setIsLoadingStatistics(false);
+      if (requestId === statisticsRequestId.current) setIsLoadingStatistics(false);
     }
   }
 
@@ -776,7 +792,10 @@ export default function AdminUtilityMetersPage() {
               <input
                 type="month"
                 value={statisticsPeriodFrom.slice(0, 7)}
-                onChange={(event) => setStatisticsPeriodFrom(`${event.target.value}-01`)}
+                onChange={(event) => {
+                  setStatisticsPeriodFrom(`${event.target.value}-01`);
+                  setStatisticsPayload({});
+                }}
                 className="rounded-md border border-slate-300 px-3 py-2 text-base"
               />
             </label>
@@ -786,7 +805,11 @@ export default function AdminUtilityMetersPage() {
               <input
                 type="month"
                 value={statisticsPeriodTo.slice(0, 7)}
-                onChange={(event) => setStatisticsPeriodTo(`${event.target.value}-01`)}
+                onChange={(event) => {
+                  setStatisticsPeriodTo(`${event.target.value}-01`);
+                  setPayload({});
+                  setStatisticsPayload({});
+                }}
                 className="rounded-md border border-slate-300 px-3 py-2 text-base"
               />
             </label>
@@ -860,6 +883,8 @@ export default function AdminUtilityMetersPage() {
           {documentActionStatus ? <div className="mt-2 text-sm font-medium text-slate-700">{documentActionStatus}</div> : null}
           {meterReminderStatus ? <div className="mt-2 text-sm font-medium text-slate-700">{meterReminderStatus}</div> : null}
         </section>
+
+        {payload.totals ? <UtilityMeterReviewTotals totals={payload.totals} /> : null}
 
         {storesError ? (
           <div className="rounded-lg bg-amber-50 p-4 text-sm font-medium text-amber-900 ring-1 ring-amber-200">{storesError}</div>
@@ -1345,7 +1370,7 @@ export default function AdminUtilityMetersPage() {
             </section>
 
             {payload.totals ? (
-              <section className="order-first grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+              <section className="hidden order-first grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
                 <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
                   <div className="text-sm text-slate-500">Лічильники</div>
                   <div className="text-2xl font-bold">{payload.totals.meters}</div>
