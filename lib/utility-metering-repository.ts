@@ -1330,12 +1330,13 @@ export async function listUtilityMeterConsumptionStatisticsInDb(input: {
         p.utility_type,
         p.utility_label,
         p.meter_number,
-        COUNT(c.id) AS readings,
+        COUNT(r.id) AS readings,
         COALESCE(SUM(c.consumption), 0) AS consumption,
         COALESCE(SUM(c.amount), 0) AS amount
       FROM utility_meter_points p
-      INNER JOIN utility_meter_charges c ON c.meter_point_id = p.id
-        AND c.period_month BETWEEN ? AND ?
+      INNER JOIN utility_meter_readings r ON r.meter_point_id = p.id
+        AND r.period_month BETWEEN ? AND ?
+      INNER JOIN utility_meter_charges c ON c.reading_id = r.id
       LEFT JOIN stores s ON s.id = p.store_id
       WHERE 1 = 1
         ${filters.length > 0 ? `AND ${filters.join(' AND ')}` : ''}
@@ -1382,15 +1383,16 @@ export async function listUtilityMeterConsumptionHistoryInDb(input: {
   }>>(
     `
       SELECT
-        c.period_month,
-        COUNT(c.id) AS readings,
+        r.period_month,
+        COUNT(r.id) AS readings,
         COALESCE(SUM(c.consumption), 0) AS consumption,
         COALESCE(SUM(c.amount), 0) AS amount
-      FROM utility_meter_charges c
-      WHERE c.meter_point_id = ?
-        AND c.period_month BETWEEN ? AND ?
-      GROUP BY c.period_month
-      ORDER BY c.period_month ASC
+      FROM utility_meter_readings r
+      INNER JOIN utility_meter_charges c ON c.reading_id = r.id
+      WHERE r.meter_point_id = ?
+        AND r.period_month BETWEEN ? AND ?
+      GROUP BY r.period_month
+      ORDER BY r.period_month ASC
     `,
     [meterPointId, input.periodFrom, input.periodTo]
   );
