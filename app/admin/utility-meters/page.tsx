@@ -16,6 +16,7 @@ type StoreView = {
   id: string;
   storeCode: string;
   name: string;
+  region: string;
   city: string;
   addressLine: string;
   isActive: boolean;
@@ -41,6 +42,47 @@ type ReviewPayload = {
   error?: string;
 };
 
+type ConsumptionStatisticItem = {
+  id: string;
+  storeId?: string;
+  storeCode: string;
+  storeLabel: string;
+  region: string;
+  city: string;
+  addressLine: string;
+  utilityType: UtilityType;
+  utilityLabel: string;
+  meterNumber: string;
+  readings: number;
+  consumption: number;
+  amount: number;
+};
+
+type ConsumptionStatisticsPayload = {
+  ok?: boolean;
+  items?: ConsumptionStatisticItem[];
+  totals?: {
+    meters: number;
+    readings: number;
+    consumption: number;
+    amount: number;
+  };
+  error?: string;
+};
+
+type ConsumptionHistoryItem = {
+  periodMonth: string;
+  readings: number;
+  consumption: number;
+  amount: number;
+};
+
+type ConsumptionHistoryPayload = {
+  ok?: boolean;
+  items?: ConsumptionHistoryItem[];
+  error?: string;
+};
+
 type AccessLinkPayload = {
   ok?: boolean;
   url?: string;
@@ -60,6 +102,18 @@ type ReminderRunPayload = {
     notificationsSent: number;
     skippedAlreadySent: number;
     failed: number;
+  };
+  error?: string;
+};
+
+type ReminderPreviewPayload = {
+  ok?: boolean;
+  preview?: {
+    periodMonth: string;
+    candidates: number;
+    storesToNotify: number;
+    missingMeters: number;
+    skippedAlreadySent: number;
   };
   error?: string;
 };
@@ -171,6 +225,15 @@ function money(value?: number) {
   return new Intl.NumberFormat('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 }
 
+function number(value?: number) {
+  if (value === undefined) return '—';
+  return new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 4 }).format(value);
+}
+
+function periodLabel(periodMonth: string) {
+  return new Intl.DateTimeFormat('uk-UA', { month: 'short', year: 'numeric' }).format(new Date(`${periodMonth}T00:00:00`));
+}
+
 function getStoreLabel(store: StoreView) {
   return [store.storeCode, store.city, store.addressLine].filter(Boolean).join(' · ') || store.name || `Магазин #${store.id}`;
 }
@@ -193,6 +256,15 @@ export default function AdminUtilityMetersPage() {
   const initialPeriodMonth = /^\d{4}-\d{2}-01$/.test(requestedPeriodMonth) ? requestedPeriodMonth : currentPeriodMonth();
   const [periodMonth, setPeriodMonth] = useState(initialPeriodMonth);
   const [selectedStoreId, setSelectedStoreId] = useState(initialStoreId);
+  const [statisticsPeriodFrom, setStatisticsPeriodFrom] = useState(initialPeriodMonth);
+  const [statisticsPeriodTo, setStatisticsPeriodTo] = useState(initialPeriodMonth);
+  const [statisticsStoreIds, setStatisticsStoreIds] = useState<string[]>(initialStoreId ? [initialStoreId] : []);
+  const [statisticsRegions, setStatisticsRegions] = useState<string[]>([]);
+  const [statisticsPayload, setStatisticsPayload] = useState<ConsumptionStatisticsPayload>({});
+  const [isLoadingStatistics, setIsLoadingStatistics] = useState(false);
+  const [selectedChartMeter, setSelectedChartMeter] = useState<ConsumptionStatisticItem | null>(null);
+  const [chartPayload, setChartPayload] = useState<ConsumptionHistoryPayload>({});
+  const [isLoadingChart, setIsLoadingChart] = useState(false);
   const [stores, setStores] = useState<StoreView[]>([]);
   const [payload, setPayload] = useState<ReviewPayload>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -201,6 +273,9 @@ export default function AdminUtilityMetersPage() {
   const [isCreatingDocumentShareLink, setIsCreatingDocumentShareLink] = useState(false);
   const [documentActionStatus, setDocumentActionStatus] = useState('');
   const [isSendingMeterReminders, setIsSendingMeterReminders] = useState(false);
+  const [isLoadingReminderPreview, setIsLoadingReminderPreview] = useState(false);
+  const [isReminderConfirmationOpen, setIsReminderConfirmationOpen] = useState(false);
+  const [reminderPreview, setReminderPreview] = useState<ReminderPreviewPayload['preview']>();
   const [meterReminderStatus, setMeterReminderStatus] = useState('');
   const [storesError, setStoresError] = useState('');
   const [storeMeters, setStoreMeters] = useState<UtilityMeterPointRecord[]>([]);
@@ -217,6 +292,10 @@ export default function AdminUtilityMetersPage() {
 
   const monthInputValue = useMemo(() => periodMonth.slice(0, 7), [periodMonth]);
   const activeStores = useMemo(() => stores.filter((store) => store.isActive), [stores]);
+  const regions = useMemo(
+    () => [...new Set(activeStores.map((store) => store.region.trim()).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'uk')),
+    [activeStores]
+  );
   const selectedStore = useMemo(
     () => activeStores.find((store) => store.id === selectedStoreId) ?? null,
     [activeStores, selectedStoreId]
@@ -254,6 +333,49 @@ export default function AdminUtilityMetersPage() {
       setPayload({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося завантажити перевірку.' });
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function loadConsumptionStatistics(
+    nextPeriodFrom = statisticsPeriodFrom,
+    nextPeriodTo = statisticsPeriodTo,
+    nextStoreIds = statisticsStoreIds,
+    nextRegions = statisticsRegions
+  ) {
+    setIsLoadingStatistics(true);
+    try {
+      const params = new URLSearchParams({ periodFrom: nextPeriodFrom, periodTo: nextPeriodTo });
+      nextStoreIds.forEach((storeId) => params.append('storeId', storeId));
+      nextRegions.forEach((region) => params.append('region', region));
+      const response = await fetch(`/api/admin/utility-meters/statistics?${params.toString()}`, { cache: 'no-store' });
+      const result = (await response.json()) as ConsumptionStatisticsPayload;
+      if (!response.ok || !result.ok) throw new Error(result.error || 'Не вдалося завантажити статистику споживання.');
+      setStatisticsPayload(result);
+    } catch (error) {
+      setStatisticsPayload({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося завантажити статистику споживання.' });
+    } finally {
+      setIsLoadingStatistics(false);
+    }
+  }
+
+  async function openConsumptionChart(meter: ConsumptionStatisticItem) {
+    setSelectedChartMeter(meter);
+    setChartPayload({});
+    setIsLoadingChart(true);
+    try {
+      const params = new URLSearchParams({
+        meterPointId: meter.id,
+        periodFrom: statisticsPeriodFrom,
+        periodTo: statisticsPeriodTo
+      });
+      const response = await fetch(`/api/admin/utility-meters/statistics/meter?${params.toString()}`, { cache: 'no-store' });
+      const result = (await response.json()) as ConsumptionHistoryPayload;
+      if (!response.ok || !result.ok) throw new Error(result.error || 'Не вдалося завантажити історію споживання.');
+      setChartPayload(result);
+    } catch (error) {
+      setChartPayload({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося завантажити історію споживання.' });
+    } finally {
+      setIsLoadingChart(false);
     }
   }
 
@@ -306,8 +428,38 @@ export default function AdminUtilityMetersPage() {
   useEffect(() => {
     void loadStores();
     void loadReview();
+    void loadConsumptionStatistics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function toggleStatisticsValue(values: string[], value: string, setValues: (nextValues: string[]) => void) {
+    setValues(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  }
+
+  function toggleStatisticsRegion(region: string) {
+    const regionStoreIds = activeStores.filter((store) => store.region.trim() === region).map((store) => store.id);
+    if (statisticsRegions.includes(region)) {
+      setStatisticsRegions(statisticsRegions.filter((item) => item !== region));
+      setStatisticsStoreIds(statisticsStoreIds.filter((storeId) => !regionStoreIds.includes(storeId)));
+      return;
+    }
+
+    setStatisticsRegions([...statisticsRegions, region]);
+    setStatisticsStoreIds([...new Set([...statisticsStoreIds, ...regionStoreIds])]);
+  }
+
+  function applyStatisticsFilters() {
+    const configurationStoreId = statisticsStoreIds.length === 1 ? statisticsStoreIds[0] : '';
+    setPeriodMonth(statisticsPeriodTo);
+    setSelectedStoreId(configurationStoreId);
+    setAccessLinkStatus('');
+    setMetersStatus('');
+    resetMeterEditor();
+    void loadConsumptionStatistics();
+    void loadReview(statisticsPeriodTo, configurationStoreId);
+    void loadStoreMeters(configurationStoreId);
+    void loadStoreRates(configurationStoreId, statisticsPeriodTo);
+  }
 
   useEffect(() => {
     if (!selectedStoreId) {
@@ -533,6 +685,32 @@ export default function AdminUtilityMetersPage() {
     }
   }
 
+  async function openReminderConfirmation() {
+    setIsLoadingReminderPreview(true);
+    setMeterReminderStatus('');
+    setReminderPreview(undefined);
+    try {
+      const response = await fetch('/api/admin/utility-meters/reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ periodMonth, preview: true })
+      });
+      const result = (await response.json()) as ReminderPreviewPayload;
+      if (!response.ok || !result.ok || !result.preview) throw new Error(result.error || 'Не вдалося підготувати нагадування.');
+      setReminderPreview(result.preview);
+      setIsReminderConfirmationOpen(true);
+    } catch (error) {
+      setMeterReminderStatus(error instanceof Error ? error.message : 'Не вдалося підготувати нагадування.');
+    } finally {
+      setIsLoadingReminderPreview(false);
+    }
+  }
+
+  async function confirmMeterReminders() {
+    setIsReminderConfirmationOpen(false);
+    await sendMeterReminders();
+  }
+
   const documentHref = `/admin/utility-meters/document?${new URLSearchParams({
     periodMonth,
     audience: 'stores',
@@ -557,6 +735,12 @@ export default function AdminUtilityMetersPage() {
   const addMeterDisabled = !selectedStoreId;
   const addRateDisabled = !selectedStoreId || !hasConfiguredMeters;
   const addReadingsDisabled = !selectedStoreId || !hasConfiguredMeters || !hasRatesForSelectedPeriod || isCreatingAccessLink;
+  const chartItems = chartPayload.items ?? [];
+  const chartMaximum = Math.max(...chartItems.map((item) => item.consumption), 0);
+  const chartScaleMaximum = chartMaximum || 1;
+  const chartPointX = (index: number) => chartItems.length === 1 ? 320 : 60 + (index / (chartItems.length - 1)) * 560;
+  const chartPointY = (value: number) => 210 - (value / chartScaleMaximum) * 170;
+  const chartPoints = chartItems.map((item, index) => `${chartPointX(index)},${chartPointY(item.consumption)}`).join(' ');
 
   return (
     <main className="min-h-screen w-full bg-slate-50 px-3 py-4 text-slate-950 sm:px-4 sm:py-5 lg:px-5 xl:px-6">
@@ -570,53 +754,64 @@ export default function AdminUtilityMetersPage() {
         </section>
 
         <section className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="block text-sm font-semibold text-slate-700">
-              Період
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
+                <span className="text-sm font-semibold text-slate-700">Період</span>
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <span>Від</span>
               <input
                 type="month"
-                value={monthInputValue}
-                onChange={(event) => {
-                  const nextPeriod = `${event.target.value}-01`;
-                  setPeriodMonth(nextPeriod);
-                  void loadReview(nextPeriod, selectedStoreId);
-                }}
-                className="mt-2 rounded-md border border-slate-300 px-3 py-2 text-base"
+                value={statisticsPeriodFrom.slice(0, 7)}
+                onChange={(event) => setStatisticsPeriodFrom(`${event.target.value}-01`)}
+                className="rounded-md border border-slate-300 px-3 py-2 text-base"
               />
             </label>
 
-            <label className="block w-full text-sm font-semibold text-slate-700 sm:w-auto sm:min-w-64 xl:min-w-72">
-              Магазин
-              <select
-                value={selectedStoreId}
-                onChange={(event) => handleStoreChange(event.target.value)}
-                className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
-              >
-                <option value="">Усі магазини</option>
-                {activeStores.map((store) => (
-                  <option key={store.id} value={store.id}>
-                    {getStoreLabel(store)}
-                  </option>
-                ))}
-              </select>
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+              <span>До</span>
+              <input
+                type="month"
+                value={statisticsPeriodTo.slice(0, 7)}
+                onChange={(event) => setStatisticsPeriodTo(`${event.target.value}-01`)}
+                className="rounded-md border border-slate-300 px-3 py-2 text-base"
+              />
             </label>
+              </div>
 
+            <details className="relative min-w-64 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700">
+              <summary className="cursor-pointer font-semibold">Магазини та регіони: {statisticsStoreIds.length ? `обрано ${statisticsStoreIds.length}` : 'усі магазини'}</summary>
+              <div className="absolute left-0 z-20 mt-3 w-[min(34rem,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
+                  <span className="font-semibold">Вибір магазинів</span>
+                  <button type="button" onClick={() => { setStatisticsStoreIds([]); setStatisticsRegions([]); }} className="text-xs font-semibold text-amber-700 hover:underline">Скинути вибір</button>
+                </div>
+                {regions.length > 0 ? <div className="mt-3"><div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Регіони</div><div className="mt-1 grid gap-1 sm:grid-cols-2">{regions.map((region) => <label key={region} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-slate-50"><input type="checkbox" checked={statisticsRegions.includes(region)} onChange={() => toggleStatisticsRegion(region)} /><span>{region}</span></label>)}</div></div> : null}
+                <div className="mt-3 max-h-60 overflow-y-auto border-t border-slate-200 pt-3"><div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Магазини</div>{activeStores.map((store) => <label key={store.id} className="mt-1 flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-slate-50"><input type="checkbox" checked={statisticsStoreIds.includes(store.id)} onChange={() => toggleStatisticsValue(statisticsStoreIds, store.id, setStatisticsStoreIds)} className="mt-0.5" /><span>{getStoreLabel(store)}{store.region ? <span className="text-slate-500"> · {store.region}</span> : null}</span></label>)}</div>
+              </div>
+            </details>
+
+            <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => loadReview(periodMonth, selectedStoreId)}
+              onClick={applyStatisticsFilters}
               className="rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-              disabled={isLoading}
+              disabled={isLoadingStatistics}
             >
-              {isLoading ? 'Оновлення...' : 'Оновити'}
+              {isLoadingStatistics ? 'Оновлення...' : 'Оновити'}
             </button>
             <button
               type="button"
-              onClick={() => { void sendMeterReminders(); }}
-              disabled={isSendingMeterReminders}
+              onClick={() => { void openReminderConfirmation(); }}
+              disabled={isSendingMeterReminders || isLoadingReminderPreview}
               className="rounded-md bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
             >
-              {isSendingMeterReminders ? 'Надсилання...' : 'Нагадати про показники'}
+              {isLoadingReminderPreview ? 'Перевірка...' : isSendingMeterReminders ? 'Надсилання...' : 'Нагадати про показники'}
             </button>
+            </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+              <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Документи</span>
             <div className="flex flex-wrap items-center gap-2">
               <a
                 href={documentHref}
@@ -647,6 +842,7 @@ export default function AdminUtilityMetersPage() {
                 {isCreatingDocumentShareLink ? 'Формування...' : 'Посилання'}
               </button>
             </div>
+            </div>
           </div>
           {documentActionStatus ? <div className="mt-2 text-sm font-medium text-slate-700">{documentActionStatus}</div> : null}
           {meterReminderStatus ? <div className="mt-2 text-sm font-medium text-slate-700">{meterReminderStatus}</div> : null}
@@ -660,6 +856,120 @@ export default function AdminUtilityMetersPage() {
           <div className="rounded-lg bg-red-50 p-4 text-sm font-medium text-red-800 ring-1 ring-red-200">{payload.error}</div>
         ) : null}
 
+        <section className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <div className="hidden flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm text-slate-500">Аналітика</div>
+              <h2 className="mt-1 text-xl font-bold">Статистика споживання</h2>
+              <p className="mt-1 text-sm text-slate-600">Оберіть довільний діапазон місяців та одну або кілька груп магазинів.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { void loadConsumptionStatistics(); }}
+              disabled={isLoadingStatistics}
+              className="hidden rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {isLoadingStatistics ? 'Оновлення...' : 'Показати статистику'}
+            </button>
+          </div>
+
+          <div className="mt-4 hidden grid gap-3 lg:grid-cols-4">
+            <label className="block text-sm font-semibold text-slate-700">
+              Від
+              <input
+                type="month"
+                value={statisticsPeriodFrom.slice(0, 7)}
+                onChange={(event) => setStatisticsPeriodFrom(`${event.target.value}-01`)}
+                className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              До
+              <input
+                type="month"
+                value={statisticsPeriodTo.slice(0, 7)}
+                onChange={(event) => setStatisticsPeriodTo(`${event.target.value}-01`)}
+                className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base"
+              />
+            </label>
+            <details className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 lg:col-span-2">
+              <summary className="cursor-pointer font-semibold">Магазини: {statisticsStoreIds.length ? `обрано ${statisticsStoreIds.length}` : 'усі'}</summary>
+              <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+                <button type="button" onClick={() => setStatisticsStoreIds([])} className="text-xs font-semibold text-amber-700 hover:underline">Очистити вибір (усі магазини)</button>
+                {activeStores.map((store) => (
+                  <label key={store.id} className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={statisticsStoreIds.includes(store.id)}
+                      onChange={() => toggleStatisticsValue(statisticsStoreIds, store.id, setStatisticsStoreIds)}
+                      className="mt-0.5"
+                    />
+                    <span>{getStoreLabel(store)}{store.region ? <span className="text-slate-500"> · {store.region}</span> : null}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
+            <details className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 lg:col-span-2">
+              <summary className="cursor-pointer font-semibold">Регіони: {statisticsRegions.length ? `обрано ${statisticsRegions.length}` : 'усі'}</summary>
+              <div className="mt-3 space-y-2">
+                <button type="button" onClick={() => setStatisticsRegions([])} className="text-xs font-semibold text-amber-700 hover:underline">Очистити вибір (усі регіони)</button>
+                {regions.map((region) => (
+                  <label key={region} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={statisticsRegions.includes(region)}
+                      onChange={() => toggleStatisticsValue(statisticsRegions, region, setStatisticsRegions)}
+                    />
+                    <span>{region}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
+            <div className="flex items-end lg:col-span-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatisticsStoreIds([]);
+                  setStatisticsRegions([]);
+                }}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800"
+              >
+                Скинути фільтри
+              </button>
+            </div>
+          </div>
+
+          {statisticsPayload.error ? <div className="mt-4 rounded-md bg-red-50 p-3 text-sm font-medium text-red-800 ring-1 ring-red-200">{statisticsPayload.error}</div> : null}
+          {statisticsPayload.totals ? (
+            <>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-md bg-slate-50 p-3"><div className="text-sm text-slate-500">Лічильники з даними</div><div className="text-xl font-bold">{statisticsPayload.totals.meters}</div></div>
+                <div className="rounded-md bg-slate-50 p-3"><div className="text-sm text-slate-500">Подано показників</div><div className="text-xl font-bold">{statisticsPayload.totals.readings}</div></div>
+                <div className="rounded-md bg-slate-50 p-3"><div className="text-sm text-slate-500">Споживання</div><div className="text-xl font-bold">{number(statisticsPayload.totals.consumption)}</div></div>
+                <div className="rounded-md bg-slate-50 p-3"><div className="text-sm text-slate-500">Сума</div><div className="text-xl font-bold">{money(statisticsPayload.totals.amount)}</div></div>
+              </div>
+              <div className="mt-4 overflow-x-auto rounded-md border border-slate-200">
+                <table className="min-w-[840px] w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-3 py-3">Регіон / магазин</th><th className="px-3 py-3">Лічильник</th><th className="px-3 py-3">Періодів</th><th className="px-3 py-3">Споживання</th><th className="px-3 py-3">Сума</th><th className="px-3 py-3">Графік</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(statisticsPayload.items ?? []).map((item) => (
+                      <tr key={item.id}>
+                        <td className="px-3 py-3 align-top"><div className="font-semibold">{item.storeCode || item.storeLabel || '—'}</div><div className="text-xs text-slate-500">{[item.region, item.city, item.addressLine].filter(Boolean).join(' · ')}</div></td>
+                        <td className="px-3 py-3 align-top"><div className="font-medium">{item.utilityLabel}</div><div className="text-xs text-slate-500">{item.meterNumber || 'Без номера'}</div></td>
+                        <td className="px-3 py-3 align-top">{item.readings}</td>
+                        <td className="px-3 py-3 align-top">{number(item.consumption)}</td>
+                        <td className="px-3 py-3 align-top">{money(item.amount)}</td>
+                        <td className="px-3 py-3 align-top"><button type="button" onClick={() => { void openConsumptionChart(item); }} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-slate-50">Відкрити</button></td>
+                      </tr>
+                    ))}
+                    {!isLoadingStatistics && (statisticsPayload.items ?? []).length === 0 ? <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">За вибраними фільтрами немає розрахованого споживання.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
+        </section>
+
         <div className="flex min-w-0 w-full flex-col gap-5">
             <section className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -667,7 +977,7 @@ export default function AdminUtilityMetersPage() {
                   <div className="text-sm text-slate-500">Налаштування магазину</div>
                   <div className="mt-1 text-xl font-bold">Власні лічильники магазину</div>
                   <p className="mt-1 text-sm text-slate-600">
-                    Створюйте власні лічильники для вибраного магазину. Після створення вони одразу будуть доступні у формі внесення показників.
+                    Для налаштування лічильників оберіть рівно один магазин у верхньому фільтрі. Після створення вони одразу будуть доступні у формі внесення показників.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -722,7 +1032,7 @@ export default function AdminUtilityMetersPage() {
 
               {!selectedStore ? (
                 <div className="mt-4 rounded-md bg-slate-50 p-4 text-sm text-slate-600">
-                  Оберіть магазин ліворуч, щоб створити для нього лічильники.
+                  Оберіть рівно один магазин у верхньому фільтрі, щоб створити або змінити його лічильники.
                 </div>
               ) : (
                 <div className="mt-4 flex flex-col gap-5">
@@ -1013,7 +1323,7 @@ export default function AdminUtilityMetersPage() {
               )}
             </section>
 
-            <section className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <section className="hidden rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
               <div className="text-sm text-slate-500">Поточний перегляд</div>
               <div className="mt-1 text-xl font-bold">{selectedStore ? getStoreLabel(selectedStore) : 'Усі магазини'}</div>
               {selectedStore ? <div className="mt-1 text-sm text-slate-600">{selectedStore.city}, {selectedStore.addressLine}</div> : null}
@@ -1044,7 +1354,7 @@ export default function AdminUtilityMetersPage() {
               </section>
             ) : null}
 
-            <section className="w-full overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+            <section className="hidden w-full overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
               <div className="w-full overflow-x-auto" tabIndex={0} aria-label="Таблиця показників лічильників. Прокрутіть горизонтально, щоб побачити всі колонки.">
                 <table className="w-full min-w-0 divide-y divide-slate-200 text-sm 2xl:min-w-[880px]">
                   <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
@@ -1109,6 +1419,55 @@ export default function AdminUtilityMetersPage() {
             </section>
         </div>
       </div>
+      {isReminderConfirmationOpen && reminderPreview ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="meter-reminder-confirmation-title" onMouseDown={() => setIsReminderConfirmationOpen(false)}>
+          <section className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="text-sm font-semibold uppercase tracking-wide text-amber-700">Нагадування</p>
+            <h2 id="meter-reminder-confirmation-title" className="mt-1 text-xl font-bold text-slate-950">Підтвердити надсилання?</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-600">За {periodLabel(reminderPreview.periodMonth)} буде надіслано нагадування <span className="font-semibold text-slate-950">{reminderPreview.storesToNotify} магазинам</span> щодо <span className="font-semibold text-slate-950">{reminderPreview.missingMeters} лічильників</span>.</p>
+            {reminderPreview.candidates === 0 ? <div className="mt-4 rounded-md bg-slate-50 p-3 text-sm text-slate-700">Усі показники вже внесені або нагадування цим магазинам уже надсилалися сьогодні.</div> : null}
+            {reminderPreview.skippedAlreadySent > 0 ? <div className="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">Не буде повторно надіслано: {reminderPreview.skippedAlreadySent} отримувачам, яким уже нагадували сьогодні.</div> : null}
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => setIsReminderConfirmationOpen(false)} className="rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800">Скасувати</button>
+              <button type="button" onClick={() => { void confirmMeterReminders(); }} disabled={reminderPreview.candidates === 0 || isSendingMeterReminders} className="rounded-md bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Підтвердити надсилання</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {selectedChartMeter ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="meter-consumption-chart-title" onMouseDown={() => setSelectedChartMeter(null)}>
+          <section className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-slate-500">Споживання за період {periodLabel(statisticsPeriodFrom)} — {periodLabel(statisticsPeriodTo)}</p>
+                <h2 id="meter-consumption-chart-title" className="mt-1 text-xl font-bold">{selectedChartMeter.utilityLabel}</h2>
+                <p className="mt-1 text-sm text-slate-600">{[selectedChartMeter.storeCode || selectedChartMeter.storeLabel, selectedChartMeter.region, selectedChartMeter.city].filter(Boolean).join(' · ')}</p>
+              </div>
+              <button type="button" onClick={() => setSelectedChartMeter(null)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800">Закрити</button>
+            </div>
+            {isLoadingChart ? <div className="py-16 text-center text-slate-500">Завантаження графіка...</div> : null}
+            {chartPayload.error ? <div className="mt-4 rounded-md bg-red-50 p-3 text-sm font-medium text-red-800">{chartPayload.error}</div> : null}
+            {!isLoadingChart && !chartPayload.error && chartItems.length === 0 ? <div className="mt-6 rounded-md bg-slate-50 p-6 text-center text-sm text-slate-600">За вибраний період для цього лічильника немає розрахованого споживання.</div> : null}
+            {!isLoadingChart && chartItems.length > 0 ? (
+              <div className="mt-5">
+                <div className="mb-3 grid gap-3 sm:grid-cols-2"><div className="rounded-md bg-slate-50 p-3"><div className="text-sm text-slate-500">Усього спожито</div><div className="text-xl font-bold">{number(chartItems.reduce((sum, item) => sum + item.consumption, 0))}</div></div><div className="rounded-md bg-slate-50 p-3"><div className="text-sm text-slate-500">Усього нараховано</div><div className="text-xl font-bold">{money(chartItems.reduce((sum, item) => sum + item.amount, 0))}</div></div></div>
+                <svg viewBox="0 0 640 260" className="h-auto w-full" role="img" aria-label="Графік помісячного споживання лічильника">
+                  <line x1="60" x2="620" y1="40" y2="40" stroke="#cbd5e1" strokeWidth="1" />
+                  <line x1="60" x2="620" y1="125" y2="125" stroke="#e2e8f0" strokeWidth="1" />
+                  <line x1="60" x2="620" y1="210" y2="210" stroke="#94a3b8" strokeWidth="1" />
+                  <text x="54" y="44" textAnchor="end" fontSize="11" fill="#475569">{number(chartMaximum)}</text>
+                  <text x="54" y="129" textAnchor="end" fontSize="11" fill="#475569">{number(chartMaximum / 2)}</text>
+                  <text x="54" y="214" textAnchor="end" fontSize="11" fill="#475569">0</text>
+                  <polyline points={chartPoints} fill="none" stroke="#d97706" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+                  {chartItems.map((item, index) => <g key={item.periodMonth}><circle cx={chartPointX(index)} cy={chartPointY(item.consumption)} r="4" fill="#d97706"><title>{periodLabel(item.periodMonth)}: {number(item.consumption)}</title></circle>{(index === 0 || index === chartItems.length - 1 || (chartItems.length <= 6)) ? <text x={chartPointX(index)} y="234" textAnchor="middle" fontSize="11" fill="#475569">{periodLabel(item.periodMonth)}</text> : null}</g>)}
+                  <text x="60" y="18" fontSize="12" fill="#334155">Споживання</text>
+                </svg>
+                <div className="mt-3 overflow-x-auto"><table className="min-w-full divide-y divide-slate-200 text-sm"><thead className="bg-slate-100 text-left text-xs uppercase text-slate-600"><tr><th className="px-3 py-2">Місяць</th><th className="px-3 py-2">Споживання</th><th className="px-3 py-2">Сума</th></tr></thead><tbody>{chartItems.map((item) => <tr key={item.periodMonth} className="divide-x-0 border-b border-slate-100"><td className="px-3 py-2">{periodLabel(item.periodMonth)}</td><td className="px-3 py-2">{number(item.consumption)}</td><td className="px-3 py-2">{money(item.amount)}</td></tr>)}</tbody></table></div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

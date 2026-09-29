@@ -40,6 +40,14 @@ export type UtilityMeterRemindersRunResult = {
   details: Array<{ userId: number; storeLabel: string; missingMeters: number; status: 'sent' | 'skipped' | 'failed'; error?: string }>;
 };
 
+export type UtilityMeterRemindersPreview = {
+  periodMonth: string;
+  candidates: number;
+  storesToNotify: number;
+  missingMeters: number;
+  skippedAlreadySent: number;
+};
+
 function currentPeriodMonth() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
@@ -166,6 +174,42 @@ function buildReminderText(recipient: ReminderRecipient, periodMonth: string) {
     '',
     'Будь ласка, внесіть актуальні показники у форму.'
   ].join('\n');
+}
+
+export async function previewUtilityMeterReadingReminders(input?: { periodMonth?: string }): Promise<UtilityMeterRemindersPreview> {
+  const periodMonth = input?.periodMonth ?? currentPeriodMonth();
+  if (!/^\d{4}-\d{2}-01$/.test(periodMonth)) {
+    throw new Error('Некоректний період. Очікується YYYY-MM-01.');
+  }
+
+  await ensureUtilityMeterReminderSchema();
+  const recipients = await listRecipientsWithMissingReadings(periodMonth);
+  if (recipients.length === 0) {
+    return { periodMonth, candidates: 0, storesToNotify: 0, missingMeters: 0, skippedAlreadySent: 0 };
+  }
+
+  const pool = getDbPool();
+  const recipientIds = recipients.map((recipient) => recipient.userId);
+  const [alreadySentRows] = await pool.query<Array<RowDataPacket & { recipient_user_id: number }>>(
+    `
+      SELECT recipient_user_id
+      FROM utility_meter_reminder_logs
+      WHERE period_month = ?
+        AND reminder_date = ?
+        AND recipient_user_id IN (${recipientIds.map(() => '?').join(', ')})
+    `,
+    [periodMonth, todayIso(), ...recipientIds]
+  );
+  const alreadySentUserIds = new Set(alreadySentRows.map((row) => Number(row.recipient_user_id)));
+  const recipientsToNotify = recipients.filter((recipient) => !alreadySentUserIds.has(recipient.userId));
+
+  return {
+    periodMonth,
+    candidates: recipientsToNotify.length,
+    storesToNotify: new Set(recipientsToNotify.map((recipient) => recipient.storeId)).size,
+    missingMeters: recipientsToNotify.reduce((sum, recipient) => sum + recipient.meters.length, 0),
+    skippedAlreadySent: alreadySentUserIds.size
+  };
 }
 
 export async function runUtilityMeterReadingReminders(input?: { periodMonth?: string }): Promise<UtilityMeterRemindersRunResult> {

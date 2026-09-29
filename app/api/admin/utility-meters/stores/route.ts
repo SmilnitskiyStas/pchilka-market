@@ -9,6 +9,7 @@ type StoreRow = RowDataPacket & {
   id: number;
   store_code: string | null;
   name: string;
+  region: string | null;
   city: string;
   address_line: string;
   is_active: number;
@@ -19,7 +20,7 @@ export async function GET() {
     const pool = getDbPool();
     const [rows] = await pool.query<StoreRow[]>(
       `
-        SELECT id, store_code, name, city, address_line, is_active
+        SELECT id, store_code, name, region, city, address_line, is_active
         FROM stores
         ORDER BY sort_order ASC, city ASC, id ASC
       `
@@ -31,6 +32,7 @@ export async function GET() {
         id: String(row.id),
         storeCode: row.store_code ?? '',
         name: row.name,
+        region: row.region ?? '',
         city: row.city,
         addressLine: row.address_line,
         isActive: row.is_active === 1

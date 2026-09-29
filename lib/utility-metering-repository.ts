@@ -1256,6 +1256,153 @@ export async function listUtilityMeterReviewInDb(input: {
   });
 }
 
+export type UtilityMeterConsumptionStatistic = {
+  id: string;
+  storeId?: string;
+  storeCode: string;
+  storeLabel: string;
+  region: string;
+  city: string;
+  addressLine: string;
+  utilityType: UtilityType;
+  utilityLabel: string;
+  meterNumber: string;
+  readings: number;
+  consumption: number;
+  amount: number;
+};
+
+export type UtilityMeterConsumptionHistoryItem = {
+  periodMonth: string;
+  readings: number;
+  consumption: number;
+  amount: number;
+};
+
+export async function listUtilityMeterConsumptionStatisticsInDb(input: {
+  periodFrom: string;
+  periodTo: string;
+  storeIds?: Array<string | number>;
+  regions?: string[];
+}): Promise<UtilityMeterConsumptionStatistic[]> {
+  await ensureUtilityMeteringSchema();
+  const pool = getDbPool();
+  const storeIds = (input.storeIds ?? [])
+    .map((value) => Number(value))
+    .filter((value, index, list) => Number.isFinite(value) && value > 0 && list.indexOf(value) === index);
+  const regions = [...new Set((input.regions ?? []).map((value) => value.trim()).filter(Boolean))];
+  const filters: string[] = [];
+  const params: Array<string | number> = [input.periodFrom, input.periodTo];
+
+  if (storeIds.length > 0) {
+    filters.push(`p.store_id IN (${storeIds.map(() => '?').join(', ')})`);
+    params.push(...storeIds);
+  }
+  if (regions.length > 0) {
+    filters.push(`s.region IN (${regions.map(() => '?').join(', ')})`);
+    params.push(...regions);
+  }
+
+  const [rows] = await pool.query<Array<RowDataPacket & {
+    point_id: number;
+    store_id: number | null;
+    store_code: string | null;
+    store_label: string | null;
+    region: string | null;
+    city: string | null;
+    address_line: string | null;
+    utility_type: UtilityType;
+    utility_label: string;
+    meter_number: string | null;
+    readings: string | number;
+    consumption: string | number;
+    amount: string | number;
+  }>>(
+    `
+      SELECT
+        p.id AS point_id,
+        p.store_id,
+        p.store_code,
+        p.store_label,
+        s.region,
+        s.city,
+        s.address_line,
+        p.utility_type,
+        p.utility_label,
+        p.meter_number,
+        COUNT(c.id) AS readings,
+        COALESCE(SUM(c.consumption), 0) AS consumption,
+        COALESCE(SUM(c.amount), 0) AS amount
+      FROM utility_meter_points p
+      INNER JOIN utility_meter_charges c ON c.meter_point_id = p.id
+        AND c.period_month BETWEEN ? AND ?
+      LEFT JOIN stores s ON s.id = p.store_id
+      WHERE 1 = 1
+        ${filters.length > 0 ? `AND ${filters.join(' AND ')}` : ''}
+      GROUP BY p.id, p.store_id, p.store_code, p.store_label, s.region, s.city, s.address_line, p.utility_type, p.utility_label, p.meter_number
+      ORDER BY s.region ASC, p.store_code ASC, p.utility_type ASC, p.utility_label ASC, p.id ASC
+    `,
+    params
+  );
+
+  return rows.map((row) => ({
+    id: String(row.point_id),
+    storeId: row.store_id == null ? undefined : String(row.store_id),
+    storeCode: row.store_code ?? '',
+    storeLabel: row.store_label ?? '',
+    region: row.region ?? '',
+    city: row.city ?? '',
+    addressLine: row.address_line ?? '',
+    utilityType: row.utility_type,
+    utilityLabel: row.utility_label,
+    meterNumber: row.meter_number ?? '',
+    readings: Number(row.readings) || 0,
+    consumption: Number(row.consumption) || 0,
+    amount: Number(row.amount) || 0
+  }));
+}
+
+export async function listUtilityMeterConsumptionHistoryInDb(input: {
+  meterPointId: string | number;
+  periodFrom: string;
+  periodTo: string;
+}): Promise<UtilityMeterConsumptionHistoryItem[]> {
+  await ensureUtilityMeteringSchema();
+  const meterPointId = Number(input.meterPointId);
+  if (!Number.isFinite(meterPointId) || meterPointId <= 0) {
+    throw new Error('Некоректний лічильник.');
+  }
+
+  const pool = getDbPool();
+  const [rows] = await pool.query<Array<RowDataPacket & {
+    period_month: Date | string;
+    readings: string | number;
+    consumption: string | number;
+    amount: string | number;
+  }>>(
+    `
+      SELECT
+        c.period_month,
+        COUNT(c.id) AS readings,
+        COALESCE(SUM(c.consumption), 0) AS consumption,
+        COALESCE(SUM(c.amount), 0) AS amount
+      FROM utility_meter_charges c
+      WHERE c.meter_point_id = ?
+        AND c.period_month BETWEEN ? AND ?
+      GROUP BY c.period_month
+      ORDER BY c.period_month ASC
+    `,
+    [meterPointId, input.periodFrom, input.periodTo]
+  );
+
+  return rows.map((row) => ({
+    periodMonth: toIsoDate(row.period_month),
+    readings: Number(row.readings) || 0,
+    consumption: Number(row.consumption) || 0,
+    amount: Number(row.amount) || 0
+  }));
+}
+
 export async function listUtilityMeterReadingHistoryByMeterIdsInDb(input: {
   meterPointIds: Array<string | number>;
   limitPerMeter?: number;
