@@ -1268,6 +1268,7 @@ export type UtilityMeterConsumptionStatistic = {
   utilityLabel: string;
   meterNumber: string;
   readings: number;
+  currentReading: number;
   consumption: number;
   amount: number;
 };
@@ -1292,7 +1293,7 @@ export async function listUtilityMeterConsumptionStatisticsInDb(input: {
     .filter((value, index, list) => Number.isFinite(value) && value > 0 && list.indexOf(value) === index);
   const regions = [...new Set((input.regions ?? []).map((value) => value.trim()).filter(Boolean))];
   const filters: string[] = [];
-  const params: Array<string | number> = [input.periodFrom, input.periodTo];
+  const params: Array<string | number> = [input.periodFrom, input.periodTo, input.periodFrom, input.periodTo];
 
   if (storeIds.length > 0) {
     filters.push(`p.store_id IN (${storeIds.map(() => '?').join(', ')})`);
@@ -1315,6 +1316,7 @@ export async function listUtilityMeterConsumptionStatisticsInDb(input: {
     utility_label: string;
     meter_number: string | null;
     readings: string | number;
+    current_reading: string | number | null;
     consumption: string | number;
     amount: string | number;
   }>>(
@@ -1330,6 +1332,14 @@ export async function listUtilityMeterConsumptionStatisticsInDb(input: {
         p.utility_type,
         p.utility_label,
         p.meter_number,
+        (
+          SELECT latest.reading_value
+          FROM utility_meter_readings latest
+          WHERE latest.meter_point_id = p.id
+            AND latest.period_month BETWEEN ? AND ?
+          ORDER BY latest.period_month DESC, latest.reading_date DESC, latest.id DESC
+          LIMIT 1
+        ) AS current_reading,
         COUNT(r.id) AS readings,
         COALESCE(SUM(c.consumption), 0) AS consumption,
         COALESCE(SUM(c.amount), 0) AS amount
@@ -1358,6 +1368,7 @@ export async function listUtilityMeterConsumptionStatisticsInDb(input: {
     utilityLabel: row.utility_label,
     meterNumber: row.meter_number ?? '',
     readings: Number(row.readings) || 0,
+    currentReading: Number(row.current_reading) || 0,
     consumption: Number(row.consumption) || 0,
     amount: Number(row.amount) || 0
   }));

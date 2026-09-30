@@ -54,6 +54,7 @@ type ConsumptionStatisticItem = {
   utilityLabel: string;
   meterNumber: string;
   readings: number;
+  currentReading: number;
   consumption: number;
   amount: number;
 };
@@ -1045,14 +1046,15 @@ export default function AdminUtilityMetersPage() {
           {statisticsPayload.totals ? (
             <>
               <div className="mt-4 overflow-x-auto rounded-md border border-slate-200">
-                <table className="min-w-[840px] w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-3 py-3">Регіон / магазин</th><th className="px-3 py-3">Лічильник</th><th className="px-3 py-3">Періодів</th><th className="px-3 py-3">Споживання</th><th className="px-3 py-3">Сума</th><th className="px-3 py-3">Графік</th></tr></thead>
+                <table className="min-w-[940px] w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-3 py-3">Регіон / магазин</th><th className="px-3 py-3">Лічильник</th><th className="px-3 py-3">Періодів</th><th className="px-3 py-3">Поточний показник</th><th className="px-3 py-3">Споживання</th><th className="px-3 py-3">Сума</th><th className="px-3 py-3">Графік</th></tr></thead>
                   <tbody className="divide-y divide-slate-100">
                     {(statisticsPayload.items ?? []).map((item) => (
                       <tr key={item.id}>
                         <td className="px-3 py-3 align-top"><div className="font-semibold">{item.storeCode || item.storeLabel || '—'}</div><div className="text-xs text-slate-500">{[item.region, item.city, item.addressLine].filter(Boolean).join(' · ')}</div></td>
                         <td className="px-3 py-3 align-top"><div className="flex flex-wrap items-center gap-2"><span className={`rounded px-2 py-1 text-xs font-semibold ${utilityTypeBadge(item.utilityType).className}`}>{utilityTypeBadge(item.utilityType).label}</span><Link href={`/admin/utility-meters/meters/${encodeURIComponent(item.id)}?${new URLSearchParams({ ...(item.storeId ? { storeId: item.storeId } : {}), periodMonth: statisticsPeriodTo }).toString()}`} className="font-medium text-slate-950 hover:text-amber-700 hover:underline">{item.utilityLabel}</Link></div><div className="mt-1 text-xs text-slate-500">{item.meterNumber || 'Без номера'}</div></td>
                         <td className="px-3 py-3 align-top">{item.readings}</td>
+                        <td className="px-3 py-3 align-top font-medium">{number(item.currentReading)}</td>
                         <td className="px-3 py-3 align-top">{number(item.consumption)}</td>
                         <td className="px-3 py-3 align-top">{money(item.amount)}</td>
                         <td className="px-3 py-3 align-top"><button type="button" onClick={() => { void openConsumptionChart(item); }} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-slate-50">Відкрити</button></td>
