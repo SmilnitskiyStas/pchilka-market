@@ -51,7 +51,7 @@ function shouldEnableForCurrentHost(environment: 'prod' | 'dev') {
 
 async function loadSettings(): Promise<IntegrationsSettings> {
   try {
-    const response = await fetch('/api/admin/integrations', { cache: 'no-store' });
+    const response = await fetch('/api/analytics/settings', { cache: 'no-store' });
     const payload = (await response.json()) as { ok?: boolean; settings?: Partial<IntegrationsSettings> };
     if (!response.ok || !payload.ok) return defaultIntegrationsSettings;
     return normalizeIntegrationsSettings(payload.settings);
