@@ -13,6 +13,34 @@ function normalizeNextPath(raw: string | null): string {
 
 type Mode = 'login' | 'register';
 
+function PasswordVisibilityButton({ visible, onClick }: { visible: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={visible ? 'Приховати пароль' : 'Показати пароль'}
+      aria-pressed={visible}
+      title={visible ? 'Приховати пароль' : 'Показати пароль'}
+      className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 transition hover:text-brand focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1"
+    >
+      {visible ? (
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+          <path d="m3 3 18 18" />
+          <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+          <path d="M9.9 4.2A10.8 10.8 0 0 1 12 4c5.5 0 9.3 5.1 10 7.1a11.8 11.8 0 0 1-3 4.1" />
+          <path d="M6.6 6.6C4.6 8 3.3 10.1 2 12c.7 2 4.5 7 10 7 1.5 0 2.9-.4 4.1-1" />
+        </svg>
+      ) : (
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      )}
+      <span className="sr-only">{visible ? 'Приховати пароль' : 'Показати пароль'}</span>
+    </button>
+  );
+}
+
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -22,12 +50,15 @@ function LoginPageContent() {
 
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [registerLogin, setRegisterLogin] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
+  const [isRegisterPasswordVisible, setIsRegisterPasswordVisible] = useState(false);
   const [registerDisplayName, setRegisterDisplayName] = useState('');
   const [registerBootstrapToken, setRegisterBootstrapToken] = useState('');
+  const [isBootstrapTokenVisible, setIsBootstrapTokenVisible] = useState(false);
   const [isRegisterSubmitting, setIsRegisterSubmitting] = useState(false);
 
   const [error, setError] = useState('');
@@ -150,14 +181,17 @@ function LoginPageContent() {
               <label htmlFor="password" className="block text-sm font-semibold text-slate-900">
                 Пароль
               </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
-              />
+              <div className="relative mt-1.5">
+                <input
+                  id="password"
+                  type={isPasswordVisible ? 'text' : 'password'}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete="current-password"
+                  className="w-full rounded-xl border border-slate-300 p-3 pr-11 text-sm outline-none transition focus:border-brand"
+                />
+                <PasswordVisibilityButton visible={isPasswordVisible} onClick={() => setIsPasswordVisible((visible) => !visible)} />
+              </div>
             </div>
 
             <button
@@ -196,14 +230,17 @@ function LoginPageContent() {
               <label htmlFor="register-password" className="block text-sm font-semibold text-slate-900">
                 Пароль
               </label>
-              <input
-                id="register-password"
-                type="password"
-                value={registerPassword}
-                onChange={(event) => setRegisterPassword(event.target.value)}
-                placeholder="мінімум 8 символів"
-                className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
-              />
+              <div className="relative mt-1.5">
+                <input
+                  id="register-password"
+                  type={isRegisterPasswordVisible ? 'text' : 'password'}
+                  value={registerPassword}
+                  onChange={(event) => setRegisterPassword(event.target.value)}
+                  placeholder="мінімум 8 символів"
+                  className="w-full rounded-xl border border-slate-300 p-3 pr-11 text-sm outline-none transition focus:border-brand"
+                />
+                <PasswordVisibilityButton visible={isRegisterPasswordVisible} onClick={() => setIsRegisterPasswordVisible((visible) => !visible)} />
+              </div>
             </div>
 
             <div>
@@ -222,14 +259,17 @@ function LoginPageContent() {
               <label htmlFor="register-bootstrap" className="block text-sm font-semibold text-slate-900">
                 Bootstrap token
               </label>
-              <input
-                id="register-bootstrap"
-                type="password"
-                value={registerBootstrapToken}
-                onChange={(event) => setRegisterBootstrapToken(event.target.value)}
-                placeholder="ADMIN_BOOTSTRAP_TOKEN"
-                className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
-              />
+              <div className="relative mt-1.5">
+                <input
+                  id="register-bootstrap"
+                  type={isBootstrapTokenVisible ? 'text' : 'password'}
+                  value={registerBootstrapToken}
+                  onChange={(event) => setRegisterBootstrapToken(event.target.value)}
+                  placeholder="ADMIN_BOOTSTRAP_TOKEN"
+                  className="w-full rounded-xl border border-slate-300 p-3 pr-11 text-sm outline-none transition focus:border-brand"
+                />
+                <PasswordVisibilityButton visible={isBootstrapTokenVisible} onClick={() => setIsBootstrapTokenVisible((visible) => !visible)} />
+              </div>
             </div>
 
             <button
