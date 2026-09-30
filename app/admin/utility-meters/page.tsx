@@ -118,11 +118,34 @@ type ReminderPreviewPayload = {
   error?: string;
 };
 
-function UtilityMeterReviewTotals({ totals }: { totals: NonNullable<ReviewPayload['totals']> }) {
+function UtilityMeterReviewTotals({
+  totals,
+  isShowingMissing,
+  onToggleMissing
+}: {
+  totals: NonNullable<ReviewPayload['totals']>;
+  isShowingMissing: boolean;
+  onToggleMissing: () => void;
+}) {
+  const missing = Math.max(0, totals.meters - totals.submitted);
+
   return (
     <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
       <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Лічильники</div><div className="text-2xl font-bold">{totals.meters}</div></div>
-      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Подано</div><div className="text-2xl font-bold">{totals.submitted}</div></div>
+      <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+        <div className="flex items-start justify-between gap-3">
+          <div><div className="text-sm text-slate-500">Подано</div><div className="text-2xl font-bold">{totals.submitted}</div></div>
+          <button
+            type="button"
+            onClick={onToggleMissing}
+            aria-pressed={isShowingMissing}
+            className={`rounded-md px-2 py-1 text-right transition ${isShowingMissing ? 'bg-red-100 text-red-800 ring-1 ring-red-200' : 'text-red-600 hover:bg-red-50 hover:text-red-800'}`}
+          >
+            <span className="block text-sm">Не подано</span>
+            <span className="block text-2xl font-bold">{missing}</span>
+          </button>
+        </div>
+      </div>
       <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Ок</div><div className="text-2xl font-bold text-green-700">{totals.ok}</div></div>
       <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Зауваження</div><div className="text-2xl font-bold text-amber-700">{totals.warning + totals.error}</div></div>
       <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Сума</div><div className="text-2xl font-bold">{money(totals.amount)}</div></div>
@@ -293,6 +316,7 @@ export default function AdminUtilityMetersPage() {
   const [stores, setStores] = useState<StoreView[]>([]);
   const [payload, setPayload] = useState<ReviewPayload>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isShowingMissingMeters, setIsShowingMissingMeters] = useState(false);
   const [isCreatingAccessLink, setIsCreatingAccessLink] = useState(false);
   const [accessLinkStatus, setAccessLinkStatus] = useState('');
   const [isCreatingDocumentShareLink, setIsCreatingDocumentShareLink] = useState(false);
@@ -334,6 +358,7 @@ export default function AdminUtilityMetersPage() {
   const activeStoreMeters = useMemo(() => storeMeters.filter((meter) => meter.isActive), [storeMeters]);
   const hasConfiguredMeters = activeStoreMeters.length > 0;
   const hasRatesForSelectedPeriod = storeRates.length > 0;
+  const missingReviewItems = useMemo(() => (payload.items ?? []).filter((item) => !item.reading), [payload.items]);
 
   async function loadStores() {
     try {
@@ -884,7 +909,46 @@ export default function AdminUtilityMetersPage() {
           {meterReminderStatus ? <div className="mt-2 text-sm font-medium text-slate-700">{meterReminderStatus}</div> : null}
         </section>
 
-        {payload.totals ? <UtilityMeterReviewTotals totals={payload.totals} /> : null}
+        {payload.totals ? (
+          <UtilityMeterReviewTotals
+            totals={payload.totals}
+            isShowingMissing={isShowingMissingMeters}
+            onToggleMissing={() => setIsShowingMissingMeters((current) => !current)}
+          />
+        ) : null}
+
+        {isShowingMissingMeters ? (
+          <section id="missing-meter-readings" className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm text-red-700">Потребують показників</div>
+                <h2 className="mt-1 text-xl font-bold text-slate-950">Не подано: {missingReviewItems.length}</h2>
+                <p className="mt-1 text-sm text-slate-600">Лічильники без показань за {periodLabel(periodMonth)}.</p>
+              </div>
+              <button type="button" onClick={() => setIsShowingMissingMeters(false)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800">
+                Закрити список
+              </button>
+            </div>
+            <div className="mt-4 overflow-x-auto rounded-md border border-slate-200">
+              <table className="min-w-[700px] w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600">
+                  <tr><th className="px-3 py-3">Магазин</th><th className="px-3 py-3">Лічильник</th><th className="px-3 py-3">Тип</th><th className="px-3 py-3">Дія</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {missingReviewItems.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-3 py-3 align-top"><div className="font-semibold">{item.storeCode || item.storeLabel || '—'}</div><div className="text-xs text-slate-500">{item.addressLine}</div></td>
+                      <td className="px-3 py-3 align-top"><div className="font-medium">{item.utilityLabel}</div><div className="text-xs text-slate-500">{item.meterNumber || 'Без номера'}</div></td>
+                      <td className="px-3 py-3 align-top"><span className={`rounded px-2 py-1 text-xs font-semibold ${utilityTypeBadge(item.utilityType).className}`}>{utilityTypeBadge(item.utilityType).label}</span></td>
+                      <td className="px-3 py-3 align-top"><Link href={`/admin/utility-meters/meters/${encodeURIComponent(item.id)}?${new URLSearchParams({ ...(item.storeId ? { storeId: item.storeId } : {}), periodMonth }).toString()}`} className="inline-flex rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:border-amber-400 hover:text-amber-800">Внести показник</Link></td>
+                    </tr>
+                  ))}
+                  {!isLoading && missingReviewItems.length === 0 ? <tr><td colSpan={4} className="px-3 py-8 text-center text-sm text-slate-500">Усі лічильники мають показання за цей період.</td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ) : null}
 
         {storesError ? (
           <div className="rounded-lg bg-amber-50 p-4 text-sm font-medium text-amber-900 ring-1 ring-amber-200">{storesError}</div>
