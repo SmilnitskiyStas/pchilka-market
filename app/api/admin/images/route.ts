@@ -7,7 +7,9 @@ import { buildMediaUrl, getUploadsDir, normalizeUploadFolder } from '@/lib/uploa
 
 export const runtime = 'nodejs';
 
-const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif']);
+// The route is also used by the homepage banner manager. Keep this allow-list
+// intentionally narrow: videos are limited to browser-friendly formats.
+const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.mp4', '.webm']);
 
 async function walkImages(dirPath: string, rootPath: string): Promise<string[]> {
   const entries = await fs.readdir(dirPath, { withFileTypes: true });

@@ -45,6 +45,11 @@ function isValidImagePath(value: string) {
   );
 }
 
+function isVideoAsset(assetUrl: string): boolean {
+  const cleanUrl = assetUrl.split('?')[0]?.toLowerCase() ?? assetUrl.toLowerCase();
+  return cleanUrl.endsWith('.mp4') || cleanUrl.endsWith('.webm');
+}
+
 function shouldUseNativeImage(src: string): boolean {
   return (
     src.startsWith('/api/site-image') ||
@@ -166,9 +171,9 @@ function normalizeBanner(raw: HomeBanner): HomeBanner {
   };
 }
 
-function isImageAsset(assetUrl: string): boolean {
+function isBannerAsset(assetUrl: string): boolean {
   const cleanUrl = assetUrl.split('?')[0] ?? assetUrl;
-  return ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.svg'].some((extension) =>
+  return ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.svg', '.mp4', '.webm'].some((extension) =>
     cleanUrl.toLowerCase().endsWith(extension)
   );
 }
@@ -187,7 +192,7 @@ async function fetchMediaAssets(): Promise<MediaAsset[]> {
   }
 
   return Array.isArray(payload.images)
-    ? payload.images.filter(isImageAsset).map((url) => ({ url }))
+    ? payload.images.filter(isBannerAsset).map((url) => ({ url }))
     : [];
 }
 
@@ -711,10 +716,24 @@ export default function AdminBannersManager() {
           const canMoveDown = orderIndex >= 0 && orderIndex < banners.length - 1;
           const useNativeImage = shouldUseNativeImage(banner.src);
           const previewSrc = getBannerPreviewSrc(banner.src, banner.id);
+          const isVideo = isVideoAsset(banner.src);
 
           return (
           <li key={banner.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            {banner.src.startsWith('data:') ? (
+            {isVideo ? (
+              <div className="h-44 w-full bg-slate-950">
+                <video
+                  src={banner.src}
+                  aria-label={banner.alt}
+                  className="h-full w-full object-contain"
+                  muted
+                  loop
+                  playsInline
+                  autoPlay
+                  preload="metadata"
+                />
+              </div>
+            ) : banner.src.startsWith('data:') ? (
               <div className="flex h-44 w-full items-center justify-center bg-slate-50 p-2">
                 <img src={banner.src} alt={banner.alt} className="h-full w-full object-contain" />
               </div>
@@ -810,7 +829,8 @@ export default function AdminBannersManager() {
           >
             <h2 className="text-xl font-bold text-slate-900">{isEditing ? 'Редагувати банер' : 'Додати новий банер'}</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Для локального файлу використовуйте шлях на кшталт <span className="font-semibold">/img/baners/file.jpg</span>.
+              Підтримуються зображення, GIF та відео MP4/WebM. Для локального файлу використовуйте шлях на кшталт{' '}
+              <span className="font-semibold">/img/baners/file.jpg</span> або <span className="font-semibold">/media/admin/banners/video.mp4</span>.
             </p>
 
             <form onSubmit={handleSubmit} className="mt-4 space-y-4">
@@ -829,7 +849,7 @@ export default function AdminBannersManager() {
               </div>
 
               <div>
-                <p className="block text-sm font-semibold text-slate-900">Джерело зображення</p>
+                <p className="block text-sm font-semibold text-slate-900">Джерело банера</p>
                 <div className="mt-1.5 flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -859,7 +879,7 @@ export default function AdminBannersManager() {
               {imageSourceMode === 'path' ? (
                 <div className="space-y-3">
                   <label htmlFor="banner-src" className="block text-sm font-semibold text-slate-900">
-                    Шлях до зображення
+                    Шлях до файлу або URL
                   </label>
                   <div className="mt-1.5 flex gap-2">
                     <input
@@ -868,7 +888,7 @@ export default function AdminBannersManager() {
                       value={src}
                       onChange={(event) => setSrc(event.target.value)}
                       className="min-w-0 flex-1 rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
-                      placeholder="/img/baners/banner.jpg"
+                      placeholder="/media/admin/banners/banner.mp4"
                     />
                     <button
                       type="button"
@@ -882,12 +902,12 @@ export default function AdminBannersManager() {
               ) : (
                 <div>
                   <label htmlFor="banner-file" className="block text-sm font-semibold text-slate-900">
-                    Файл зображення
+                    Файл банера
                   </label>
                   <input
                     id="banner-file"
                     type="file"
-                    accept="image/*"
+                    accept="image/*,video/mp4,video/webm"
                     onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
                     className="mt-1.5 block w-full text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-brand/10 file:px-3 file:py-2 file:font-semibold file:text-brand hover:file:bg-brand/20"
                   />
@@ -1014,8 +1034,8 @@ export default function AdminBannersManager() {
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">Каталог зображень</h3>
-                <p className="mt-1 text-sm text-slate-600">Оберіть зображення з медіафайлів сервера, щоб підставити його шлях у банер.</p>
+                <h3 className="text-xl font-bold text-slate-900">Каталог медіафайлів</h3>
+                <p className="mt-1 text-sm text-slate-600">Оберіть зображення, GIF або відео з медіафайлів сервера, щоб підставити шлях у банер.</p>
               </div>
               <button
                 type="button"
@@ -1036,11 +1056,11 @@ export default function AdminBannersManager() {
               <p className="text-sm text-slate-500">Знайдено: {filteredMediaAssets.length}</p>
             </div>
 
-            {isMediaLoading ? <p className="mt-4 text-sm text-slate-600">Завантаження зображень...</p> : null}
+            {isMediaLoading ? <p className="mt-4 text-sm text-slate-600">Завантаження медіафайлів...</p> : null}
 
             {!isMediaLoading && filteredMediaAssets.length === 0 ? (
               <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                Немає доступних зображень за цим фільтром.
+                Немає доступних медіафайлів за цим фільтром.
               </p>
             ) : null}
 
@@ -1090,14 +1110,25 @@ export default function AdminBannersManager() {
                     }`}
                   >
                     <div className="aspect-[4/3] overflow-hidden bg-slate-100">
-                      <img
-                        src={asset.url}
-                        alt={asset.metadata?.alt || getFileName(asset.url)}
-                        className="h-full w-full object-cover"
-                        onError={() => {
-                          void inspectImageUrl(asset.url, 'Catalog image', asset.url).then(setImageDebugInfo);
-                        }}
-                      />
+                      {isVideoAsset(asset.url) ? (
+                        <video
+                          src={asset.url}
+                          aria-label={asset.metadata?.alt || getFileName(asset.url)}
+                          className="h-full w-full object-cover"
+                          muted
+                          playsInline
+                          preload="metadata"
+                        />
+                      ) : (
+                        <img
+                          src={asset.url}
+                          alt={asset.metadata?.alt || getFileName(asset.url)}
+                          className="h-full w-full object-cover"
+                          onError={() => {
+                            void inspectImageUrl(asset.url, 'Catalog image', asset.url).then(setImageDebugInfo);
+                          }}
+                        />
+                      )}
                     </div>
                     <div className="space-y-1 px-3 py-3">
                       <p className="truncate text-sm font-semibold text-slate-900">{getFileName(asset.url)}</p>

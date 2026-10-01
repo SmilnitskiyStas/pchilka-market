@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 type BannerSlide = {
   id?: string;
@@ -49,8 +49,14 @@ function getBannerImageSrc(src: string, cacheKey?: string): string {
   return `/api/site-image?ref=${encodeURIComponent(encodeImageRef(src))}&v=${encodeURIComponent(cacheKey)}`;
 }
 
+function isVideoSource(src: string): boolean {
+  const pathname = src.split('?')[0]?.toLowerCase() ?? src.toLowerCase();
+  return pathname.endsWith('.mp4') || pathname.endsWith('.webm');
+}
+
 export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const videoElements = useRef(new Map<number, HTMLVideoElement>());
 
   useEffect(() => {
     if (slides.length <= 1) return;
@@ -62,6 +68,19 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
     return () => clearInterval(timer);
   }, [slides.length, intervalMs]);
 
+  useEffect(() => {
+    videoElements.current.forEach((video, index) => {
+      if (index !== activeIndex) {
+        video.pause();
+        return;
+      }
+
+      void video.play().catch(() => {
+        // Autoplay may be restricted by a browser despite muted playback.
+      });
+    });
+  }, [activeIndex, slides]);
+
   if (slides.length === 0) return null;
 
   return (
@@ -69,9 +88,48 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
       <div className="relative aspect-[1200/460] w-full">
         {slides.map((slide, index) => {
           const isActive = index === activeIndex;
+          const isVideo = isVideoSource(slide.src);
           const useNativeImage = shouldUseNativeImage(slide.src);
           const imageSrc = getBannerImageSrc(slide.src, slide.id);
           const imageClassName = 'h-full w-full object-contain';
+          const media = isVideo ? (
+            <video
+              ref={(element) => {
+                if (element) videoElements.current.set(index, element);
+                else videoElements.current.delete(index);
+              }}
+              src={slide.src}
+              aria-label={slide.alt}
+              className={imageClassName}
+              autoPlay={isActive}
+              loop
+              muted
+              playsInline
+              preload={index === 0 ? 'auto' : 'metadata'}
+            />
+          ) : useNativeImage ? (
+            <img
+              src={imageSrc}
+              alt={slide.alt}
+              loading={index === 0 ? 'eager' : 'lazy'}
+              className={imageClassName}
+              onError={() => {
+                console.error('[banner-carousel] Banner image failed to load', {
+                  slideId: slide.id,
+                  originalSrc: slide.src,
+                  imageSrc
+                });
+              }}
+            />
+          ) : (
+            <Image
+              src={imageSrc}
+              alt={slide.alt}
+              fill
+              priority={index === 0}
+              className="object-contain"
+            />
+          );
 
           return (
             <div
@@ -83,56 +141,10 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
             >
               {slide.href ? (
                 <Link href={slide.href} aria-label={slide.alt} className="block h-full w-full">
-                  {useNativeImage ? (
-                    <img
-                      src={imageSrc}
-                      alt={slide.alt}
-                      loading={index === 0 ? 'eager' : 'lazy'}
-                      className={imageClassName}
-                      onError={() => {
-                        console.error('[banner-carousel] Banner image failed to load', {
-                          slideId: slide.id,
-                          originalSrc: slide.src,
-                          imageSrc
-                        });
-                      }}
-                    />
-                  ) : (
-                    <Image
-                      src={imageSrc}
-                      alt={slide.alt}
-                      fill
-                      priority={index === 0}
-                      className="object-contain"
-                    />
-                  )}
+                  {media}
                 </Link>
               ) : (
-                <div className="h-full w-full">
-                  {useNativeImage ? (
-                    <img
-                      src={imageSrc}
-                      alt={slide.alt}
-                      loading={index === 0 ? 'eager' : 'lazy'}
-                      className={imageClassName}
-                      onError={() => {
-                        console.error('[banner-carousel] Banner image failed to load', {
-                          slideId: slide.id,
-                          originalSrc: slide.src,
-                          imageSrc
-                        });
-                      }}
-                    />
-                  ) : (
-                    <Image
-                      src={imageSrc}
-                      alt={slide.alt}
-                      fill
-                      priority={index === 0}
-                      className="object-contain"
-                    />
-                  )}
-                </div>
+                <div className="h-full w-full">{media}</div>
               )}
             </div>
           );
