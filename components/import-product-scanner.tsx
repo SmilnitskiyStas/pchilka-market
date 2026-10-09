@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-type PublicProduct = { article: string; name: string; barcode: string | null };
+type ProductDetails = { ingredients: string; fruitContent: string; nutritionFat: string; nutritionSaturatedFat: string; nutritionCarbohydrates: string; nutritionSugars: string; nutritionProtein: string; nutritionSalt: string; nutritionEnergy: string; storageConditions: string; shelfLife: string; allergens: string; countryOfOrigin: string; manufacturer: string; importer: string; consumerClaims: string; isGmoFree: boolean };
+
+type PublicProduct = { article: string; name: string; barcode: string | null; details: ProductDetails | null };
 
 function normalizeCode(value: string) {
   return value.trim().replace(/\s+/g, '').replace(/\.0+$/, '');
@@ -133,6 +135,7 @@ export default function ImportProductScanner() {
 
       {message ? <p role="status" className="mt-5 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">{message}</p> : null}
       {product ? <section className="mt-5 rounded-2xl border border-brand/25 bg-brand/5 p-5"><p className="text-sm font-medium text-slate-600">Товар знайдено</p><h2 className="mt-1 text-xl font-bold text-slate-900">{product.name}</h2><dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-600">Артикул</dt><dd className="mt-1 font-semibold text-slate-900">{product.article}</dd></div><div><dt className="text-slate-600">Штрихкод</dt><dd className="mt-1 font-semibold text-slate-900">{product.barcode ?? normalizeCode(code)}</dd></div></dl></section> : null}
+      {product?.details ? <section className="mt-5 space-y-5 rounded-2xl border border-slate-200 p-5 text-sm text-slate-700"><div><h2 className="text-xl font-bold text-slate-900">Інформація про товар</h2><h3 className="mt-4 font-semibold text-slate-900">Склад</h3><p className="mt-1 leading-6">{product.details.ingredients}</p><p className="mt-2 font-medium">{product.details.fruitContent}</p></div><div className="overflow-hidden rounded-xl border border-slate-200"><div className="bg-slate-50 px-4 py-3 font-semibold text-slate-900">Поживна цінність на 100 мл</div><dl className="divide-y divide-slate-100">{[['Жири', product.details.nutritionFat], ['Насичені жири', product.details.nutritionSaturatedFat], ['Вуглеводи', product.details.nutritionCarbohydrates], ['Цукри', product.details.nutritionSugars], ['Білок', product.details.nutritionProtein], ['Сіль', product.details.nutritionSalt], ['Енергетична цінність', product.details.nutritionEnergy]].map(([label, value]) => <div key={label} className="flex justify-between gap-4 px-4 py-2"><dt>{label}</dt><dd className="font-semibold text-slate-900">{value}</dd></div>)}</dl></div><div className="grid gap-4 sm:grid-cols-2"><div><h3 className="font-semibold text-slate-900">Зберігання</h3><p className="mt-1 leading-6">{product.details.storageConditions}</p></div><div><h3 className="font-semibold text-slate-900">Термін реалізації</h3><p className="mt-1 leading-6">{product.details.shelfLife}</p></div></div><div><h3 className="font-semibold text-slate-900">Країна походження</h3><p className="mt-1">{product.details.countryOfOrigin}</p><h3 className="mt-3 font-semibold text-slate-900">Виробник</h3><p className="mt-1 leading-6">{product.details.manufacturer}</p><h3 className="mt-3 font-semibold text-slate-900">Імпортер в Україні</h3><p className="mt-1 leading-6">{product.details.importer}</p><p className="mt-2 font-medium">{product.details.consumerClaims}</p></div><div className="rounded-xl bg-brand/5 p-4"><p>{product.details.allergens}</p>{product.details.isGmoFree ? <p className="mt-2 font-semibold text-slate-900">Без ГМО.</p> : null}</div></section> : null}
     </section>
   );
 }
