@@ -75,7 +75,7 @@ export function resourceForAdminPath(pathname: string): AdminResource {
   if (pathname.includes('/marketing')) return 'marketing';
   if (pathname.includes('/fun-telegram') || pathname.includes('/career-telegram')) return 'telegram';
   if (pathname.includes('/own-brand')) return 'own_brand';
-  if (pathname.includes('/content') || pathname.includes('/blog')) return 'content';
+  if (pathname.includes('/content') || pathname.includes('/blog') || pathname.includes('/product-info')) return 'content';
   return 'system';
 }
 

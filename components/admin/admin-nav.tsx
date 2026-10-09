@@ -127,6 +127,8 @@ export default function AdminNav() {
         label: 'Маркетинг',
         children: [
           { href: '/admin/marketing/rfm', label: 'RFM-аналіз' },
+          { href: '/admin/marketing/loyalty-rule-analytics', label: 'Аналітика правил' },
+          { href: '/admin/marketing/megogo-codes', label: 'Коди MEGOGO' },
           { href: '/admin/promotions', label: 'Акції' },
           { href: '/admin/home-slides', label: 'Банери' },
           { href: '/admin/media', label: 'Медіафайли' },
@@ -135,7 +137,7 @@ export default function AdminNav() {
       },
       {
         label: 'Контент',
-        children: [{ href: '/admin/content', label: 'Статті' }]
+        children: [{ href: '/admin/content', label: 'Статті' }, { href: '/admin/product-info', label: 'Інформація про імпортні товари' }]
       },
       {
         label: 'Комунальні нарахування',
