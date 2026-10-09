@@ -1317,6 +1317,24 @@ async function ensureMarketingAnalyticsMart() {
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 }
 
+async function ensurePublicProductInfoTable() {
+  const pool = getDbPool();
+  await pool.query(`CREATE TABLE IF NOT EXISTS public_product_info (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    product_id BIGINT UNSIGNED NOT NULL,
+    ingredients TEXT NULL, fruit_content TEXT NULL,
+    nutrition_fat VARCHAR(40) NULL, nutrition_saturated_fat VARCHAR(40) NULL,
+    nutrition_carbohydrates VARCHAR(40) NULL, nutrition_sugars VARCHAR(40) NULL,
+    nutrition_protein VARCHAR(40) NULL, nutrition_salt VARCHAR(40) NULL, nutrition_energy VARCHAR(80) NULL,
+    storage_conditions TEXT NULL, shelf_life TEXT NULL, allergens TEXT NULL,
+    country_of_origin VARCHAR(120) NULL, manufacturer TEXT NULL, importer TEXT NULL, consumer_claims TEXT NULL,
+    is_gmo_free TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id), UNIQUE KEY uq_public_product_info_product (product_id),
+    CONSTRAINT fk_public_product_info_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE ON UPDATE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+}
 export async function applyInventorySchemaMigrations() {
   const pool = getDbPool();
   const [tableRows] = await pool.query<ShowTablesRow[]>('SHOW TABLES');
@@ -1358,6 +1376,7 @@ export async function applyInventorySchemaMigrations() {
   await ensureCareerTelegramSessionsTable();
   await ensureMarketingStoreTpCodes();
   await ensureMarketingAnalyticsMart();
+  await ensurePublicProductInfoTable();
 
   return getInventoryReadinessFromDb();
 }

@@ -18,7 +18,8 @@ export const INVENTORY_REQUIRED_TABLES = [
   'notification_logs',
   'notification_log_tasks',
   'product_change_logs',
-  'product_import_review_queue'
+  'product_import_review_queue',
+  'public_product_info'
 ] as const;
 
 export const INVENTORY_REQUIRED_PRODUCT_BATCH_COLUMNS = [
