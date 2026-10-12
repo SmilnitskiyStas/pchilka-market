@@ -8,6 +8,7 @@ type PublicProductLookupRow = RowDataPacket & {
   barcode: string | null;
   ingredients: string | null;
   fruitContent: string | null;
+  preparationMethod: string | null;
   nutritionFat: string | null;
   nutritionSaturatedFat: string | null;
   nutritionCarbohydrates: string | null;
@@ -28,6 +29,7 @@ type PublicProductLookupRow = RowDataPacket & {
 export type PublicProductDetails = {
   ingredients: string;
   fruitContent: string;
+  preparationMethod: string;
   nutritionFat: string;
   nutritionSaturatedFat: string;
   nutritionCarbohydrates: string;
@@ -60,7 +62,7 @@ export async function findPublicProductByCode(rawCode: string): Promise<PublicPr
   const db = getDbPool();
   const [rows] = await db.query<PublicProductLookupRow[]>(
     `SELECT p.article, p.product_name AS name, matched_barcode.barcode,
-      info.ingredients, info.fruit_content AS fruitContent,
+      info.ingredients, info.fruit_content AS fruitContent, info.preparation_method AS preparationMethod,
       info.nutrition_fat AS nutritionFat, info.nutrition_saturated_fat AS nutritionSaturatedFat,
       info.nutrition_carbohydrates AS nutritionCarbohydrates, info.nutrition_sugars AS nutritionSugars,
       info.nutrition_protein AS nutritionProtein, info.nutrition_salt AS nutritionSalt, info.nutrition_energy AS nutritionEnergy,
@@ -81,7 +83,7 @@ export async function findPublicProductByCode(rawCode: string): Promise<PublicPr
   return {
     article: row.article, name: row.name, barcode: row.barcode,
     details: hasDetails ? {
-      ingredients: valueOrEmpty(row.ingredients), fruitContent: valueOrEmpty(row.fruitContent), nutritionFat: valueOrEmpty(row.nutritionFat),
+      ingredients: valueOrEmpty(row.ingredients), fruitContent: valueOrEmpty(row.fruitContent), preparationMethod: valueOrEmpty(row.preparationMethod), nutritionFat: valueOrEmpty(row.nutritionFat),
       nutritionSaturatedFat: valueOrEmpty(row.nutritionSaturatedFat), nutritionCarbohydrates: valueOrEmpty(row.nutritionCarbohydrates),
       nutritionSugars: valueOrEmpty(row.nutritionSugars), nutritionProtein: valueOrEmpty(row.nutritionProtein), nutritionSalt: valueOrEmpty(row.nutritionSalt), nutritionEnergy: valueOrEmpty(row.nutritionEnergy),
       storageConditions: valueOrEmpty(row.storageConditions), shelfLife: valueOrEmpty(row.shelfLife), allergens: valueOrEmpty(row.allergens),

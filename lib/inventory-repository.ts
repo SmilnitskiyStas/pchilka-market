@@ -1322,7 +1322,7 @@ async function ensurePublicProductInfoTable() {
   await pool.query(`CREATE TABLE IF NOT EXISTS public_product_info (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     product_id BIGINT UNSIGNED NOT NULL,
-    ingredients TEXT NULL, fruit_content TEXT NULL,
+    ingredients TEXT NULL, fruit_content TEXT NULL, preparation_method TEXT NULL,
     nutrition_fat VARCHAR(40) NULL, nutrition_saturated_fat VARCHAR(40) NULL,
     nutrition_carbohydrates VARCHAR(40) NULL, nutrition_sugars VARCHAR(40) NULL,
     nutrition_protein VARCHAR(40) NULL, nutrition_salt VARCHAR(40) NULL, nutrition_energy VARCHAR(80) NULL,
@@ -1334,6 +1334,10 @@ async function ensurePublicProductInfoTable() {
     PRIMARY KEY (id), UNIQUE KEY uq_public_product_info_product (product_id),
     CONSTRAINT fk_public_product_info_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE ON UPDATE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  const columns = await listTableColumns('public_product_info');
+  if (!columns.has('preparation_method')) {
+    await pool.query('ALTER TABLE public_product_info ADD COLUMN preparation_method TEXT NULL AFTER fruit_content');
+  }
 }
 export async function applyInventorySchemaMigrations() {
   const pool = getDbPool();

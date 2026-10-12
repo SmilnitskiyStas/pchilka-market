@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS public_product_info (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   product_id BIGINT UNSIGNED NOT NULL,
   ingredients TEXT NULL,
-  fruit_content TEXT NULL,
+  fruit_content TEXT NULL,`r`n  preparation_method TEXT NULL,
   nutrition_fat VARCHAR(40) NULL,
   nutrition_saturated_fat VARCHAR(40) NULL,
   nutrition_carbohydrates VARCHAR(40) NULL,
