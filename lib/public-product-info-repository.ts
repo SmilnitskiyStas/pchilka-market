@@ -79,7 +79,7 @@ export async function findPublicProductByCode(rawCode: string): Promise<PublicPr
   );
   const row = rows[0];
   if (!row) return null;
-  const hasDetails = Boolean(row.ingredients || row.manufacturer || row.nutritionEnergy);
+  const hasDetails = Boolean(row.ingredients || row.preparationMethod || row.manufacturer || row.nutritionEnergy);
   return {
     article: row.article, name: row.name, barcode: row.barcode,
     details: hasDetails ? {
