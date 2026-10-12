@@ -1338,6 +1338,7 @@ async function ensurePublicProductInfoTable() {
   if (!columns.has('preparation_method')) {
     await pool.query('ALTER TABLE public_product_info ADD COLUMN preparation_method TEXT NULL AFTER fruit_content');
   }
+  await pool.query(`CREATE TABLE IF NOT EXISTS public_product_info_display_settings (field_key VARCHAR(64) NOT NULL PRIMARY KEY, is_visible TINYINT(1) NOT NULL DEFAULT 1, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 }
 export async function applyInventorySchemaMigrations() {
   const pool = getDbPool();
@@ -1384,3 +1385,5 @@ export async function applyInventorySchemaMigrations() {
 
   return getInventoryReadinessFromDb();
 }
+
+

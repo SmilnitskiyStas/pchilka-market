@@ -1,6 +1,7 @@
 import type { RowDataPacket } from 'mysql2/promise';
 
 import { getDbPool } from '@/lib/db';
+import { getPublicProductDisplaySettings, type PublicProductDisplaySettings } from '@/lib/public-product-display-settings';
 
 type PublicProductLookupRow = RowDataPacket & {
   article: string;
@@ -47,7 +48,7 @@ export type PublicProductDetails = {
   isGmoFree: boolean;
 };
 
-export type PublicProductLookupResult = { article: string; name: string; barcode: string | null; details: PublicProductDetails | null };
+export type PublicProductLookupResult = { article: string; name: string; barcode: string | null; details: PublicProductDetails | null; visibility: PublicProductDisplaySettings };
 
 function normalizeLookupCode(value: string) {
   return value.trim().replace(/\s+/g, '').replace(/\.0+$/, '');
@@ -78,10 +79,11 @@ export async function findPublicProductByCode(rawCode: string): Promise<PublicPr
     [code, code]
   );
   const row = rows[0];
+  const visibility = await getPublicProductDisplaySettings();
   if (!row) return null;
   const hasDetails = Boolean(row.ingredients || row.preparationMethod || row.manufacturer || row.nutritionEnergy);
   return {
-    article: row.article, name: row.name, barcode: row.barcode,
+    article: row.article, name: row.name, barcode: row.barcode, visibility,
     details: hasDetails ? {
       ingredients: valueOrEmpty(row.ingredients), fruitContent: valueOrEmpty(row.fruitContent), preparationMethod: valueOrEmpty(row.preparationMethod), nutritionFat: valueOrEmpty(row.nutritionFat),
       nutritionSaturatedFat: valueOrEmpty(row.nutritionSaturatedFat), nutritionCarbohydrates: valueOrEmpty(row.nutritionCarbohydrates),
@@ -92,3 +94,4 @@ export async function findPublicProductByCode(rawCode: string): Promise<PublicPr
     } : null
   };
 }
+
