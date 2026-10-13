@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { getAdminSessionFromRequest, isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import { getDbPool } from '@/lib/db';
 import {
-  findInventoryProductByBarcodeInDb,
+  findInventoryProductBarcodeOwnersInDb,
   mergeInventoryProductsInDb,
   updateInventoryProductInDb
 } from '@/lib/inventory-products-repository';
@@ -43,8 +43,10 @@ export async function POST(request: Request) {
     try {
       const knownProductIds = new Set([...sourceProductIds, targetProductId]);
       for (const barcode of product.barcodes) {
-        const barcodeOwner = await findInventoryProductByBarcodeInDb(barcode, connection);
-        if (barcodeOwner && !knownProductIds.has(Number(barcodeOwner.id))) {
+        const barcodeOwner = (await findInventoryProductBarcodeOwnersInDb(barcode, connection)).find(
+          (candidate) => !knownProductIds.has(Number(candidate.id))
+        );
+        if (barcodeOwner) {
           return NextResponse.json(
             {
               ok: false,

@@ -599,6 +599,28 @@ export async function findInventoryProductByBarcodeInDb(
   return rows[0] ? mapRow(rows[0]) : null;
 }
 
+export async function findInventoryProductBarcodeOwnersInDb(
+  barcode: string,
+  executor?: InventoryDbExecutor
+): Promise<InventoryProductRecord[]> {
+  const normalizedBarcode = normalizeInventoryBarcode(barcode);
+  if (!normalizedBarcode) return [];
+
+  const db = executor ?? getDbPool();
+  const [rows] = await db.query<Array<RowDataPacket & { product_id: number }>>(
+    `
+      SELECT DISTINCT product_id
+      FROM product_barcodes
+      WHERE REPLACE(TRIM(COALESCE(barcode, '')), ' ', '') = ?
+      ORDER BY product_id ASC
+    `,
+    [normalizedBarcode]
+  );
+
+  const products = await Promise.all(rows.map((row) => findInventoryProductByIdInDb(row.product_id, db)));
+  return products.filter((product): product is InventoryProductRecord => product != null);
+}
+
 export async function findInventoryProductDuplicateInDb(
   input: { article?: string; barcode?: string; productName?: string; unitsOfMeasurement?: string },
   executor?: InventoryDbExecutor
