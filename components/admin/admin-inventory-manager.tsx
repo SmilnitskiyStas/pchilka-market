@@ -306,6 +306,14 @@ type ManualProductReviewDraft = {
   isActive: boolean;
   note: string;
 };
+type ProductEditDraft = Omit<ManualProductReviewDraft, 'note'>;
+type DuplicateProductConflict = {
+  sourceProductId: string;
+  existingProduct: InventoryProductRecord;
+  draft: ProductEditDraft;
+  approvalAction?: 'approve' | 'update';
+  note?: string;
+};
 type InventoryUserView = {
   id: number;
   storeId: number | null;
@@ -993,6 +1001,12 @@ export default function AdminInventoryManager({
   const [manualProductEditId, setManualProductEditId] = useState<number | null>(null);
   const [manualProductReviewDraft, setManualProductReviewDraft] = useState<ManualProductReviewDraft | null>(null);
   const [manualProductReviewBusyId, setManualProductReviewBusyId] = useState<number | null>(null);
+  const [productEditId, setProductEditId] = useState<string | null>(null);
+  const [productEditDraft, setProductEditDraft] = useState<ProductEditDraft | null>(null);
+  const [isSavingProductEdit, setIsSavingProductEdit] = useState(false);
+  const [manualProductApprovalFilter, setManualProductApprovalFilter] = useState<'all' | 'pending'>('all');
+  const [duplicateProductConflict, setDuplicateProductConflict] = useState<DuplicateProductConflict | null>(null);
+  const [isMergingDuplicateProducts, setIsMergingDuplicateProducts] = useState(false);
   const [productChangeLogs, setProductChangeLogs] = useState<InventoryProductChangeLogView[]>([]);
   const [importReviewItems, setImportReviewItems] = useState<InventoryImportReviewView[]>([]);
   const [productForm, setProductForm] = useState<InventoryProductInput>(initialProductForm);
@@ -1558,13 +1572,79 @@ export default function AdminInventoryManager({
     }
   }
 
-  async function loadManualProducts() {
-    const response = await fetch('/api/admin/inventory/manual-products?limit=200', { cache: 'no-store' });
+  async function loadManualProducts(approvalFilter = manualProductApprovalFilter) {
+    const params = new URLSearchParams({ limit: '200' });
+    if (approvalFilter === 'pending') params.set('status', 'pending');
+    const response = await fetch(`/api/admin/inventory/manual-products?${params.toString()}`, { cache: 'no-store' });
     const payload = (await response.json()) as ManualProductsPayload;
     if (!response.ok || !payload.ok || !Array.isArray(payload.items)) {
       throw new Error(payload.error || 'Не вдалося завантажити товари, створені працівниками.');
     }
     setManualProductCreations(payload.items);
+  }
+
+  function openDuplicateProductConflict(
+    sourceProductId: string | number,
+    existingProduct: InventoryProductRecord,
+    draft: ProductEditDraft,
+    approvalAction?: 'approve' | 'update',
+    note = ''
+  ) {
+    const finalBarcodes = Array.from(
+      new Set(
+        [...String(draft.barcode ?? '').split(/[\n,;]+/), ...existingProduct.barcodes, existingProduct.barcode]
+          .map((barcode) => barcode.trim())
+          .filter(Boolean)
+      )
+    ).join(', ');
+    setDuplicateProductConflict({
+      sourceProductId: String(sourceProductId),
+      existingProduct,
+      draft: { ...draft, barcode: finalBarcodes },
+      approvalAction,
+      note
+    });
+    setError('');
+  }
+
+  async function mergeDuplicateProducts() {
+    if (!duplicateProductConflict) return;
+    const { sourceProductId, existingProduct, draft, approvalAction, note } = duplicateProductConflict;
+    if (!draft.article.trim() || !draft.productName.trim() || !draft.unitsOfMeasurement.trim()) {
+      setError('Вкажіть артикул, назву товару та одиницю виміру для остаточної картки.');
+      return;
+    }
+
+    setIsMergingDuplicateProducts(true);
+    setError('');
+    try {
+      const response = await fetch('/api/admin/inventory/products/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceProductId,
+          targetProductId: existingProduct.id,
+          product: draft,
+          approvalAction,
+          note
+        })
+      });
+      const payload = (await response.json()) as ProductsPayload;
+      if (!response.ok || !payload.ok || !payload.product) {
+        throw new Error(payload.error || 'Не вдалося об’єднати дублікати товарів.');
+      }
+
+      setProducts((prev) => prev.filter((product) => product.id !== sourceProductId).map((product) => product.id === payload.product!.id ? payload.product! : product));
+      cancelProductEdit();
+      resetManualProductReviewEdit();
+      setDuplicateProductConflict(null);
+      setSuccess(`Дублікати об’єднано. У каталозі залишився товар "${payload.product.productName}".`);
+      await Promise.all([loadProducts(), loadManualProducts()]);
+    } catch (mergeError) {
+      setError(mergeError instanceof Error ? mergeError.message : 'Не вдалося об’єднати дублікати товарів.');
+    } finally {
+      setIsMergingDuplicateProducts(false);
+    }
   }
 
   async function startManualProductReviewEdit(item: ManualProductCreationView) {
@@ -1681,7 +1761,28 @@ export default function AdminInventoryManager({
           product: productPayload
         })
       });
-      const payload = (await response.json()) as ProductsPayload;
+      const payload = (await response.json()) as ProductsPayload & { conflictProduct?: InventoryProductRecord };
+      if (response.status === 409 && payload.conflictProduct && productPayload) {
+        const sourceProduct =
+          products.find((entry) => Number(entry.id) === Number(item.productId)) ??
+          (await loadProductByIdForReview(Number(item.productId)));
+        openDuplicateProductConflict(
+          sourceProduct.id,
+          payload.conflictProduct,
+          {
+            article: productPayload.article ?? '',
+            barcode: productPayload.barcode ?? '',
+            productName: productPayload.productName ?? '',
+            unitsOfMeasurement: productPayload.unitsOfMeasurement ?? '',
+            category: productPayload.category ?? '',
+            notifiedDaysDefault: Number(productPayload.notifiedDaysDefault ?? 7),
+            isActive: productPayload.isActive !== false
+          },
+          action === 'approve' ? 'approve' : 'update',
+          draft?.note ?? item.approvalNote ?? ''
+        );
+        return;
+      }
       if (!response.ok || !payload.ok || !payload.product) {
         throw new Error(payload.error || 'Не вдалося оновити статус погодження товару.');
       }
@@ -2449,9 +2550,11 @@ export default function AdminInventoryManager({
     [batchesSortMode, selectedStoreBatches]
   );
   const selectedInventoryUser = useMemo(() => {
-    if (selectedStoreUsers.length === 0) return null;
-    return selectedStoreUsers.find((user) => user.id === selectedInventoryUserId) ?? selectedStoreUsers[0] ?? null;
-  }, [selectedInventoryUserId, selectedStoreUsers]);
+    // Keep the employee card open while its store is being changed. The selected
+    // employee can temporarily fall outside the store-filtered list, but their
+    // unsaved changes must remain available for saving.
+    return inventoryUsers.find((user) => user.id === selectedInventoryUserId) ?? selectedStoreUsers[0] ?? null;
+  }, [inventoryUsers, selectedInventoryUserId, selectedStoreUsers]);
   const selectedInventoryUserCreatedProducts = useMemo(
     () => manualProductCreations.filter((item) => item.userId === selectedInventoryUser?.id),
     [manualProductCreations, selectedInventoryUser]
@@ -2723,14 +2826,14 @@ export default function AdminInventoryManager({
   }, [inventoryActiveTasks, inventoryArchivedTasks]);
 
   useEffect(() => {
-    if (selectedStoreUsers.length === 0) {
-      setSelectedInventoryUserId(null);
+    // Do not clear a current selection merely because changing the employee's
+    // store removes them from the filtered list. Clear it only when the user no
+    // longer exists in the complete employees list.
+    if (selectedInventoryUserId != null && inventoryUsers.some((user) => user.id === selectedInventoryUserId)) {
       return;
     }
-    if (!selectedStoreUsers.some((user) => user.id === selectedInventoryUserId)) {
-      setSelectedInventoryUserId(selectedStoreUsers[0].id);
-    }
-  }, [selectedInventoryUserId, selectedStoreUsers]);
+    setSelectedInventoryUserId(selectedStoreUsers[0]?.id ?? null);
+  }, [inventoryUsers, selectedInventoryUserId, selectedStoreUsers]);
 
   useEffect(() => {
     if (activeSubsection !== 'employee-tasks') return;
@@ -2926,6 +3029,62 @@ export default function AdminInventoryManager({
       setError(createError instanceof Error ? createError.message : 'Не вдалося створити товар.');
     } finally {
       setIsCreatingIntake(false);
+    }
+  }
+
+  function startProductEdit(product: InventoryProductRecord) {
+    setProductEditId(product.id);
+    setProductEditDraft({
+      article: product.article,
+      barcode: product.barcodes?.join(', ') || product.barcode || '',
+      productName: product.productName,
+      unitsOfMeasurement: product.unitsOfMeasurement,
+      category: product.category,
+      notifiedDaysDefault: product.notifiedDaysDefault,
+      isActive: product.isActive
+    });
+    setError('');
+    setSuccess('');
+  }
+
+  function cancelProductEdit() {
+    setProductEditId(null);
+    setProductEditDraft(null);
+  }
+
+  async function saveProductEdit(productId: string) {
+    if (!productEditDraft) return;
+    if (!productEditDraft.article.trim() || !productEditDraft.productName.trim() || !productEditDraft.unitsOfMeasurement.trim()) {
+      setError('Для збереження потрібно вказати артикул, назву товару та одиницю вимірювання.');
+      return;
+    }
+
+    setIsSavingProductEdit(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await fetch('/api/admin/inventory/products', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, product: productEditDraft })
+      });
+      const payload = (await response.json()) as ProductsPayload & { conflictProduct?: InventoryProductRecord };
+      if (response.status === 409 && payload.conflictProduct) {
+        openDuplicateProductConflict(productId, payload.conflictProduct, productEditDraft);
+        return;
+      }
+      if (!response.ok || !payload.ok || !payload.product) {
+        throw new Error(payload.error || 'Не вдалося оновити товар.');
+      }
+
+      setProducts((prev) => prev.map((product) => (product.id === payload.product!.id ? payload.product! : product)));
+      setProductCategories((prev) => Array.from(new Set([...prev, payload.product!.category].filter(Boolean))).sort((a, b) => a.localeCompare(b, 'uk')));
+      cancelProductEdit();
+      setSuccess(`Товар "${payload.product.productName}" оновлено.`);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Не вдалося оновити товар.');
+    } finally {
+      setIsSavingProductEdit(false);
     }
   }
 
@@ -3645,6 +3804,9 @@ export default function AdminInventoryManager({
             </button>
           </form>
 
+          {error ? <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p> : null}
+          {success ? <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">{success}</p> : null}
+
           {isLoadingProducts ? (
             <p className="mt-3 text-sm text-slate-600">Завантаження товарів...</p>
           ) : products.length === 0 ? (
@@ -3667,8 +3829,41 @@ export default function AdminInventoryManager({
                       <span className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
                         {product.isActive ? 'active' : 'inactive'}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => productEditId === product.id ? cancelProductEdit() : startProductEdit(product)}
+                        disabled={isSavingProductEdit}
+                        className="rounded-full border border-brand px-2.5 py-1 text-[11px] font-semibold text-brand disabled:opacity-60"
+                      >
+                        {productEditId === product.id ? 'Скасувати' : 'Редагувати'}
+                      </button>
                     </div>
                   </div>
+                  {productEditId === product.id && productEditDraft ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void saveProductEdit(product.id);
+                      }}
+                      className="mt-3 grid gap-3 rounded-xl border border-brand/30 bg-brand/5 p-3 md:grid-cols-2"
+                    >
+                      <input value={productEditDraft.article} onChange={(event) => setProductEditDraft((prev) => prev ? { ...prev, article: event.target.value } : prev)} placeholder="Артикул *" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+                      <input value={productEditDraft.barcode} onChange={(event) => setProductEditDraft((prev) => prev ? { ...prev, barcode: event.target.value } : prev)} placeholder="Штрихкоди через кому" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+                      <input value={productEditDraft.productName} onChange={(event) => setProductEditDraft((prev) => prev ? { ...prev, productName: event.target.value } : prev)} placeholder="Назва товару *" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand md:col-span-2" />
+                      <input value={productEditDraft.unitsOfMeasurement} onChange={(event) => setProductEditDraft((prev) => prev ? { ...prev, unitsOfMeasurement: event.target.value } : prev)} placeholder="Одиниця вимірювання *" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+                      <input value={productEditDraft.category} onChange={(event) => setProductEditDraft((prev) => prev ? { ...prev, category: event.target.value } : prev)} placeholder="Категорія" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+                      <input type="number" min={1} max={90} value={productEditDraft.notifiedDaysDefault} onChange={(event) => setProductEditDraft((prev) => prev ? { ...prev, notifiedDaysDefault: Number(event.target.value || 7) } : prev)} placeholder="Днів до сповіщення" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+                      <label className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800">
+                        <input type="checkbox" checked={productEditDraft.isActive} onChange={(event) => setProductEditDraft((prev) => prev ? { ...prev, isActive: event.target.checked } : prev)} className="h-4 w-4" />
+                        Активний товар
+                      </label>
+                      <div className="flex justify-end md:col-span-2">
+                        <button type="submit" disabled={isSavingProductEdit} className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+                          {isSavingProductEdit ? 'Збереження...' : 'Зберегти зміни'}
+                        </button>
+                      </div>
+                    </form>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -3703,14 +3898,28 @@ export default function AdminInventoryManager({
         </div>
 
         <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">Товари, створені працівниками</h3>
               <p className="mt-1 text-sm text-slate-600">Працівник може користуватися таким товаром одразу, а глобальний адміністратор окремо перевіряє і погоджує довідник.</p>
             </div>
-            <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-              {manualProductCreations.length}
-            </span>
+            <div className="flex items-center gap-2">
+              <select
+                value={manualProductApprovalFilter}
+                onChange={(event) => {
+                  const nextFilter = event.target.value as 'all' | 'pending';
+                  setManualProductApprovalFilter(nextFilter);
+                  void loadManualProducts(nextFilter);
+                }}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand"
+              >
+                <option value="all">Усі товари</option>
+                <option value="pending">На погодженні</option>
+              </select>
+              <span className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                {manualProductCreations.length}
+              </span>
+            </div>
           </div>
           {manualProductCreations.length === 0 ? (
             <p className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">Працівники ще не створювали нові товари вручну.</p>
@@ -6417,6 +6626,47 @@ export default function AdminInventoryManager({
           <div className="py-8 text-sm text-slate-600">Повідомлення не знайдено або вже недоступне.</div>
         )}
       </section>
+      ) : null}
+      {duplicateProductConflict ? (
+      <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/45 px-4 py-6">
+        <div role="dialog" aria-modal="true" aria-labelledby="duplicate-product-conflict-title" className="w-full max-w-4xl rounded-3xl bg-white p-5 shadow-2xl sm:p-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Потрібне рішення щодо дубліката</p>
+          <h3 id="duplicate-product-conflict-title" className="mt-2 text-xl font-semibold text-slate-900">У каталозі вже є схожий товар</h3>
+          <p className="mt-2 text-sm text-slate-600">
+            Після об’єднання залишиться одна картка — наявний товар з бази. Усі партії, історія та штрихкоди з картки, яку редагували, будуть перенесені до неї. Вкажіть нижче остаточні правильні дані.
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-slate-700">
+              <p className="font-semibold text-slate-900">Товар, який редагували (буде об’єднано)</p>
+              <p className="mt-2">ID: #{duplicateProductConflict.sourceProductId}</p>
+              <p className="mt-1">Назва: {duplicateProductConflict.draft.productName || '—'}</p>
+              <p className="mt-1">Артикул: {duplicateProductConflict.draft.article || '—'}</p>
+              <p className="mt-1">Штрихкоди: {duplicateProductConflict.draft.barcode || '—'}</p>
+            </div>
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-slate-700">
+              <p className="font-semibold text-slate-900">Товар, який уже є в базі (залишиться)</p>
+              <p className="mt-2">ID: #{duplicateProductConflict.existingProduct.id}</p>
+              <p className="mt-1">Назва: {duplicateProductConflict.existingProduct.productName || '—'}</p>
+              <p className="mt-1">Артикул: {duplicateProductConflict.existingProduct.article || '—'}</p>
+              <p className="mt-1">Штрихкоди: {formatProductBarcodes(duplicateProductConflict.existingProduct.barcodes, duplicateProductConflict.existingProduct.barcode)}</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+            <p className="text-sm font-semibold text-slate-900 md:col-span-2">Правильні дані в єдиній картці товару</p>
+            <input value={duplicateProductConflict.draft.article} onChange={(event) => setDuplicateProductConflict((prev) => prev ? { ...prev, draft: { ...prev.draft, article: event.target.value } } : prev)} placeholder="Артикул *" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+            <input value={duplicateProductConflict.draft.barcode} onChange={(event) => setDuplicateProductConflict((prev) => prev ? { ...prev, draft: { ...prev.draft, barcode: event.target.value } } : prev)} placeholder="Штрихкоди через кому" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+            <input value={duplicateProductConflict.draft.productName} onChange={(event) => setDuplicateProductConflict((prev) => prev ? { ...prev, draft: { ...prev.draft, productName: event.target.value } } : prev)} placeholder="Назва товару *" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand md:col-span-2" />
+            <input value={duplicateProductConflict.draft.unitsOfMeasurement} onChange={(event) => setDuplicateProductConflict((prev) => prev ? { ...prev, draft: { ...prev.draft, unitsOfMeasurement: event.target.value } } : prev)} placeholder="Одиниця виміру *" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+            <input value={duplicateProductConflict.draft.category} onChange={(event) => setDuplicateProductConflict((prev) => prev ? { ...prev, draft: { ...prev.draft, category: event.target.value } } : prev)} placeholder="Категорія" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+            <input type="number" min={1} max={90} value={duplicateProductConflict.draft.notifiedDaysDefault} onChange={(event) => setDuplicateProductConflict((prev) => prev ? { ...prev, draft: { ...prev.draft, notifiedDaysDefault: Number(event.target.value || 7) } } : prev)} placeholder="Днів до сповіщення" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
+            <label className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800"><input type="checkbox" checked={duplicateProductConflict.draft.isActive} onChange={(event) => setDuplicateProductConflict((prev) => prev ? { ...prev, draft: { ...prev.draft, isActive: event.target.checked } } : prev)} className="h-4 w-4" />Активний товар</label>
+          </div>
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <button type="button" onClick={() => setDuplicateProductConflict(null)} disabled={isMergingDuplicateProducts} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60">Скасувати</button>
+            <button type="button" onClick={() => { void mergeDuplicateProducts(); }} disabled={isMergingDuplicateProducts} className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isMergingDuplicateProducts ? 'Об’єднання...' : 'Об’єднати в один товар'}</button>
+          </div>
+        </div>
+      </div>
       ) : null}
       {intakeDuplicateBatch ? (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 px-4">

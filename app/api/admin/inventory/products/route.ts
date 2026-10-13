@@ -7,7 +7,8 @@ import {
   findInventoryProductByIdInDb,
   findInventoryProductDuplicateInDb,
   listInventoryProductCategoriesFromDb,
-  listInventoryProductsFromDb
+  listInventoryProductsFromDb,
+  updateInventoryProductInDb
 } from '@/lib/inventory-products-repository';
 import { normalizeInventoryProductInput } from '@/lib/inventory-product-types';
 
@@ -101,6 +102,52 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, product });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не вдалося створити товар.';
+    return NextResponse.json({ ok: false, error: message }, { status: resolveProductsRouteErrorStatus(message) });
+  }
+}
+
+export async function PUT(request: Request) {
+  if (!isAdminRequestAuthorized(request)) {
+    return unauthorizedAdminResponse();
+  }
+
+  try {
+    const body = (await request.json()) as { productId?: unknown; product?: unknown };
+    const productId = Number(body?.productId);
+    const normalized = normalizeInventoryProductInput((body?.product ?? {}) as Record<string, unknown>);
+
+    if (!Number.isFinite(productId) || productId <= 0) {
+      return NextResponse.json({ ok: false, error: 'Некоректний ідентифікатор товару.' }, { status: 400 });
+    }
+    if (!normalized.article) {
+      return NextResponse.json({ ok: false, error: 'Артикул є обовʼязковим.' }, { status: 400 });
+    }
+    if (!normalized.productName) {
+      return NextResponse.json({ ok: false, error: 'Назва товару є обовʼязковою.' }, { status: 400 });
+    }
+    if (!normalized.unitsOfMeasurement) {
+      return NextResponse.json({ ok: false, error: 'Одиниця виміру є обовʼязковою.' }, { status: 400 });
+    }
+
+    const duplicate = await findInventoryProductDuplicateInDb({
+      article: normalized.article,
+      barcode: normalized.barcode,
+      productName: normalized.productName,
+      unitsOfMeasurement: normalized.unitsOfMeasurement
+    });
+    if (duplicate && Number(duplicate.id) !== productId) {
+      return NextResponse.json(
+        { ok: false, error: `Товар уже існує в базі: ${duplicate.productName}.`, conflictProduct: duplicate },
+        { status: 409 }
+      );
+    }
+
+    const product = await updateInventoryProductInDb(productId, normalized, undefined, {
+      changeSource: 'admin_product_catalog'
+    });
+    return NextResponse.json({ ok: true, product });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Не вдалося оновити товар.';
     return NextResponse.json({ ok: false, error: message }, { status: resolveProductsRouteErrorStatus(message) });
   }
 }

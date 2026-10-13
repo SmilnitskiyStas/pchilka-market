@@ -6,7 +6,10 @@ import {
   unauthorizedAdminResponse
 } from '@/lib/admin-auth';
 import { listInventoryManualProductCreationsFromDb } from '@/lib/inventory-activity-logs-repository';
-import { updateInventoryProductApprovalInDb } from '@/lib/inventory-products-repository';
+import {
+  findInventoryProductDuplicateInDb,
+  updateInventoryProductApprovalInDb
+} from '@/lib/inventory-products-repository';
 import { normalizeInventoryProductInput } from '@/lib/inventory-product-types';
 
 export const runtime = 'nodejs';
@@ -84,6 +87,19 @@ export async function PATCH(request: Request) {
         return NextResponse.json(
           { ok: false, error: 'Для редагування потрібно вказати артикул, назву товару та одиницю вимірювання.' },
           { status: 400 }
+        );
+      }
+
+      const duplicate = await findInventoryProductDuplicateInDb({
+        article: product.article,
+        barcode: product.barcode,
+        productName: product.productName,
+        unitsOfMeasurement: product.unitsOfMeasurement
+      });
+      if (duplicate && Number(duplicate.id) !== productId) {
+        return NextResponse.json(
+          { ok: false, error: `Товар уже існує в базі: ${duplicate.productName}.`, conflictProduct: duplicate },
+          { status: 409 }
         );
       }
     }
