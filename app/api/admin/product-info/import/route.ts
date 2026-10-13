@@ -21,6 +21,8 @@ const headers: Record<string, keyof ProductInfoDetails | 'barcode' | 'article'> 
 
 function value(cell: unknown) { return String(cell ?? '').trim(); }
 function gmo(valueInput: string) { return /без\s*гмо|так|yes/i.test(valueInput) && !/ні|no/i.test(valueInput); }
+function identifier(cell: unknown) { const result = value(cell); return /^(не вимагається|не застосовується|[-—–])$/i.test(result) ? '' : result; }
+type ReportItem = { row: number; name: string; article: string; barcode: string; reason?: string };
 
 export async function POST(request: Request) {
   if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse();
@@ -37,17 +39,19 @@ export async function POST(request: Request) {
       if (heading === 'Адреса, телефон, email, код ЄДРПОУ/РНОКПП') return group.includes('постачальника') ? 'supplierContact' : 'importerContact';
       return headers[heading];
     });
-    const report = { imported: 0, skipped: 0, notFound: [] as string[], errors: [] as string[] };
+    const productNameColumn = (rows[headerIndex] as unknown[]).findIndex((cell) => value(cell) === 'Назва товару');
+    const report = { imported: 0, skipped: 0, importedItems: [] as ReportItem[], skippedItems: [] as ReportItem[] };
     for (let index = headerIndex + 1; index < rows.length; index += 1) {
-      const row = rows[index] as unknown[]; const article = value(row[mapped.indexOf('article')]); const barcode = value(row[mapped.indexOf('barcode')]);
-      if (!article && !barcode) continue;
+      const row = rows[index] as unknown[]; const article = identifier(row[mapped.indexOf('article')]); const barcode = identifier(row[mapped.indexOf('barcode')]); const name = value(row[productNameColumn]) || 'Без назви';
+      if (!article && !barcode) { report.skipped += 1; report.skippedItems.push({ row: index + 1, name, article: '', barcode: '', reason: 'Не вказано артикул або штрихкод.' }); continue; }
       try {
-        const product = await findProductByCode(barcode || article);
-        if (!product) { report.notFound.push(`Рядок ${index + 1}: ${article || barcode}`); report.skipped += 1; continue; }
+        let product = barcode ? await findProductByCode(barcode) : null;
+        if (!product && article) product = await findProductByCode(article);
+        if (!product) { report.skipped += 1; report.skippedItems.push({ row: index + 1, name, article, barcode, reason: 'Товар з таким артикулом або штрихкодом відсутній у каталозі сайту.' }); continue; }
         const details = emptyProductInfoDetails();
         mapped.forEach((field, column) => { if (!field || field === 'article' || field === 'barcode') return; const cellValue = value(row[column]); if (field === 'isGmoFree') details.isGmoFree = gmo(cellValue); else details[field] = cellValue; });
-        await saveProductDetails(product.id, details); report.imported += 1;
-      } catch (error) { report.skipped += 1; report.errors.push(`Рядок ${index + 1}: ${error instanceof Error ? error.message : 'невідома помилка'}`); }
+        await saveProductDetails(product.id, details); report.imported += 1; report.importedItems.push({ row: index + 1, name: product.name, article: product.article, barcode: product.barcode ?? barcode });
+      } catch (error) { report.skipped += 1; report.skippedItems.push({ row: index + 1, name, article, barcode, reason: error instanceof Error ? error.message : 'Невідома помилка імпорту.' }); }
     }
     return NextResponse.json({ ok: true, report });
   } catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося імпортувати файл.' }, { status: 500 }); }
