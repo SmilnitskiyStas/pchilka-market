@@ -310,6 +310,7 @@ type ProductEditDraft = Omit<ManualProductReviewDraft, 'note'>;
 type DuplicateProductConflict = {
   sourceProductId: string;
   existingProduct: InventoryProductRecord;
+  additionalProducts: InventoryProductRecord[];
   draft: ProductEditDraft;
   approvalAction?: 'approve' | 'update';
   note?: string;
@@ -1600,6 +1601,7 @@ export default function AdminInventoryManager({
     setDuplicateProductConflict({
       sourceProductId: String(sourceProductId),
       existingProduct,
+      additionalProducts: [],
       draft: { ...draft, barcode: finalBarcodes },
       approvalAction,
       note
@@ -1609,7 +1611,7 @@ export default function AdminInventoryManager({
 
   async function mergeDuplicateProducts() {
     if (!duplicateProductConflict) return;
-    const { sourceProductId, existingProduct, draft, approvalAction, note } = duplicateProductConflict;
+    const { sourceProductId, existingProduct, additionalProducts, draft, approvalAction, note } = duplicateProductConflict;
     if (!draft.article.trim() || !draft.productName.trim() || !draft.unitsOfMeasurement.trim()) {
       setError('Вкажіть артикул, назву товару та одиницю виміру для остаточної картки.');
       return;
@@ -1623,18 +1625,30 @@ export default function AdminInventoryManager({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sourceProductId,
+          sourceProductIds: additionalProducts.map((product) => product.id),
           targetProductId: existingProduct.id,
           product: draft,
           approvalAction,
           note
         })
       });
-      const payload = (await response.json()) as ProductsPayload;
+      const payload = (await response.json()) as ProductsPayload & { conflictProduct?: InventoryProductRecord; mergedProductIds?: string[] };
+      if (response.status === 409 && payload.conflictProduct) {
+        setDuplicateProductConflict((current) => {
+          if (!current || current.existingProduct.id === payload.conflictProduct!.id || current.additionalProducts.some((product) => product.id === payload.conflictProduct!.id)) {
+            return current;
+          }
+          return { ...current, additionalProducts: [...current.additionalProducts, payload.conflictProduct!] };
+        });
+        setError(`Знайдено ще один дубль: "${payload.conflictProduct.productName}". Перевірте його дані та підтвердьте об’єднання всіх карток.`);
+        return;
+      }
       if (!response.ok || !payload.ok || !payload.product) {
         throw new Error(payload.error || 'Не вдалося об’єднати дублікати товарів.');
       }
 
-      setProducts((prev) => prev.filter((product) => product.id !== sourceProductId).map((product) => product.id === payload.product!.id ? payload.product! : product));
+      const mergedProductIds = new Set([sourceProductId, ...(payload.mergedProductIds ?? additionalProducts.map((product) => product.id))]);
+      setProducts((prev) => prev.filter((product) => !mergedProductIds.has(product.id)).map((product) => product.id === payload.product!.id ? payload.product! : product));
       cancelProductEdit();
       resetManualProductReviewEdit();
       setDuplicateProductConflict(null);
@@ -6633,7 +6647,7 @@ export default function AdminInventoryManager({
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Потрібне рішення щодо дубліката</p>
           <h3 id="duplicate-product-conflict-title" className="mt-2 text-xl font-semibold text-slate-900">У каталозі вже є схожий товар</h3>
           <p className="mt-2 text-sm text-slate-600">
-            Після об’єднання залишиться одна картка — наявний товар з бази. Усі партії, історія та штрихкоди з картки, яку редагували, будуть перенесені до неї. Вкажіть нижче остаточні правильні дані.
+            Після об’єднання залишиться одна картка — наявний товар з бази. Усі партії, історія та штрихкоди з інших карток будуть перенесені до неї. Вкажіть нижче остаточні правильні дані.
           </p>
           {error ? (
             <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
@@ -6656,6 +6670,21 @@ export default function AdminInventoryManager({
               <p className="mt-1">Штрихкоди: {formatProductBarcodes(duplicateProductConflict.existingProduct.barcodes, duplicateProductConflict.existingProduct.barcode)}</p>
             </div>
           </div>
+          {duplicateProductConflict.additionalProducts.length > 0 ? (
+            <div className="mt-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-sm text-slate-700">
+              <p className="font-semibold text-slate-900">Додаткові дублікати, знайдені за штрихкодами</p>
+              <p className="mt-1 text-xs text-slate-600">Ці картки також буде об’єднано з товаром, який залишається в базі.</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {duplicateProductConflict.additionalProducts.map((product) => (
+                  <div key={product.id} className="rounded-xl border border-violet-200 bg-white p-3">
+                    <p className="font-semibold text-slate-900">{product.productName || 'Товар без назви'}</p>
+                    <p className="mt-1">ID: #{product.id} • Артикул: {product.article || '—'}</p>
+                    <p className="mt-1">Штрихкоди: {formatProductBarcodes(product.barcodes, product.barcode)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
             <p className="text-sm font-semibold text-slate-900 md:col-span-2">Правильні дані в єдиній картці товару</p>
             <input value={duplicateProductConflict.draft.article} onChange={(event) => setDuplicateProductConflict((prev) => prev ? { ...prev, draft: { ...prev.draft, article: event.target.value } } : prev)} placeholder="Артикул *" className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand" />
@@ -6668,7 +6697,7 @@ export default function AdminInventoryManager({
           </div>
           <div className="mt-5 flex flex-wrap justify-end gap-2">
             <button type="button" onClick={() => setDuplicateProductConflict(null)} disabled={isMergingDuplicateProducts} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60">Скасувати</button>
-            <button type="button" onClick={() => { void mergeDuplicateProducts(); }} disabled={isMergingDuplicateProducts} className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isMergingDuplicateProducts ? 'Об’єднання...' : 'Об’єднати в один товар'}</button>
+            <button type="button" onClick={() => { void mergeDuplicateProducts(); }} disabled={isMergingDuplicateProducts} className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isMergingDuplicateProducts ? 'Об’єднання...' : duplicateProductConflict.additionalProducts.length > 0 ? 'Об’єднати всі товари' : 'Об’єднати в один товар'}</button>
           </div>
         </div>
       </div>
