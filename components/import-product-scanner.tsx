@@ -84,27 +84,23 @@ export default function ImportProductScanner() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
       streamRef.current = stream;
       setIsScanning(true);
-
-      window.setTimeout(async () => {
-        if (!videoRef.current || streamRef.current !== stream) return;
-        try {
-          const { BarcodeFormat, BrowserMultiFormatReader } = await import('@zxing/browser');
-          const reader = new BrowserMultiFormatReader(undefined, { delayBetweenScanAttempts: 500, delayBetweenScanSuccess: 500 });
-          reader.possibleFormats = [BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.CODE_128, BarcodeFormat.CODE_39];
-          readerRef.current = reader as { reset?: () => void };
-          controlsRef.current = await reader.decodeFromStream(stream, videoRef.current, (result) => {
-            if (!result || processingRef.current) return;
-            processingRef.current = true;
-            const detectedCode = result.getText();
-            setCode(detectedCode);
-            void submitCode(detectedCode).finally(() => { processingRef.current = false; });
-          });
-          setMessage('Наведіть камеру на штрихкод товару.');
-        } catch {
-          stopScanner();
-          setMessage('Не вдалося запустити сканер. Введіть код вручну.');
-        }
-      }, 0);
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
+      const video = videoRef.current;
+      if (!video || streamRef.current !== stream) throw new Error('Камера не готова.');
+      video.srcObject = stream;
+      await video.play();
+      const { BarcodeFormat, BrowserMultiFormatReader } = await import('@zxing/browser');
+      const reader = new BrowserMultiFormatReader(undefined, { delayBetweenScanAttempts: 500, delayBetweenScanSuccess: 500 });
+      reader.possibleFormats = [BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.CODE_128, BarcodeFormat.CODE_39];
+      readerRef.current = reader as { reset?: () => void };
+      controlsRef.current = await reader.decodeFromVideoElement(video, (result) => {
+        if (!result || processingRef.current) return;
+        processingRef.current = true;
+        const detectedCode = result.getText();
+        setCode(detectedCode);
+        void submitCode(detectedCode).finally(() => { processingRef.current = false; });
+      });
+      setMessage('Наведіть камеру на штрихкод товару.');
     } catch {
       stopScanner();
       setMessage('Не вдалося відкрити камеру. Дозвольте доступ до неї або введіть код вручну.');
