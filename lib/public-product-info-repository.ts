@@ -2,6 +2,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 
 import { getDbPool } from '@/lib/db';
 import { getPublicProductDisplaySettings, type PublicProductDisplaySettings } from '@/lib/public-product-display-settings';
+import { PRODUCT_INFO_DB_COLUMNS, PRODUCT_INFO_FIELD_KEYS } from '@/lib/public-product-info-fields';
 
 type PublicProductLookupRow = RowDataPacket & {
   article: string;
@@ -25,6 +26,7 @@ type PublicProductLookupRow = RowDataPacket & {
   importer: string | null;
   consumerClaims: string | null;
   isGmoFree: number;
+  [key: string]: string | number | null;
 };
 
 export type PublicProductDetails = {
@@ -46,6 +48,7 @@ export type PublicProductDetails = {
   importer: string;
   consumerClaims: string;
   isGmoFree: boolean;
+  originalName: string; category: string; unit: string; netQuantity: string; netWeightWithoutGlaze: string; alcoholContent: string; mandatoryWarnings: string; freezingStatus: string; additionalCharacteristics: string; vitamins: string; storageBeforeOpening: string; storageAfterOpening: string; consumptionPeriodAfterOpening: string; importerContact: string; supplier: string; supplierContact: string;
 };
 
 export type PublicProductLookupResult = { article: string; name: string; barcode: string | null; details: PublicProductDetails | null; visibility: PublicProductDisplaySettings };
@@ -69,6 +72,7 @@ export async function findPublicProductByCode(rawCode: string): Promise<PublicPr
       info.nutrition_protein AS nutritionProtein, info.nutrition_salt AS nutritionSalt, info.nutrition_energy AS nutritionEnergy,
       info.storage_conditions AS storageConditions, info.shelf_life AS shelfLife, info.allergens,
       info.country_of_origin AS countryOfOrigin, info.manufacturer, info.importer, info.consumer_claims AS consumerClaims,
+      ${PRODUCT_INFO_FIELD_KEYS.map((key, index) => `info.${PRODUCT_INFO_DB_COLUMNS[index]} AS ${key}`).join(', ')},
       COALESCE(info.is_gmo_free, 0) AS isGmoFree
     FROM products p
     LEFT JOIN product_barcodes AS matched_barcode ON matched_barcode.product_id = p.id
@@ -81,7 +85,7 @@ export async function findPublicProductByCode(rawCode: string): Promise<PublicPr
   const row = rows[0];
   const visibility = await getPublicProductDisplaySettings();
   if (!row) return null;
-  const hasDetails = Boolean(row.ingredients || row.preparationMethod || row.manufacturer || row.nutritionEnergy);
+  const hasDetails = Boolean(row.ingredients || row.preparationMethod || row.manufacturer || row.nutritionEnergy || row.category || row.supplier);
   return {
     article: row.article, name: row.name, barcode: row.barcode, visibility,
     details: hasDetails ? {
@@ -90,7 +94,8 @@ export async function findPublicProductByCode(rawCode: string): Promise<PublicPr
       nutritionSugars: valueOrEmpty(row.nutritionSugars), nutritionProtein: valueOrEmpty(row.nutritionProtein), nutritionSalt: valueOrEmpty(row.nutritionSalt), nutritionEnergy: valueOrEmpty(row.nutritionEnergy),
       storageConditions: valueOrEmpty(row.storageConditions), shelfLife: valueOrEmpty(row.shelfLife), allergens: valueOrEmpty(row.allergens),
       countryOfOrigin: valueOrEmpty(row.countryOfOrigin), manufacturer: valueOrEmpty(row.manufacturer), importer: valueOrEmpty(row.importer),
-      consumerClaims: valueOrEmpty(row.consumerClaims), isGmoFree: Boolean(row.isGmoFree)
+      consumerClaims: valueOrEmpty(row.consumerClaims), isGmoFree: Boolean(row.isGmoFree),
+      originalName: valueOrEmpty(row.originalName as string | null), category: valueOrEmpty(row.category as string | null), unit: valueOrEmpty(row.unit as string | null), netQuantity: valueOrEmpty(row.netQuantity as string | null), netWeightWithoutGlaze: valueOrEmpty(row.netWeightWithoutGlaze as string | null), alcoholContent: valueOrEmpty(row.alcoholContent as string | null), mandatoryWarnings: valueOrEmpty(row.mandatoryWarnings as string | null), freezingStatus: valueOrEmpty(row.freezingStatus as string | null), additionalCharacteristics: valueOrEmpty(row.additionalCharacteristics as string | null), vitamins: valueOrEmpty(row.vitamins as string | null), storageBeforeOpening: valueOrEmpty(row.storageBeforeOpening as string | null), storageAfterOpening: valueOrEmpty(row.storageAfterOpening as string | null), consumptionPeriodAfterOpening: valueOrEmpty(row.consumptionPeriodAfterOpening as string | null), importerContact: valueOrEmpty(row.importerContact as string | null), supplier: valueOrEmpty(row.supplier as string | null), supplierContact: valueOrEmpty(row.supplierContact as string | null)
     } : null
   };
 }

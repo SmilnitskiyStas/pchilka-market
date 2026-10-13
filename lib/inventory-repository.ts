@@ -1322,12 +1322,13 @@ async function ensurePublicProductInfoTable() {
   await pool.query(`CREATE TABLE IF NOT EXISTS public_product_info (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     product_id BIGINT UNSIGNED NOT NULL,
-    ingredients TEXT NULL, fruit_content TEXT NULL, preparation_method TEXT NULL,
+    original_name TEXT NULL, category VARCHAR(255) NULL, unit VARCHAR(80) NULL, net_quantity VARCHAR(255) NULL, net_weight_without_glaze VARCHAR(255) NULL, alcohol_content VARCHAR(80) NULL,
+    ingredients TEXT NULL, fruit_content TEXT NULL, preparation_method TEXT NULL, mandatory_warnings TEXT NULL, freezing_status VARCHAR(255) NULL, additional_characteristics TEXT NULL,
     nutrition_fat VARCHAR(40) NULL, nutrition_saturated_fat VARCHAR(40) NULL,
     nutrition_carbohydrates VARCHAR(40) NULL, nutrition_sugars VARCHAR(40) NULL,
     nutrition_protein VARCHAR(40) NULL, nutrition_salt VARCHAR(40) NULL, nutrition_energy VARCHAR(80) NULL,
-    storage_conditions TEXT NULL, shelf_life TEXT NULL, allergens TEXT NULL,
-    country_of_origin VARCHAR(120) NULL, manufacturer TEXT NULL, importer TEXT NULL, consumer_claims TEXT NULL,
+    vitamins TEXT NULL, storage_conditions TEXT NULL, storage_before_opening TEXT NULL, storage_after_opening TEXT NULL, consumption_period_after_opening TEXT NULL, shelf_life TEXT NULL, allergens TEXT NULL,
+    country_of_origin TEXT NULL, manufacturer TEXT NULL, importer TEXT NULL, importer_contact TEXT NULL, supplier TEXT NULL, supplier_contact TEXT NULL, consumer_claims TEXT NULL,
     is_gmo_free TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1335,9 +1336,10 @@ async function ensurePublicProductInfoTable() {
     CONSTRAINT fk_public_product_info_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE ON UPDATE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
   const columns = await listTableColumns('public_product_info');
-  if (!columns.has('preparation_method')) {
-    await pool.query('ALTER TABLE public_product_info ADD COLUMN preparation_method TEXT NULL AFTER fruit_content');
-  }
+  const missingColumns: Array<[string, string]> = [
+    ['preparation_method', 'TEXT NULL'], ['original_name', 'TEXT NULL'], ['category', 'VARCHAR(255) NULL'], ['unit', 'VARCHAR(80) NULL'], ['net_quantity', 'VARCHAR(255) NULL'], ['net_weight_without_glaze', 'VARCHAR(255) NULL'], ['alcohol_content', 'VARCHAR(80) NULL'], ['mandatory_warnings', 'TEXT NULL'], ['freezing_status', 'VARCHAR(255) NULL'], ['additional_characteristics', 'TEXT NULL'], ['vitamins', 'TEXT NULL'], ['storage_before_opening', 'TEXT NULL'], ['storage_after_opening', 'TEXT NULL'], ['consumption_period_after_opening', 'TEXT NULL'], ['importer_contact', 'TEXT NULL'], ['supplier', 'TEXT NULL'], ['supplier_contact', 'TEXT NULL']
+  ];
+  for (const [column, definition] of missingColumns) if (!columns.has(column)) await pool.query(`ALTER TABLE public_product_info ADD COLUMN ${column} ${definition}`);
   await pool.query(`CREATE TABLE IF NOT EXISTS public_product_info_display_settings (field_key VARCHAR(64) NOT NULL PRIMARY KEY, is_visible TINYINT(1) NOT NULL DEFAULT 1, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
 }
 export async function applyInventorySchemaMigrations() {
