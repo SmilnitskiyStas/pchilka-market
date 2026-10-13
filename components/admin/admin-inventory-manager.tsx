@@ -6635,6 +6635,11 @@ export default function AdminInventoryManager({
           <p className="mt-2 text-sm text-slate-600">
             Після об’єднання залишиться одна картка — наявний товар з бази. Усі партії, історія та штрихкоди з картки, яку редагували, будуть перенесені до неї. Вкажіть нижче остаточні правильні дані.
           </p>
+          {error ? (
+            <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+              {error} Перевірте штрихкоди та дані нижче: можливо, один із них уже належить ще одній картці товару.
+            </p>
+          ) : null}
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-slate-700">
               <p className="font-semibold text-slate-900">Товар, який редагували (буде об’єднано)</p>
