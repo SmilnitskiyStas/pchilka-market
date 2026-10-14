@@ -148,7 +148,14 @@ export async function answerTrainingAttempt(userId: number, attemptId: number, q
   if (elapsed>prior+question.timeLimitSeconds) { await pool.query(`UPDATE training_test_attempts SET status='timed_out',finished_at=UTC_TIMESTAMP(),failure_reason='time_limit_exceeded' WHERE id=?`,[attemptId]); return { finished:true,status:'timed_out',score:num(attempt.score),maxScore:num(attempt.max_score),reason:'Час на відповідь вичерпано.'}; }
   const validIds=new Set(question.options.map((o)=>o.id)); const selected=[...new Set(selectedOptionIds.map((id)=>num(id)).filter((id)=>validIds.has(id)))];
   if (selected.length>question.maxSelections) throw new Error(`Можна обрати не більше ${question.maxSelections} варіантів.`);
-  const correctIds=question.options.filter((o)=>o.isCorrect).map((o)=>o.id).sort((a,b)=>a-b); const isCorrect=selected.sort((a,b)=>a-b).join(',')===correctIds.join(','); const awarded=isCorrect?question.points:0;
+  const correctIds = new Set(question.options.filter((option) => option.isCorrect).map((option) => option.id));
+  const selectedCorrectCount = selected.filter((optionId) => correctIds.has(optionId)).length;
+  const selectedIncorrectCount = selected.length - selectedCorrectCount;
+  const isCorrect = selectedIncorrectCount === 0 && selectedCorrectCount === correctIds.size;
+  // Кожна правильна відповідь дає частину балу питання, а хибна віднімає таку саму частину.
+  // Наприклад: 3 бали, 3 правильні відповіді, 2 правильні + 1 хибна = 1 бал.
+  const netCorrectAnswers = Math.max(0, selectedCorrectCount - selectedIncorrectCount);
+  const awarded = Math.round((netCorrectAnswers / correctIds.size) * question.points);
   await pool.query(`INSERT INTO training_test_attempt_answers (attempt_id,question_id,selected_option_ids,is_correct,points_awarded) VALUES (?,?,?,?,?)`,[attemptId,questionId,JSON.stringify(selected),isCorrect?1:0,awarded]);
   const score=num(attempt.score)+awarded; const next=index+1;
   if(next>=questions.length){const status=score>=num(attempt.passing_score)?'passed':'failed'; await pool.query(`UPDATE training_test_attempts SET status=?,finished_at=UTC_TIMESTAMP(),score=?,current_question_index=? WHERE id=?`,[status,score,next,attemptId]); return {finished:true,status,score,maxScore:num(attempt.max_score)};}
