@@ -92,6 +92,7 @@ export default function AdminNav() {
   const navGroups = useMemo<NavItem[]>(
     () => [
       { href: '/admin', label: 'Dashboard' },
+      { href: '/admin/training', label: 'Тести працівників' },
       {
         label: 'Інвентар',
         children: [

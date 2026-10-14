@@ -38,6 +38,13 @@ export async function registerInventoryTelegramWebhook() {
     secret_token: settings.webhookSecret,
     allowed_updates: ['message', 'callback_query']
   });
+  await callTelegram(settings.botToken, 'setMyCommands', {
+    commands: [
+      { command: 'start', description: 'Відкрити робоче меню' },
+      { command: 'tests', description: 'Пройти навчальні тести' },
+      { command: 'meters', description: 'Внести показники лічильників' }
+    ]
+  });
 
   const info = await callTelegram(settings.botToken, 'getWebhookInfo');
   return { webhookUrl, info };

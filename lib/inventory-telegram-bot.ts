@@ -58,6 +58,12 @@ function buildUtilityMetersUrl(baseUrl: string, token: string): string {
   return url.toString();
 }
 
+function buildTrainingUrl(baseUrl: string, token: string): string {
+  const url = new URL('/training', baseUrl);
+  url.searchParams.set('token', token);
+  return url.toString();
+}
+
 function telegramCommand(text: string): string {
   return text.split(/\s+/, 1)[0]?.toLowerCase().split('@', 1)[0] ?? '';
 }
@@ -85,6 +91,17 @@ export async function processInventoryTelegramUpdate(update: TelegramUpdate) {
   }
 
   const command = telegramCommand(text);
+  if (command === '/tests' || command === '/test') {
+    const existingUser = await findInventoryUserByChatId(chatId);
+    if (!existingUser || !existingUser.isActive || !existingUser.storeId) {
+      await sendInventoryTelegramMessage({ botToken: settings.botToken, chatId, text: 'Щоб проходити тести, спочатку зареєструйтеся в системі командою /start.' });
+      return { handled: true, reason: 'training_user_not_available' as const };
+    }
+    const token = createInventoryRegistrationToken({ chatId, firstName: String(message?.from?.first_name ?? ''), lastName: String(message?.from?.last_name ?? ''), username: String(message?.from?.username ?? '') }, settings.webhookSecret);
+    const trainingUrl = buildTrainingUrl(settings.publicBaseUrl, token);
+    await sendInventoryTelegramMessage({ botToken: settings.botToken, chatId, text: 'Відкрийте доступні тести. Усі спроби та результати збережуться у вашій історії.', buttonText: 'Пройти тести', buttonUrl: trainingUrl });
+    return { handled: true, reason: 'training_link_sent' as const, trainingUrl };
+  }
   if (command === '/meters') {
     const existingUser = await findInventoryUserByChatId(chatId);
     if (!existingUser || !existingUser.isActive || !existingUser.storeId) {
@@ -162,6 +179,7 @@ export async function processInventoryTelegramUpdate(update: TelegramUpdate) {
 
   if (existingUser) {
     const intakeUrl = buildInventoryIntakeUrl(settings.publicBaseUrl, token);
+    const trainingUrl = buildTrainingUrl(settings.publicBaseUrl, token);
 
     try {
       await sendInventoryTelegramMessage({
@@ -170,8 +188,7 @@ export async function processInventoryTelegramUpdate(update: TelegramUpdate) {
         text:
           `Ви вже зареєстровані в системі як ${existingUser.surname} ${existingUser.name}.\n` +
           'Натисніть кнопку нижче, щоб перейти до внесення нової партії товару.',
-        buttonText: 'Додати товар',
-        buttonUrl: intakeUrl
+        buttons: [[{ text: 'Пройти тести', url: trainingUrl }], [{ text: 'Додати товар', url: intakeUrl }]]
       });
       await writeInventoryAuthDebugLog({
         actionType: 'inventory_telegram_start_existing_user',
