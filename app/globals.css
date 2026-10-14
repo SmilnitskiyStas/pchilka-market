@@ -6,6 +6,29 @@
   --color-brand: #62a61d;
   --color-bg: #f9fdf4;
   --color-text: #17210f;
+  --site-container-max-width: 72rem;
+}
+
+@layer components {
+  .site-container {
+    width: 100%;
+    max-width: var(--site-container-max-width);
+    margin-right: auto;
+    margin-left: auto;
+  }
+
+  .training-page-frame {
+    width: calc(100% - 1.5rem);
+    max-width: var(--site-container-max-width);
+    margin-right: auto;
+    margin-left: auto;
+  }
+
+  @media (min-width: 640px) {
+    .training-page-frame {
+      width: calc(100% - 3rem);
+    }
+  }
 }
 
 * {
