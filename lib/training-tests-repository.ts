@@ -1,10 +1,10 @@
-import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 
 import { getDbPool } from '@/lib/db';
 
 export type TrainingOptionInput = { text: string; isCorrect: boolean };
 export type TrainingQuestionInput = { text: string; points?: number; timeLimitSeconds?: number; maxSelections?: number; options: TrainingOptionInput[] };
-export type TrainingTestInput = { categoryId: number; title: string; description?: string; passingScore: number; isPublished: boolean; questions: TrainingQuestionInput[] };
+export type TrainingTestInput = { categoryId: number; title: string; description?: string; passingScore: number; isPublished: boolean; questions?: TrainingQuestionInput[] };
 
 type IdRow = RowDataPacket & { id: number };
 
@@ -31,11 +31,16 @@ export async function ensureTrainingTestsSchema(): Promise<void> {
       description TEXT NULL,
       passing_score INT NOT NULL DEFAULT 0,
       is_published TINYINT(1) NOT NULL DEFAULT 0,
+      is_archived TINYINT(1) NOT NULL DEFAULT 0,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       CONSTRAINT fk_training_test_category FOREIGN KEY (category_id) REFERENCES training_test_categories(id) ON DELETE RESTRICT,
       KEY idx_training_tests_visible (category_id, is_published)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    const [testColumns] = await pool.query<RowDataPacket[]>('SHOW COLUMNS FROM training_tests');
+    if (!testColumns.some((column) => String(column.Field) === 'is_archived')) {
+      await pool.query('ALTER TABLE training_tests ADD COLUMN is_archived TINYINT(1) NOT NULL DEFAULT 0 AFTER is_published');
+    }
     await pool.query(`CREATE TABLE IF NOT EXISTS training_test_questions (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
       test_id BIGINT UNSIGNED NOT NULL,
@@ -99,7 +104,7 @@ export async function listTrainingCatalogForUser(userId: number) {
       (SELECT a.status FROM training_test_attempts a WHERE a.test_id=t.id AND a.user_id=? ORDER BY a.id DESC LIMIT 1) lastStatus
     FROM training_test_categories c JOIN training_tests t ON t.category_id=c.id
     LEFT JOIN training_test_questions q ON q.test_id=t.id
-    WHERE c.is_active=1 AND t.is_published=1
+    WHERE c.is_active=1 AND t.is_published=1 AND t.is_archived=0
     GROUP BY c.id,t.id ORDER BY c.sort_order,c.title,t.title`, [userId, userId]);
   return rows.map((r) => ({ categoryId: num(r.categoryId), categoryTitle: String(r.categoryTitle), categoryDescription: String(r.categoryDescription ?? ''), testId: num(r.testId), testTitle: String(r.testTitle), testDescription: String(r.testDescription ?? ''), passingScore: num(r.passingScore), questionCount: num(r.questionCount), attemptCount: num(r.attemptCount), lastStatus: r.lastStatus ? String(r.lastStatus) : null }));
 }
@@ -121,7 +126,7 @@ async function questionsForTest(testId: number, includeAnswers: boolean) {
 export async function startTrainingAttempt(userId: number, testId: number) {
   await ensureTrainingTestsSchema();
   const pool = getDbPool();
-  const [tests] = await pool.query<RowDataPacket[]>(`SELECT t.id,t.title,t.passing_score FROM training_tests t JOIN training_test_categories c ON c.id=t.category_id WHERE t.id=? AND t.is_published=1 AND c.is_active=1 LIMIT 1`, [testId]);
+  const [tests] = await pool.query<RowDataPacket[]>(`SELECT t.id,t.title,t.passing_score FROM training_tests t JOIN training_test_categories c ON c.id=t.category_id WHERE t.id=? AND t.is_published=1 AND t.is_archived=0 AND c.is_active=1 LIMIT 1`, [testId]);
   if (!tests[0]) throw new Error('Тест недоступний.');
   const questions = await questionsForTest(testId, false);
   if (!questions.length) throw new Error('У тесті ще немає питань.');
@@ -150,6 +155,28 @@ export async function answerTrainingAttempt(userId: number, attemptId: number, q
   await pool.query(`UPDATE training_test_attempts SET score=?,current_question_index=? WHERE id=?`,[score,next,attemptId]); return {finished:false,score,nextQuestion:questions[next]};
 }
 
-export async function listTrainingAdminData() { await ensureTrainingTestsSchema(); const pool=getDbPool(); const [categories]=await pool.query<RowDataPacket[]>('SELECT id,title,description,sort_order,is_active FROM training_test_categories ORDER BY sort_order,title'); const [tests]=await pool.query<RowDataPacket[]>('SELECT t.id,t.category_id,t.title,t.description,t.passing_score,t.is_published,COUNT(q.id) question_count FROM training_tests t LEFT JOIN training_test_questions q ON q.test_id=t.id GROUP BY t.id ORDER BY t.id DESC'); const [attempts]=await pool.query<RowDataPacket[]>('SELECT a.id,a.status,a.score,a.max_score,a.started_at,t.title testTitle,u.name,u.surname FROM training_test_attempts a JOIN training_tests t ON t.id=a.test_id JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 100'); return {categories:categories.map(r=>({id:num(r.id),title:String(r.title),description:String(r.description??''),sortOrder:num(r.sort_order),isActive:num(r.is_active)===1})),tests:tests.map(r=>({id:num(r.id),categoryId:num(r.category_id),title:String(r.title),description:String(r.description??''),passingScore:num(r.passing_score),isPublished:num(r.is_published)===1,questionCount:num(r.question_count)})),attempts:attempts.map(r=>({id:num(r.id),status:String(r.status),score:num(r.score),maxScore:num(r.max_score),startedAt:new Date(r.started_at).toISOString(),testTitle:String(r.testTitle),userName:`${r.surname??''} ${r.name??''}`.trim()}))}; }
+export async function listTrainingAdminData() { await ensureTrainingTestsSchema(); const pool=getDbPool(); const [categories]=await pool.query<RowDataPacket[]>('SELECT id,title,description,sort_order,is_active FROM training_test_categories ORDER BY sort_order,title'); const [tests]=await pool.query<RowDataPacket[]>(`SELECT t.id,t.category_id,t.title,t.description,t.passing_score,t.is_published,t.is_archived,COUNT(DISTINCT q.id) question_count,COUNT(DISTINCT a.id) attempt_count FROM training_tests t LEFT JOIN training_test_questions q ON q.test_id=t.id LEFT JOIN training_test_attempts a ON a.test_id=t.id GROUP BY t.id ORDER BY t.is_archived,t.id DESC`); const [attempts]=await pool.query<RowDataPacket[]>('SELECT a.id,a.status,a.score,a.max_score,a.started_at,t.title testTitle,u.name,u.surname FROM training_test_attempts a JOIN training_tests t ON t.id=a.test_id JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 100'); return {categories:categories.map(r=>({id:num(r.id),title:String(r.title),description:String(r.description??''),sortOrder:num(r.sort_order),isActive:num(r.is_active)===1})),tests:tests.map(r=>({id:num(r.id),categoryId:num(r.category_id),title:String(r.title),description:String(r.description??''),passingScore:num(r.passing_score),isPublished:num(r.is_published)===1,isArchived:num(r.is_archived)===1,questionCount:num(r.question_count),attemptCount:num(r.attempt_count)})),attempts:attempts.map(r=>({id:num(r.id),status:String(r.status),score:num(r.score),maxScore:num(r.max_score),startedAt:new Date(r.started_at).toISOString(),testTitle:String(r.testTitle),userName:`${r.surname??''} ${r.name??''}`.trim()}))}; }
 export async function createTrainingCategory(input:{title:string;description?:string}) { await ensureTrainingTestsSchema(); const [r]=await getDbPool().query<ResultSetHeader>('INSERT INTO training_test_categories (title,description) VALUES (?,?)',[input.title.trim(),input.description?.trim()||null]); return r.insertId; }
-export async function createTrainingTest(input:TrainingTestInput) { await ensureTrainingTestsSchema(); if(!input.title.trim()||!input.questions.length) throw new Error('Додайте назву і хоча б одне питання.'); const pool=getDbPool(); const connection=await pool.getConnection(); try {await connection.beginTransaction(); const [test]=await connection.query<ResultSetHeader>('INSERT INTO training_tests (category_id,title,description,passing_score,is_published) VALUES (?,?,?,?,?)',[input.categoryId,input.title.trim(),input.description?.trim()||null,Math.max(0,num(input.passingScore)),input.isPublished?1:0]); for(const [qi,q] of input.questions.entries()){const options=q.options.filter(o=>o.text.trim()); const correct=options.filter(o=>o.isCorrect).length; const max=Math.max(1,Math.min(num(q.maxSelections,correct||1),options.length)); if(options.length<2||!correct) throw new Error(`Питання ${qi+1} має містити щонайменше 2 варіанти й правильну відповідь.`); const [question]=await connection.query<ResultSetHeader>('INSERT INTO training_test_questions (test_id,question_text,points,time_limit_seconds,max_selections,sort_order) VALUES (?,?,?,?,?,?)',[test.insertId,q.text.trim(),Math.max(1,num(q.points,1)),Math.max(5,num(q.timeLimitSeconds,60)),max,qi]); for(const [oi,o] of options.entries())await connection.query('INSERT INTO training_test_options (question_id,option_text,is_correct,sort_order) VALUES (?,?,?,?)',[question.insertId,o.text.trim(),o.isCorrect?1:0,oi]);} await connection.commit(); return test.insertId;}catch(e){await connection.rollback();throw e;}finally{connection.release();} }
+async function insertQuestions(connection: PoolConnection, testId: number, questions: TrainingQuestionInput[]) {
+  if (!questions.length) throw new Error('Додайте хоча б одне питання.');
+  for (const [qi, question] of questions.entries()) {
+    if (!question.text.trim()) throw new Error(`Вкажіть текст питання ${qi + 1}.`);
+    const options = question.options.filter((option) => option.text.trim());
+    const correct = options.filter((option) => option.isCorrect).length;
+    if (options.length < 2 || !correct) throw new Error(`Питання ${qi + 1} має містити щонайменше 2 варіанти й правильну відповідь.`);
+    const max = Math.max(1, Math.min(num(question.maxSelections, correct), options.length));
+    const [created] = await connection.query<ResultSetHeader>('INSERT INTO training_test_questions (test_id,question_text,points,time_limit_seconds,max_selections,sort_order) VALUES (?,?,?,?,?,?)', [testId, question.text.trim(), Math.max(1, num(question.points, 1)), Math.max(5, num(question.timeLimitSeconds, 60)), max, qi]);
+    for (const [oi, option] of options.entries()) await connection.query('INSERT INTO training_test_options (question_id,option_text,is_correct,sort_order) VALUES (?,?,?,?)', [created.insertId, option.text.trim(), option.isCorrect ? 1 : 0, oi]);
+  }
+}
+
+export async function createTrainingTest(input: TrainingTestInput) { await ensureTrainingTestsSchema(); if (!input.title.trim() || !input.questions) throw new Error('Додайте назву і хоча б одне питання.'); const pool = getDbPool(); const connection = await pool.getConnection(); try { await connection.beginTransaction(); const [test] = await connection.query<ResultSetHeader>('INSERT INTO training_tests (category_id,title,description,passing_score,is_published) VALUES (?,?,?,?,?)', [input.categoryId, input.title.trim(), input.description?.trim() || null, Math.max(0, num(input.passingScore)), input.isPublished ? 1 : 0]); await insertQuestions(connection, test.insertId, input.questions); await connection.commit(); return test.insertId; } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); } }
+
+export async function getTrainingTestForAdmin(testId: number) { await ensureTrainingTestsSchema(); const pool = getDbPool(); const [tests] = await pool.query<RowDataPacket[]>(`SELECT t.id,t.category_id,t.title,t.description,t.passing_score,t.is_published,t.is_archived,(SELECT COUNT(*) FROM training_test_attempts a WHERE a.test_id=t.id) attempt_count FROM training_tests t WHERE t.id=? LIMIT 1`, [testId]); const test = tests[0]; if (!test) throw new Error('Тест не знайдено.'); return { id:num(test.id), categoryId:num(test.category_id), title:String(test.title), description:String(test.description ?? ''), passingScore:num(test.passing_score), isPublished:num(test.is_published) === 1, isArchived:num(test.is_archived) === 1, attemptCount:num(test.attempt_count), questions:await questionsForTest(testId, true) }; }
+
+export async function updateTrainingTest(testId: number, input: TrainingTestInput) { await ensureTrainingTestsSchema(); if (!input.title.trim()) throw new Error('Вкажіть назву тесту.'); const pool = getDbPool(); const connection = await pool.getConnection(); try { await connection.beginTransaction(); const [tests] = await connection.query<RowDataPacket[]>('SELECT id,is_archived FROM training_tests WHERE id=? FOR UPDATE', [testId]); if (!tests[0]) throw new Error('Тест не знайдено.'); if (num(tests[0].is_archived) === 1) throw new Error('Спершу відновіть тест з архіву.'); const [attempts] = await connection.query<RowDataPacket[]>('SELECT COUNT(*) count FROM training_test_attempts WHERE test_id=?', [testId]); const hasAttempts = num(attempts[0]?.count) > 0; if (hasAttempts && input.questions) throw new Error('Питання тесту зі спробами працівників змінювати не можна.'); await connection.query('UPDATE training_tests SET category_id=?,title=?,description=?,passing_score=?,is_published=? WHERE id=?', [input.categoryId, input.title.trim(), input.description?.trim() || null, Math.max(0, num(input.passingScore)), input.isPublished ? 1 : 0, testId]); if (input.questions) { await connection.query('DELETE FROM training_test_questions WHERE test_id=?', [testId]); await insertQuestions(connection, testId, input.questions); } await connection.commit(); } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); } }
+
+export async function setTrainingTestPublished(testId: number, isPublished: boolean) { await ensureTrainingTestsSchema(); const [result] = await getDbPool().query<ResultSetHeader>('UPDATE training_tests SET is_published=? WHERE id=? AND is_archived=0', [isPublished ? 1 : 0, testId]); if (!result.affectedRows) throw new Error('Тест не знайдено або він в архіві.'); }
+export async function archiveTrainingTest(testId: number) { await ensureTrainingTestsSchema(); const [result] = await getDbPool().query<ResultSetHeader>('UPDATE training_tests SET is_archived=1,is_published=0 WHERE id=?', [testId]); if (!result.affectedRows) throw new Error('Тест не знайдено.'); }
+export async function restoreTrainingTest(testId: number) { await ensureTrainingTestsSchema(); const [result] = await getDbPool().query<ResultSetHeader>('UPDATE training_tests SET is_archived=0 WHERE id=?', [testId]); if (!result.affectedRows) throw new Error('Тест не знайдено.'); }
+export async function deleteTrainingTest(testId: number) { await ensureTrainingTestsSchema(); const pool = getDbPool(); const [attempts] = await pool.query<RowDataPacket[]>('SELECT COUNT(*) count FROM training_test_attempts WHERE test_id=?', [testId]); if (num(attempts[0]?.count) > 0) throw new Error('Тест має спроби працівників — перемістіть його в архів.'); const [result] = await pool.query<ResultSetHeader>('DELETE FROM training_tests WHERE id=?', [testId]); if (!result.affectedRows) throw new Error('Тест не знайдено.'); }
