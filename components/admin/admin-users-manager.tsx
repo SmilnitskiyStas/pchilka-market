@@ -48,6 +48,7 @@ export default function AdminUsersManager() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [permissionDrafts, setPermissionDrafts] = useState<Record<number, AdminPermission[]>>({});
   const [savingPermissionsId, setSavingPermissionsId] = useState<number | null>(null);
+  const [expandedPermissionsId, setExpandedPermissionsId] = useState<number | null>(null);
 
   async function loadUsers() {
     setIsLoading(true);
@@ -261,15 +262,28 @@ export default function AdminUsersManager() {
                 {item.role === 'admin' ? (
                   <p className="mt-3 rounded-lg bg-brand/10 px-2 py-1.5 text-xs font-semibold text-brand">Повний доступ адміністратора</p>
                 ) : (
-                  <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-                    <p className="text-xs font-semibold text-slate-900">Доступи до модулів</p>
-                    <div className="mt-2 overflow-x-auto">
-                      <table className="w-full min-w-[450px] text-xs">
-                        <thead className="text-left text-slate-500"><tr><th className="pb-1">Модуль</th>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => <th key={action} className="pb-1 text-center">{action === 'read' ? 'Перегляд' : action === 'write' ? 'Редагування' : 'Видалення'}</th>)}</tr></thead>
-                        <tbody>{ADMIN_PERMISSION_OPTIONS.filter(({ resource }) => resource !== 'users' && resource !== 'system').map(({ resource, label }) => <tr key={resource} className="border-t border-slate-100"><td className="py-1.5 pr-3">{label}</td>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => { const permission = `${resource}:${action}` as AdminPermission; return <td key={action} className="py-1.5 text-center"><input type="checkbox" checked={(permissionDrafts[item.id] ?? []).includes(permission)} onChange={(event) => togglePermission(item.id, permission, event.target.checked)} /></td>; })}</tr>)}</tbody>
-                      </table>
-                    </div>
-                    <button type="button" onClick={() => void savePermissions(item.id)} disabled={savingPermissionsId === item.id} className="mt-3 rounded-full border border-brand px-3 py-1 text-xs font-semibold text-brand disabled:opacity-60">{savingPermissionsId === item.id ? 'Збереження...' : 'Зберегти доступи'}</button>
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedPermissionsId((current) => current === item.id ? null : item.id)}
+                      aria-expanded={expandedPermissionsId === item.id}
+                      aria-controls={`user-permissions-${item.id}`}
+                      className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 transition hover:border-brand hover:text-brand"
+                    >
+                      {expandedPermissionsId === item.id ? 'Сховати доступи' : 'Налаштувати доступи'}
+                    </button>
+                    {expandedPermissionsId === item.id ? (
+                      <div id={`user-permissions-${item.id}`} className="mt-2 rounded-lg border border-slate-200 bg-white p-3">
+                        <p className="text-xs font-semibold text-slate-900">Доступи до модулів</p>
+                        <div className="mt-2 overflow-x-auto">
+                          <table className="w-full min-w-[450px] text-xs">
+                            <thead className="text-left text-slate-500"><tr><th className="pb-1">Модуль</th>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => <th key={action} className="pb-1 text-center">{action === 'read' ? 'Перегляд' : action === 'write' ? 'Редагування' : 'Видалення'}</th>)}</tr></thead>
+                            <tbody>{ADMIN_PERMISSION_OPTIONS.filter(({ resource }) => resource !== 'users' && resource !== 'system').map(({ resource, label }) => <tr key={resource} className="border-t border-slate-100"><td className="py-1.5 pr-3">{label}</td>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => { const permission = `${resource}:${action}` as AdminPermission; return <td key={action} className="py-1.5 text-center"><input type="checkbox" checked={(permissionDrafts[item.id] ?? []).includes(permission)} onChange={(event) => togglePermission(item.id, permission, event.target.checked)} /></td>; })}</tr>)}</tbody>
+                          </table>
+                        </div>
+                        <button type="button" onClick={() => void savePermissions(item.id)} disabled={savingPermissionsId === item.id} className="mt-3 rounded-full border border-brand px-3 py-1 text-xs font-semibold text-brand disabled:opacity-60">{savingPermissionsId === item.id ? 'Збереження...' : 'Зберегти доступи'}</button>
+                      </div>
+                    ) : null}
                   </div>
                 )}
 

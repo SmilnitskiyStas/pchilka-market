@@ -81,6 +81,11 @@ export const adminSections: AdminSection[] = [
     description: 'Webhook, бот, розсилка та інші параметри Telegram-інтеграції inventory.'
   },
   {
+    href: '/admin/training',
+    title: 'Тести працівників',
+    description: 'Керування категоріями, тестами та статистикою навчання працівників.'
+  },
+  {
     href: '/admin/users',
     title: 'Користувачі',
     description: 'Керування користувачами, ролями та доступами до адмін-панелі.'

@@ -11,6 +11,7 @@ export const ADMIN_RESOURCES = [
   'integrations',
   'marketing',
   'telegram',
+  'training',
   'inventory',
   'utility_meters',
   'users',
@@ -33,6 +34,7 @@ export const ADMIN_PERMISSION_OPTIONS: Array<{ resource: AdminResource; label: s
   { resource: 'integrations', label: 'Інтеграції' },
   { resource: 'marketing', label: 'Маркетингова аналітика' },
   { resource: 'telegram', label: 'Telegram-бот' },
+  { resource: 'training', label: 'Тести працівників' },
   { resource: 'inventory', label: 'Інвентар' },
   { resource: 'utility_meters', label: 'Комунальні нарахування' },
   { resource: 'users', label: 'Користувачі та доступи' },
@@ -74,6 +76,7 @@ export function resourceForAdminPath(pathname: string): AdminResource {
   if (pathname.includes('/integrations')) return 'integrations';
   if (pathname.includes('/marketing')) return 'marketing';
   if (pathname.includes('/fun-telegram') || pathname.includes('/career-telegram')) return 'telegram';
+  if (pathname.includes('/training')) return 'training';
   if (pathname.includes('/own-brand')) return 'own_brand';
   if (pathname.includes('/content') || pathname.includes('/blog') || pathname.includes('/product-info')) return 'content';
   return 'system';
