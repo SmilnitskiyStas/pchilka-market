@@ -252,17 +252,21 @@ export default function AdminUsersManager() {
           <ul className="mt-4 space-y-3">
             {users.map((item) => (
               <li key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                <p className="font-semibold text-slate-900">{item.login}</p>
-                <p className="mt-0.5 text-xs text-slate-600">
-                  Роль: {item.role} • Провайдер: {item.authProvider} • Статус: {item.isActive ? 'active' : 'inactive'}
-                </p>
-                <p className="mt-1 text-xs text-slate-600">Останній вхід: {formatDate(item.lastLoginAt)}</p>
-                <p className="mt-1 text-xs text-slate-600">Створено: {formatDate(item.createdAt)}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-900">{item.login}</p>
+                    <p className="mt-0.5 text-xs text-slate-600">
+                      Роль: {item.role} • Провайдер: {item.authProvider} • Статус: {item.isActive ? 'active' : 'inactive'}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">Останній вхід: {formatDate(item.lastLoginAt)}</p>
+                    <p className="mt-1 text-xs text-slate-600">Створено: {formatDate(item.createdAt)}</p>
+                    {item.role === 'admin' ? (
+                      <p className="mt-3 rounded-lg bg-brand/10 px-2 py-1.5 text-xs font-semibold text-brand">Повний доступ адміністратора</p>
+                    ) : null}
+                  </div>
 
-                {item.role === 'admin' ? (
-                  <p className="mt-3 rounded-lg bg-brand/10 px-2 py-1.5 text-xs font-semibold text-brand">Повний доступ адміністратора</p>
-                ) : (
-                  <div className="mt-3">
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    {item.role === 'editor' ? (
                     <button
                       type="button"
                       onClick={() => setExpandedPermissionsId((current) => current === item.id ? null : item.id)}
@@ -272,31 +276,30 @@ export default function AdminUsersManager() {
                     >
                       {expandedPermissionsId === item.id ? 'Сховати доступи' : 'Налаштувати доступи'}
                     </button>
-                    {expandedPermissionsId === item.id ? (
-                      <div id={`user-permissions-${item.id}`} className="mt-2 rounded-lg border border-slate-200 bg-white p-3">
-                        <p className="text-xs font-semibold text-slate-900">Доступи до модулів</p>
-                        <div className="mt-2 overflow-x-auto">
-                          <table className="w-full min-w-[450px] text-xs">
-                            <thead className="text-left text-slate-500"><tr><th className="pb-1">Модуль</th>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => <th key={action} className="pb-1 text-center">{action === 'read' ? 'Перегляд' : action === 'write' ? 'Редагування' : 'Видалення'}</th>)}</tr></thead>
-                            <tbody>{ADMIN_PERMISSION_OPTIONS.filter(({ resource }) => resource !== 'users' && resource !== 'system').map(({ resource, label }) => <tr key={resource} className="border-t border-slate-100"><td className="py-1.5 pr-3">{label}</td>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => { const permission = `${resource}:${action}` as AdminPermission; return <td key={action} className="py-1.5 text-center"><input type="checkbox" checked={(permissionDrafts[item.id] ?? []).includes(permission)} onChange={(event) => togglePermission(item.id, permission, event.target.checked)} /></td>; })}</tr>)}</tbody>
-                          </table>
-                        </div>
-                        <button type="button" onClick={() => void savePermissions(item.id)} disabled={savingPermissionsId === item.id} className="mt-3 rounded-full border border-brand px-3 py-1 text-xs font-semibold text-brand disabled:opacity-60">{savingPermissionsId === item.id ? 'Збереження...' : 'Зберегти доступи'}</button>
-                      </div>
                     ) : null}
+                    <button
+                      type="button"
+                      disabled={deletingId === item.id || currentUser?.id === item.id}
+                      onClick={() => handleDelete(item.id)}
+                      className="rounded-full border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 transition enabled:hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deletingId === item.id ? 'Видалення...' : currentUser?.id === item.id ? 'Поточний користувач' : 'Видалити'}
+                    </button>
                   </div>
-                )}
-
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    disabled={deletingId === item.id || currentUser?.id === item.id}
-                    onClick={() => handleDelete(item.id)}
-                    className="rounded-full border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 transition enabled:hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {deletingId === item.id ? 'Видалення...' : currentUser?.id === item.id ? 'Поточний користувач' : 'Видалити'}
-                  </button>
                 </div>
+
+                {item.role === 'editor' && expandedPermissionsId === item.id ? (
+                  <div id={`user-permissions-${item.id}`} className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                    <p className="text-xs font-semibold text-slate-900">Доступи до модулів</p>
+                    <div className="mt-2 overflow-x-auto">
+                      <table className="w-full min-w-[450px] text-xs">
+                        <thead className="text-left text-slate-500"><tr><th className="pb-1">Модуль</th>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => <th key={action} className="pb-1 text-center">{action === 'read' ? 'Перегляд' : action === 'write' ? 'Редагування' : 'Видалення'}</th>)}</tr></thead>
+                        <tbody>{ADMIN_PERMISSION_OPTIONS.filter(({ resource }) => resource !== 'users' && resource !== 'system').map(({ resource, label }) => <tr key={resource} className="border-t border-slate-100"><td className="py-1.5 pr-3">{label}</td>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => { const permission = `${resource}:${action}` as AdminPermission; return <td key={action} className="py-1.5 text-center"><input type="checkbox" checked={(permissionDrafts[item.id] ?? []).includes(permission)} onChange={(event) => togglePermission(item.id, permission, event.target.checked)} /></td>; })}</tr>)}</tbody>
+                      </table>
+                    </div>
+                    <button type="button" onClick={() => void savePermissions(item.id)} disabled={savingPermissionsId === item.id} className="mt-3 rounded-full border border-brand px-3 py-1 text-xs font-semibold text-brand disabled:opacity-60">{savingPermissionsId === item.id ? 'Збереження...' : 'Зберегти доступи'}</button>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
