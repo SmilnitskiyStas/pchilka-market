@@ -7,6 +7,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as { token?: string; testId?: number };
     const user = await resolveInventorySessionUserFromToken(String(body.token ?? ''));
+    if (!user.surname.trim() || !user.name.trim() || !user.storeId) throw new Error('Спершу заповніть ПІБ та оберіть магазин.');
     return NextResponse.json({ ok: true, ...(await startTrainingAttempt(user.id, Number(body.testId))) });
   } catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося почати тест.' }, { status: 400 }); }
 }

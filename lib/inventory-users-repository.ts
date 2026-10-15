@@ -315,3 +315,18 @@ export async function updateInventoryUserInDb(input: {
 
   return mapRow(updatedRows[0]);
 }
+
+export async function updateInventoryUserProfileInDb(input: { userId: number; surname: string; name: string; storeId: number }): Promise<InventoryUserRecord> {
+  const surname = input.surname.trim(); const name = input.name.trim(); const storeId = Number(input.storeId);
+  if (!surname || !name) throw new Error('Вкажіть прізвище, ім’я та по батькові.');
+  if (surname.length > 120 || name.length > 160) throw new Error('ПІБ занадто довгий.');
+  if (!Number.isInteger(storeId) || storeId < 1) throw new Error('Оберіть магазин.');
+  const pool = getDbPool();
+  const [stores] = await pool.query<Array<RowDataPacket & { id: number }>>('SELECT id FROM stores WHERE id=? AND is_active=1 LIMIT 1', [storeId]);
+  if (!stores[0]) throw new Error('Оберіть активний магазин зі списку.');
+  const [result] = await pool.query<ResultSetHeader>('UPDATE users SET surname=?, name=?, store_id=? WHERE id=? AND is_active=1', [surname, name, storeId, input.userId]);
+  if (!result.affectedRows) throw new Error('Обліковий запис працівника недоступний.');
+  const updated = await findInventoryUserByChatId((await pool.query<Array<RowDataPacket & { user_chat_id: string | number }>>('SELECT user_chat_id FROM users WHERE id=? LIMIT 1', [input.userId]))[0][0]?.user_chat_id?.toString() ?? '');
+  if (!updated) throw new Error('Не вдалося прочитати оновлений профіль.');
+  return updated;
+}
