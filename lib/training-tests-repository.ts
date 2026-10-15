@@ -146,7 +146,7 @@ export async function answerTrainingAttempt(userId: number, attemptId: number, q
   const elapsed=(Date.now()-new Date(attempt.started_at).getTime())/1000;
   const prior=questions.slice(0,index).reduce((sum,q)=>sum+q.timeLimitSeconds,0);
   if (elapsed>prior+question.timeLimitSeconds) { await pool.query(`UPDATE training_test_attempts SET status='timed_out',finished_at=UTC_TIMESTAMP(),failure_reason='time_limit_exceeded' WHERE id=?`,[attemptId]); return { finished:true,status:'timed_out',score:num(attempt.score),maxScore:num(attempt.max_score),reason:'Час на відповідь вичерпано.'}; }
-  const validIds=new Set(question.options.map((o)=>o.id)); const selected=[...new Set(selectedOptionIds.map((id)=>num(id)).filter((id)=>validIds.has(id)))];
+  const validIds=new Set(question.options.map((o)=>o.id)); const selected=[...new Set(selectedOptionIds.map((id)=>num(id)).filter((id)=>validIds.has(id)))]; if (!selected.length) throw new Error('Оберіть щонайменше один варіант відповіді.');
   if (selected.length>question.maxSelections) throw new Error(`Можна обрати не більше ${question.maxSelections} варіантів.`);
   const correctIds = new Set(question.options.filter((option) => option.isCorrect).map((option) => option.id));
   const selectedCorrectCount = selected.filter((optionId) => correctIds.has(optionId)).length;
