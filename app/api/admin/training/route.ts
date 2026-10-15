@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
-import { archiveTrainingTest, createTrainingCategory, createTrainingTest, deleteTrainingCategory, deleteTrainingTest, getTrainingTestForAdmin, getTrainingTestStatisticsForAdmin, listTrainingAdminData, restoreTrainingTest, setTrainingTestPublished, updateTrainingTest, type TrainingTestInput } from '@/lib/training-tests-repository';
+import { archiveTrainingTest, createTrainingCategory, createTrainingTest, deleteTrainingCategory, deleteTrainingTest, duplicateAndArchiveTrainingTest, getTrainingTestForAdmin, getTrainingTestStatisticsForAdmin, listTrainingAdminData, restoreTrainingTest, setTrainingTestPublished, updateTrainingTest, type TrainingTestInput } from '@/lib/training-tests-repository';
 
 export const runtime = 'nodejs';
 export async function GET(request: Request) { if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse(); try { const url = new URL(request.url); const statisticsTestId=Number(url.searchParams.get('statisticsTestId')); if (Number.isInteger(statisticsTestId) && statisticsTestId > 0) return NextResponse.json({ ok:true, statistics:await getTrainingTestStatisticsForAdmin(statisticsTestId) }); const testId=Number(url.searchParams.get('testId')); if (Number.isInteger(testId) && testId > 0) return NextResponse.json({ ok:true, test:await getTrainingTestForAdmin(testId) }); return NextResponse.json({ ok:true, ...(await listTrainingAdminData()) }); } catch(error) { return NextResponse.json({ok:false,error:error instanceof Error?error.message:'Помилка.'},{status:500}); } }
@@ -20,6 +20,7 @@ export async function PATCH(request: Request) {
     const testId = Number(body.testId);
     if (!Number.isInteger(testId) || testId < 1) throw new Error('Некоректний тест.');
     if (body.action === 'update' && body.test) await updateTrainingTest(testId, body.test);
+    else if (body.action === 'duplicate-and-archive') return NextResponse.json({ ok: true, id: await duplicateAndArchiveTrainingTest(testId) });
     else if (body.action === 'set-published') await setTrainingTestPublished(testId, Boolean(body.isPublished));
     else if (body.action === 'archive') await archiveTrainingTest(testId);
     else if (body.action === 'restore') await restoreTrainingTest(testId);

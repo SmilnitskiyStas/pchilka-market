@@ -201,6 +201,37 @@ export async function getTrainingTestStatisticsForAdmin(testId: number) {
 
 export async function updateTrainingTest(testId: number, input: TrainingTestInput) { await ensureTrainingTestsSchema(); if (!input.title.trim()) throw new Error('Вкажіть назву тесту.'); const pool = getDbPool(); const connection = await pool.getConnection(); try { await connection.beginTransaction(); const [tests] = await connection.query<RowDataPacket[]>('SELECT id,is_archived FROM training_tests WHERE id=? FOR UPDATE', [testId]); if (!tests[0]) throw new Error('Тест не знайдено.'); if (num(tests[0].is_archived) === 1) throw new Error('Спершу відновіть тест з архіву.'); const [attempts] = await connection.query<RowDataPacket[]>('SELECT COUNT(*) count FROM training_test_attempts WHERE test_id=?', [testId]); const hasAttempts = num(attempts[0]?.count) > 0; if (hasAttempts && input.questions) throw new Error('Питання тесту зі спробами працівників змінювати не можна.'); await connection.query('UPDATE training_tests SET category_id=?,title=?,description=?,passing_score=?,is_published=? WHERE id=?', [input.categoryId, input.title.trim(), input.description?.trim() || null, Math.max(0, num(input.passingScore)), input.isPublished ? 1 : 0, testId]); if (input.questions) { await connection.query('DELETE FROM training_test_questions WHERE test_id=?', [testId]); await insertQuestions(connection, testId, input.questions); } await connection.commit(); } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); } }
 
+export async function duplicateAndArchiveTrainingTest(testId: number) {
+  await ensureTrainingTestsSchema();
+  const pool = getDbPool();
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [tests] = await connection.query<RowDataPacket[]>('SELECT id,category_id,title,description,passing_score,is_archived FROM training_tests WHERE id=? FOR UPDATE', [testId]);
+    const source = tests[0];
+    if (!source) throw new Error('Тест не знайдено.');
+    if (num(source.is_archived) === 1) throw new Error('Архівний тест спершу відновіть.');
+
+    const [questionRows] = await connection.query<RowDataPacket[]>('SELECT id,question_text,points,time_limit_seconds,max_selections FROM training_test_questions WHERE test_id=? ORDER BY sort_order,id', [testId]);
+    if (!questionRows.length) throw new Error('У тесті немає питань для копіювання.');
+    const questionIds = questionRows.map((question) => num(question.id));
+    const [optionRows] = await connection.query<RowDataPacket[]>(`SELECT question_id,option_text,is_correct FROM training_test_options WHERE question_id IN (${questionIds.map(() => '?').join(',')}) ORDER BY sort_order,id`, questionIds);
+    const questions: TrainingQuestionInput[] = questionRows.map((question) => ({
+      text: String(question.question_text),
+      points: num(question.points, 1),
+      timeLimitSeconds: num(question.time_limit_seconds, 60),
+      maxSelections: num(question.max_selections, 1),
+      options: optionRows.filter((option) => num(option.question_id) === num(question.id)).map((option) => ({ text: String(option.option_text), isCorrect: num(option.is_correct) === 1 })),
+    }));
+
+    const [created] = await connection.query<ResultSetHeader>('INSERT INTO training_tests (category_id,title,description,passing_score,is_published,is_archived) VALUES (?,?,?,?,0,0)', [num(source.category_id), `${String(source.title)} (копія)`, source.description ?? null, num(source.passing_score)]);
+    await insertQuestions(connection, created.insertId, questions);
+    await connection.query('UPDATE training_tests SET is_archived=1,is_published=0 WHERE id=?', [testId]);
+    await connection.commit();
+    return created.insertId;
+  } catch (error) { await connection.rollback(); throw error; } finally { connection.release(); }
+}
+
 export async function setTrainingTestPublished(testId: number, isPublished: boolean) { await ensureTrainingTestsSchema(); const [result] = await getDbPool().query<ResultSetHeader>('UPDATE training_tests SET is_published=? WHERE id=? AND is_archived=0', [isPublished ? 1 : 0, testId]); if (!result.affectedRows) throw new Error('Тест не знайдено або він в архіві.'); }
 export async function archiveTrainingTest(testId: number) { await ensureTrainingTestsSchema(); const [result] = await getDbPool().query<ResultSetHeader>('UPDATE training_tests SET is_archived=1,is_published=0 WHERE id=?', [testId]); if (!result.affectedRows) throw new Error('Тест не знайдено.'); }
 export async function restoreTrainingTest(testId: number) { await ensureTrainingTestsSchema(); const [result] = await getDbPool().query<ResultSetHeader>('UPDATE training_tests SET is_archived=0 WHERE id=?', [testId]); if (!result.affectedRows) throw new Error('Тест не знайдено.'); }
