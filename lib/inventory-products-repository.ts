@@ -349,8 +349,11 @@ export async function mergeInventoryProductsInDb(
   await db.query('UPDATE product_change_logs SET product_id = ? WHERE product_id = ?', [targetProductId, sourceProductId]);
   await db.query('UPDATE product_import_review_queue SET product_id = ? WHERE product_id = ?', [targetProductId, sourceProductId]);
 
-  await replaceInventoryProductBarcodesInDb(targetProductId, nextBarcodeEntries, db);
   await db.query('DELETE FROM product_barcodes WHERE product_id = ?', [sourceProductId]);
+  // Звільняємо штрихкоди картки-джерела до запису їх у цільову картку.
+  // Інакше перевірка у replaceInventoryProductBarcodesInDb помилково бачить
+  // товар, який зараз об'єднується, як сторонній конфлікт.
+  await replaceInventoryProductBarcodesInDb(targetProductId, nextBarcodeEntries, db);
   await db.query('DELETE FROM products WHERE id = ?', [sourceProductId]);
 
   const afterTargetRecord = await findInventoryProductByIdInDb(targetProductId, db);
