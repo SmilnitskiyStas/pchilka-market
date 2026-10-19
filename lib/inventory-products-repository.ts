@@ -418,10 +418,7 @@ export type InventoryProductImportSummary = {
 };
 
 function buildInventoryProductIdentityWhereSql() {
-  return `
-    p.article = ?
-    AND p.product_name = ?
-  `;
+  return 'p.article = ?';
 }
 
 function buildInventoryProductsWhereSql(query = '', category = '') {
@@ -630,8 +627,9 @@ export async function findInventoryProductDuplicateInDb(
 ): Promise<InventoryProductRecord | null> {
   const article = String(input.article ?? '').trim();
   const barcode = normalizeInventoryBarcode(input.barcode);
-  const productName = String(input.productName ?? '').trim();
-  const hasIdentity = Boolean(article && productName);
+  // Артикул є ідентифікатором товару в каталозі. Назва може відрізнятися
+  // через скорочення або помилку імпорту, тому не повинна приховувати дубль.
+  const hasIdentity = Boolean(article);
   if (!hasIdentity && !barcode) return null;
 
   const db = executor ?? getDbPool();
@@ -640,7 +638,7 @@ export async function findInventoryProductDuplicateInDb(
 
   if (hasIdentity) {
     whereParts.push(`(${buildInventoryProductIdentityWhereSql()})`);
-    values.push(article, productName);
+    values.push(article);
   }
   if (barcode) {
     whereParts.push(
