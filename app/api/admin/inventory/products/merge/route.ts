@@ -42,20 +42,25 @@ export async function POST(request: Request) {
     const connection = await getDbPool().getConnection();
     try {
       const knownProductIds = new Set([...sourceProductIds, targetProductId]);
+      const conflictProducts = new Map<number, Awaited<ReturnType<typeof findInventoryProductBarcodeOwnersInDb>>[number]>();
       for (const barcode of product.barcodes) {
-        const barcodeOwner = (await findInventoryProductBarcodeOwnersInDb(barcode, connection)).find(
-          (candidate) => !knownProductIds.has(Number(candidate.id))
-        );
-        if (barcodeOwner) {
-          return NextResponse.json(
-            {
-              ok: false,
-              error: `Штрихкод ${barcode} уже прив'язаний до іншого товару. Додайте його до об’єднання або виправте штрихкоди.`,
-              conflictProduct: barcodeOwner
-            },
-            { status: 409 }
-          );
+        for (const candidate of await findInventoryProductBarcodeOwnersInDb(barcode, connection)) {
+          if (!knownProductIds.has(Number(candidate.id))) {
+            conflictProducts.set(Number(candidate.id), candidate);
+          }
         }
+      }
+      if (conflictProducts.size > 0) {
+        const conflicts = Array.from(conflictProducts.values());
+        return NextResponse.json(
+          {
+            ok: false,
+            error: 'Частина штрихкодів уже належить іншим карткам товарів. Додайте всі знайдені картки до об’єднання або виправте штрихкоди.',
+            conflictProduct: conflicts[0],
+            conflictProducts: conflicts
+          },
+          { status: 409 }
+        );
       }
 
       await connection.beginTransaction();

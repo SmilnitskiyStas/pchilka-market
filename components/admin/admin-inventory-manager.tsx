@@ -1632,15 +1632,24 @@ export default function AdminInventoryManager({
           note
         })
       });
-      const payload = (await response.json()) as ProductsPayload & { conflictProduct?: InventoryProductRecord; mergedProductIds?: string[] };
-      if (response.status === 409 && payload.conflictProduct) {
+      const payload = (await response.json()) as ProductsPayload & {
+        conflictProduct?: InventoryProductRecord;
+        conflictProducts?: InventoryProductRecord[];
+        mergedProductIds?: string[];
+      };
+      if (response.status === 409 && (payload.conflictProducts?.length || payload.conflictProduct)) {
+        const conflicts = payload.conflictProducts?.length ? payload.conflictProducts : [payload.conflictProduct!];
         setDuplicateProductConflict((current) => {
-          if (!current || current.existingProduct.id === payload.conflictProduct!.id || current.additionalProducts.some((product) => product.id === payload.conflictProduct!.id)) {
-            return current;
-          }
-          return { ...current, additionalProducts: [...current.additionalProducts, payload.conflictProduct!] };
+          if (!current) return current;
+          const knownIds = new Set([current.existingProduct.id, ...current.additionalProducts.map((product) => product.id)]);
+          const newConflicts = conflicts.filter((product) => !knownIds.has(product.id));
+          return newConflicts.length > 0 ? { ...current, additionalProducts: [...current.additionalProducts, ...newConflicts] } : current;
         });
-        setError(`Знайдено ще один дубль: "${payload.conflictProduct.productName}". Перевірте його дані та підтвердьте об’єднання всіх карток.`);
+        setError(
+          conflicts.length === 1
+            ? `Знайдено ще один дубль: "${conflicts[0].productName}". Перевірте його дані та підтвердьте об’єднання всіх карток.`
+            : `Знайдено ще ${conflicts.length} картки з конфліктними штрихкодами. Перевірте їхні дані та підтвердьте об’єднання всіх карток.`
+        );
         return;
       }
       if (!response.ok || !payload.ok || !payload.product) {
