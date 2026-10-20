@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import { emptyProductInfoDetails, type ProductInfoDetails } from '@/lib/public-product-info-fields';
-import { findProductByCode, saveProductDetails } from '../route';
+import { findProductByCode, saveProductDetails } from '@/lib/admin-product-info-repository';
 
 export const runtime = 'nodejs';
 
