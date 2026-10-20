@@ -1589,11 +1589,17 @@ export default function AdminInventoryManager({
     existingProduct: InventoryProductRecord,
     draft: ProductEditDraft,
     approvalAction?: 'approve' | 'update',
-    note = ''
+    note = '',
+    additionalProducts: InventoryProductRecord[] = []
   ) {
     const finalBarcodes = Array.from(
       new Set(
-        [...String(draft.barcode ?? '').split(/[\n,;]+/), ...existingProduct.barcodes, existingProduct.barcode]
+        [
+          ...String(draft.barcode ?? '').split(/[\n,;]+/),
+          ...existingProduct.barcodes,
+          existingProduct.barcode,
+          ...additionalProducts.flatMap((product) => [...product.barcodes, product.barcode])
+        ]
           .map((barcode) => barcode.trim())
           .filter(Boolean)
       )
@@ -1601,7 +1607,7 @@ export default function AdminInventoryManager({
     setDuplicateProductConflict({
       sourceProductId: String(sourceProductId),
       existingProduct,
-      additionalProducts: [],
+      additionalProducts: additionalProducts.filter((product) => product.id !== existingProduct.id && product.id !== String(sourceProductId)),
       draft: { ...draft, barcode: finalBarcodes },
       approvalAction,
       note
@@ -1784,8 +1790,12 @@ export default function AdminInventoryManager({
           product: productPayload
         })
       });
-      const payload = (await response.json()) as ProductsPayload & { conflictProduct?: InventoryProductRecord };
+      const payload = (await response.json()) as ProductsPayload & {
+        conflictProduct?: InventoryProductRecord;
+        conflictProducts?: InventoryProductRecord[];
+      };
       if (response.status === 409 && payload.conflictProduct && productPayload) {
+        const conflicts = payload.conflictProducts?.length ? payload.conflictProducts : [payload.conflictProduct];
         const sourceProduct =
           products.find((entry) => Number(entry.id) === Number(item.productId)) ??
           (await loadProductByIdForReview(Number(item.productId)));
@@ -1802,7 +1812,8 @@ export default function AdminInventoryManager({
             isActive: productPayload.isActive !== false
           },
           action === 'approve' ? 'approve' : 'update',
-          draft?.note ?? item.approvalNote ?? ''
+          draft?.note ?? item.approvalNote ?? '',
+          conflicts.filter((product) => product.id !== payload.conflictProduct!.id)
         );
         return;
       }

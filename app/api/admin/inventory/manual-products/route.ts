@@ -7,6 +7,7 @@ import {
 } from '@/lib/admin-auth';
 import { listInventoryManualProductCreationsFromDb } from '@/lib/inventory-activity-logs-repository';
 import {
+  findInventoryProductBarcodeOwnersInDb,
   findInventoryProductDuplicateInDb,
   updateInventoryProductApprovalInDb
 } from '@/lib/inventory-products-repository';
@@ -96,9 +97,26 @@ export async function PATCH(request: Request) {
         productName: product.productName,
         unitsOfMeasurement: product.unitsOfMeasurement
       });
+      const conflicts = new Map<number, Awaited<ReturnType<typeof findInventoryProductBarcodeOwnersInDb>>[number]>();
       if (duplicate && Number(duplicate.id) !== productId) {
+        conflicts.set(Number(duplicate.id), duplicate);
+      }
+      for (const barcode of product.barcodes) {
+        for (const owner of await findInventoryProductBarcodeOwnersInDb(barcode)) {
+          if (Number(owner.id) !== productId) {
+            conflicts.set(Number(owner.id), owner);
+          }
+        }
+      }
+      const conflictProducts = Array.from(conflicts.values());
+      if (conflictProducts.length > 0) {
         return NextResponse.json(
-          { ok: false, error: `Товар уже існує в базі: ${duplicate.productName}.`, conflictProduct: duplicate },
+          {
+            ok: false,
+            error: `Товар уже існує в базі: ${conflictProducts[0].productName}.`,
+            conflictProduct: conflictProducts[0],
+            conflictProducts
+          },
           { status: 409 }
         );
       }
