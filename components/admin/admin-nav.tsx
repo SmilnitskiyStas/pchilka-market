@@ -102,7 +102,8 @@ export default function AdminNav() {
             children: [
               { href: '/admin/inventory/products', label: 'Список товарів' },
               { href: '/admin/inventory/products/create', label: 'Створити товар' },
-              { href: '/admin/inventory/products/import', label: 'Імпорт товарів' }
+              { href: '/admin/inventory/products/import', label: 'Імпорт товарів' },
+              { href: '/admin/inventory/products/product-info', label: 'Інформація про імпортні товари' }
             ]
           },
           {
@@ -138,7 +139,7 @@ export default function AdminNav() {
       },
       {
         label: 'Контент',
-        children: [{ href: '/admin/content', label: 'Статті' }, { href: '/admin/product-info', label: 'Інформація про імпортні товари' }]
+        children: [{ href: '/admin/content', label: 'Статті' }]
       },
       {
         label: 'Комунальні нарахування',

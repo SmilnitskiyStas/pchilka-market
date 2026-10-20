@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 
 import { NextResponse } from 'next/server';
 
-import { findAdminUserByLogin } from '@/lib/admin-users-repository';
+import { findAdminUserById, findAdminUserByLogin } from '@/lib/admin-users-repository';
 import { actionForHttpMethod, hasAdminPermission, resourceForAdminPath, type AdminPermission } from '@/lib/admin-permissions';
 import { verifyPassword } from '@/lib/password-hash';
 
@@ -149,6 +149,30 @@ export function getAdminSessionFromToken(token: string | undefined): { username:
   const parsed = parseAdminSessionToken(token);
   if (!parsed) return null;
   return { username: parsed.username, sub: parsed.sub, role: parsed.role, permissions: parsed.permissions };
+}
+
+export function getAdminUserIdFromSessionSub(sub: string): number | null {
+  if (!sub.startsWith('admin_user:')) return null;
+  const id = Number(sub.replace('admin_user:', ''));
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+export async function getCurrentAdminAccessFromToken(token: string | undefined): Promise<{
+  username: string;
+  sub: string;
+  role: 'admin' | 'editor';
+  permissions: AdminPermission[];
+} | null> {
+  const session = getAdminSessionFromToken(token);
+  if (!session) return null;
+
+  const userId = getAdminUserIdFromSessionSub(session.sub);
+  if (!userId) return session;
+
+  const user = await findAdminUserById(userId);
+  if (!user || !user.isActive) return null;
+
+  return { username: user.login, sub: session.sub, role: user.role, permissions: user.permissions };
 }
 
 export function applyAdminSessionCookie(

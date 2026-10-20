@@ -1,2 +1,5 @@
-import AdminProductInfoManager from '@/components/admin/admin-product-info-manager';
-export default function AdminProductInfoPage() { return <AdminProductInfoManager />; }
+import { redirect } from 'next/navigation';
+
+export default function AdminProductInfoPage() {
+  redirect('/admin/inventory/products/product-info');
+}

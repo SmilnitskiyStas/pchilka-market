@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import AdminHeader from '@/components/admin/admin-header';
 import AdminNav from '@/components/admin/admin-nav';
 import AdminAccessGuard from '@/components/admin/admin-access-guard';
-import { getAdminSessionCookieName, getAdminSessionFromToken } from '@/lib/admin-auth';
+import { getAdminSessionCookieName, getCurrentAdminAccessFromToken } from '@/lib/admin-auth';
 import { hasAdminPermission, resourceForAdminPath } from '@/lib/admin-permissions';
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
@@ -14,7 +14,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   const pathname = requestHeaders.get('x-canonical-path')?.trim();
   const currentPath = !pathname || !pathname.startsWith('/') ? '/admin' : pathname;
   const sessionToken = requestCookies.get(getAdminSessionCookieName())?.value;
-  const session = getAdminSessionFromToken(sessionToken);
+  const session = await getCurrentAdminAccessFromToken(sessionToken);
   if (!session || !hasAdminPermission(session.role, session.permissions, resourceForAdminPath(currentPath))) {
     redirect(`/login?next=${encodeURIComponent(currentPath)}`);
   }

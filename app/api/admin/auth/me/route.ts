@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { findAdminUserById } from '@/lib/admin-users-repository';
-import { getAdminSessionFromRequest } from '@/lib/admin-auth';
+import { applyAdminSessionCookie, getAdminSessionFromRequest } from '@/lib/admin-auth';
 
 export const runtime = 'nodejs';
 
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: 'Користувача не знайдено.' }, { status: 404 });
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     ok: true,
     user: {
       id: user.id,
@@ -48,4 +48,6 @@ export async function GET(request: Request) {
       isActive: user.isActive
     }
   });
+  applyAdminSessionCookie(response, { username: user.login, sub: session.sub, role: user.role, permissions: user.permissions }, request);
+  return response;
 }

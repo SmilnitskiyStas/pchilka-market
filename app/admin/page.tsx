@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 
 import { adminSections } from '@/components/admin/admin-sections';
-import { getAdminSessionCookieName, getAdminSessionFromToken } from '@/lib/admin-auth';
+import { getAdminSessionCookieName, getCurrentAdminAccessFromToken } from '@/lib/admin-auth';
 import { hasAdminPermission, resourceForAdminPath } from '@/lib/admin-permissions';
 
 export const metadata: Metadata = {
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default async function AdminDashboardPage() {
   const sessionToken = (await cookies()).get(getAdminSessionCookieName())?.value;
-  const session = getAdminSessionFromToken(sessionToken);
+  const session = await getCurrentAdminAccessFromToken(sessionToken);
   const allowedSections = adminSections.filter((item) => {
     if (item.href === '/admin') return false;
     return Boolean(session && hasAdminPermission(session.role, session.permissions, resourceForAdminPath(item.href)));

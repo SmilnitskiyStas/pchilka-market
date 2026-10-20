@@ -67,6 +67,7 @@ export function resourceForAdminPath(pathname: string): AdminResource {
   if (pathname.includes('/users')) return 'users';
   if (pathname.includes('/utility-meters') || pathname.includes('/utility_meters')) return 'utility_meters';
   if (pathname.includes('/inventory')) return 'inventory';
+  if (pathname.includes('/product-info')) return 'inventory';
   if (pathname.includes('/messages')) return 'messages';
   if (pathname.includes('/home-slides') || pathname.includes('/banners')) return 'banners';
   if (pathname.includes('/promotions') || pathname.includes('/shock-price')) return 'promotions';
@@ -78,7 +79,7 @@ export function resourceForAdminPath(pathname: string): AdminResource {
   if (pathname.includes('/fun-telegram') || pathname.includes('/career-telegram')) return 'telegram';
   if (pathname.includes('/training')) return 'training';
   if (pathname.includes('/own-brand')) return 'own_brand';
-  if (pathname.includes('/content') || pathname.includes('/blog') || pathname.includes('/product-info')) return 'content';
+  if (pathname.includes('/content') || pathname.includes('/blog')) return 'content';
   return 'system';
 }
 
