@@ -66,6 +66,7 @@ export function resourceForAdminPath(pathname: string): AdminResource {
   if (pathname === '/admin' || pathname === '/api/admin/auth/me') return 'dashboard';
   if (pathname.includes('/users')) return 'users';
   if (pathname.includes('/utility-meters') || pathname.includes('/utility_meters')) return 'utility_meters';
+  if (pathname.includes('/inventory/settings/')) return 'system';
   if (pathname.includes('/inventory')) return 'inventory';
   if (pathname.includes('/product-info')) return 'inventory';
   if (pathname.includes('/messages')) return 'messages';
