@@ -119,10 +119,16 @@ export default function AdminNav() {
           { href: '/admin/inventory/tasks', label: 'Завдання' },
           { href: '/admin/inventory/employees', label: 'Працівники' },
           { href: '/admin/inventory/actions', label: 'Дії працівників' },
-          { href: '/admin/inventory/sales/import', label: 'FEFO-імпорт продажів' },
           { href: '/admin/inventory/notifications', label: 'Сповіщення' },
           { href: '/admin/network', label: 'Магазини' },
-          { href: '/admin/inventory/analytics', label: 'Аналітика' }
+          { href: '/admin/inventory/analytics', label: 'Аналітика' },
+          {
+            label: 'Налаштування',
+            children: [
+              { href: '/admin/inventory/settings/schema', label: 'Схема' },
+              { href: '/admin/inventory/settings/telegram', label: 'Telegram' }
+            ]
+          }
         ]
       },
       {
@@ -166,14 +172,7 @@ export default function AdminNav() {
           { href: '/admin/users', label: 'Користувачі' },
           { href: '/admin/integrations', label: 'Інтеграції' },
           { href: '/admin/career-telegram', label: 'Telegram бот вакансій' },
-          { href: '/admin/fun-telegram', label: 'Telegram бот (тест)' },
-          {
-            label: 'Налаштування',
-            children: [
-              { href: '/admin/inventory/settings/schema', label: 'Схема' },
-              { href: '/admin/inventory/settings/telegram', label: 'Telegram' }
-            ]
-          }
+          { href: '/admin/fun-telegram', label: 'Telegram бот (тест)' }
         ]
       }
     ],
