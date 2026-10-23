@@ -5,11 +5,12 @@ SET NAMES utf8mb4;
 
 CREATE TABLE IF NOT EXISTS career_telegram_sessions (
   chat_id VARCHAR(32) NOT NULL,
-  step ENUM('phone', 'full_name', 'city', 'store', 'district') NOT NULL,
+  step ENUM('phone', 'full_name', 'city', 'store', 'vacancy') NOT NULL,
   phone VARCHAR(60) NULL,
   full_name VARCHAR(120) NULL,
   city VARCHAR(120) NULL,
   store_label VARCHAR(255) NULL,
+  vacancy VARCHAR(120) NULL,
   telegram_user_id VARCHAR(32) NULL,
   telegram_username VARCHAR(64) NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

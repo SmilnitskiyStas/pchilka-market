@@ -117,6 +117,16 @@ export async function createIncomingRequestInDb(input: IncomingRequestCreateInpu
   return mapRow(rows[0]);
 }
 
+export async function getIncomingRequestByIdFromDb(requestId: number): Promise<IncomingRequestRecord | null> {
+  const [rows] = await getDbPool().query<IncomingRequestRow[]>(
+    `SELECT id, request_type, full_name, company_name, contact_person, phone, email,
+            city, vacancy, subject, target_store, message, metadata_json, source_page, status, created_at, updated_at
+     FROM incoming_requests WHERE id = ? LIMIT 1`,
+    [requestId]
+  );
+  return rows[0] ? mapRow(rows[0]) : null;
+}
+
 type ListIncomingRequestsOptions = {
   limit?: number;
   status?: IncomingRequestStatus;

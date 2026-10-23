@@ -89,12 +89,19 @@ function pickAttachment(metadata: IncomingRequestRecord['metadata']): Attachment
   };
 }
 
+function getTelegramChatId(request: IncomingRequestRecord | null): string | null {
+  const value = request?.metadata?.telegramChatId;
+  return typeof value === 'string' && /^-?\d{5,20}$/.test(value) ? value : null;
+}
+
 export default function AdminMessagesManager() {
   const [requests, setRequests] = useState<IncomingRequestRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdatingId, setIsUpdatingId] = useState<string | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<IncomingRequestRecord | null>(null);
   const [error, setError] = useState('');
+  const [telegramReply, setTelegramReply] = useState('');
+  const [isSendingTelegramReply, setIsSendingTelegramReply] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState<'all' | IncomingRequestStatus>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | IncomingRequestType>('all');
@@ -170,6 +177,22 @@ export default function AdminMessagesManager() {
       setError(updateError instanceof Error ? updateError.message : 'Не вдалося змінити статус.');
     } finally {
       setIsUpdatingId(null);
+    }
+  }
+
+  async function sendTelegramReply() {
+    if (!selectedRequest || !telegramReply.trim()) return;
+    setIsSendingTelegramReply(true);
+    setError('');
+    try {
+      const response = await fetch('/api/admin/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: Number(selectedRequest.id), message: telegramReply }) });
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Не вдалося надіслати повідомлення.');
+      setTelegramReply('');
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'Не вдалося надіслати повідомлення.');
+    } finally {
+      setIsSendingTelegramReply(false);
     }
   }
 
@@ -281,7 +304,7 @@ export default function AdminMessagesManager() {
 
                   <button
                     type="button"
-                    onClick={() => setSelectedRequest(item)}
+                    onClick={() => { setSelectedRequest(item); setTelegramReply(''); }}
                     className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-brand hover:text-brand"
                   >
                     Відкрити
@@ -329,6 +352,15 @@ export default function AdminMessagesManager() {
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Повідомлення</p>
                 <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{selectedRequest.message}</p>
               </div>
+            ) : null}
+
+            {getTelegramChatId(selectedRequest) ? (
+              <section className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-4">
+                <p className="text-sm font-semibold text-slate-900">Написати кандидату в Telegram</p>
+                <p className="mt-1 text-xs text-slate-600">Повідомлення буде надіслано від імені бота вакансій у чат кандидата.</p>
+                <textarea value={telegramReply} onChange={(event) => setTelegramReply(event.target.value)} maxLength={4000} rows={4} placeholder="Напишіть повідомлення кандидату..." className="mt-3 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-800 outline-none focus:border-brand" />
+                <button type="button" disabled={isSendingTelegramReply || !telegramReply.trim()} onClick={() => void sendTelegramReply()} className="mt-2 rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{isSendingTelegramReply ? 'Надсилання...' : 'Надіслати в Telegram'}</button>
+              </section>
             ) : null}
 
             {(() => {

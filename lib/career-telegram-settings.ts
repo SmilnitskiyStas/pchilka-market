@@ -6,6 +6,7 @@ export type CareerTelegramSettings = {
   publicBaseUrl: string;
   hrChatId: string;
   cities: string[];
+  vacancies: string[];
   updatedAt: string;
 };
 
@@ -19,6 +20,7 @@ export const defaultCareerTelegramSettings: CareerTelegramSettings = {
   publicBaseUrl: '',
   hrChatId: '',
   cities: ['Київ', 'Київська область', 'Одеса', 'Чернігів', 'Івано-Франківськ'],
+  vacancies: [],
   updatedAt: ''
 };
 
@@ -28,6 +30,9 @@ export function normalizeCareerTelegramSettings(raw: Partial<CareerTelegramSetti
   const cities = Array.isArray(raw?.cities)
     ? [...new Set(raw.cities.map(text).filter(Boolean))].slice(0, 20)
     : defaultCareerTelegramSettings.cities;
+  const vacancies = Array.isArray(raw?.vacancies)
+    ? [...new Set(raw.vacancies.map(text).filter(Boolean))].slice(0, 30)
+    : defaultCareerTelegramSettings.vacancies;
   return {
     enabled: raw?.enabled === true,
     botToken: text(raw?.botToken),
@@ -36,6 +41,7 @@ export function normalizeCareerTelegramSettings(raw: Partial<CareerTelegramSetti
     publicBaseUrl: text(raw?.publicBaseUrl).replace(/\/+$/, ''),
     hrChatId: text(raw?.hrChatId),
     cities: cities.length ? cities : defaultCareerTelegramSettings.cities,
+    vacancies,
     updatedAt: text(raw?.updatedAt)
   };
 }

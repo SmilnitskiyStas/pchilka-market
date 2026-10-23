@@ -2,9 +2,11 @@ import { NextResponse } from 'next/server';
 
 import {
   countIncomingRequestsInDb,
+  getIncomingRequestByIdFromDb,
   listIncomingRequestsFromDb,
   updateIncomingRequestStatusInDb
 } from '@/lib/incoming-requests-repository';
+import { sendCareerTelegramCandidateMessage } from '@/lib/career-telegram-bot';
 import {
   isIncomingRequestStatus,
   isIncomingRequestType,
@@ -74,5 +76,26 @@ export async function PATCH(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown DB error';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse();
+  try {
+    const body = (await request.json()) as { id?: number; message?: string };
+    const id = Number(body.id);
+    const message = String(body.message ?? '').trim();
+    if (!Number.isFinite(id) || id <= 0 || !message || message.length > 4000) {
+      return NextResponse.json({ ok: false, error: 'Некоректне повідомлення.' }, { status: 400 });
+    }
+    const incomingRequest = await getIncomingRequestByIdFromDb(id);
+    const chatId = incomingRequest?.metadata?.telegramChatId;
+    if (incomingRequest?.requestType !== 'career_application' || incomingRequest.sourcePage !== 'telegram://career-bot' || typeof chatId !== 'string') {
+      return NextResponse.json({ ok: false, error: 'Для цієї заявки немає Telegram-чату кандидата.' }, { status: 400 });
+    }
+    await sendCareerTelegramCandidateMessage(chatId, message);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося надіслати повідомлення.' }, { status: 500 });
   }
 }

@@ -18,7 +18,9 @@ const menuKeyboard = { keyboard: [[{ text: 'Заповнити анкету' }]]
 function clean(value: string, max: number) { return value.trim().replace(/\s+/g, ' ').slice(0, max); }
 function phoneIsValid(value: string) { const length = value.replace(/\D/g, '').length; return length >= 10 && length <= 15; }
 
-function freshSession(chatId: string, userId: string, username: string): CareerTelegramSession { return { chatId, step: 'phone', phone: '', fullName: '', city: '', storeLabel: '', telegramUserId: userId, telegramUsername: username }; }
+function freshSession(chatId: string, userId: string, username: string): CareerTelegramSession { return { chatId, step: 'phone', phone: '', fullName: '', city: '', storeLabel: '', vacancy: '', telegramUserId: userId, telegramUsername: username }; }
+function phoneKeyboard() { return { keyboard: [[{ text: 'Поділитися телефоном', request_contact: true }], [{ text: 'Пропустити номер' }, { text: '❌ Скасувати' }]], resize_keyboard: true, one_time_keyboard: true }; }
+function vacanciesKeyboard(vacancies: string[]) { return { keyboard: [...vacancies.map((vacancy) => [{ text: vacancy }]), [{ text: '❌ Скасувати' }]], resize_keyboard: true, one_time_keyboard: true }; }
 
 export async function processCareerTelegramUpdate(update: TelegramUpdate) {
   const settings = await getCareerTelegramSettings();
@@ -41,15 +43,20 @@ export async function processCareerTelegramUpdate(update: TelegramUpdate) {
   }
   if (text === 'Заповнити анкету') {
     await saveCareerTelegramSession(freshSession(chatId, userId, username));
-    await message(settings.botToken, chatId, 'Поділіться телефоном і продовжимо 👇', { keyboard: [[{ text: 'Поділитися телефоном', request_contact: true }], [{ text: '❌ Скасувати' }]], resize_keyboard: true, one_time_keyboard: true });
+    await message(settings.botToken, chatId, 'Поділіться телефоном, або пропустіть цей крок — тоді ми зможемо відповісти вам лише тут, у Telegram 👇', phoneKeyboard());
     return { handled: 'phone-requested' };
   }
   const session = await getCareerTelegramSession(chatId);
   if (!session) { await message(settings.botToken, chatId, 'Оберіть дію 👇', menuKeyboard); return { handled: 'menu-reminder' }; }
   if (session.step === 'phone') {
     if (incoming?.contact?.user_id != null && userId && String(incoming.contact.user_id) !== userId) {
-      await message(settings.botToken, chatId, 'Надішліть, будь ласка, свій власний номер через кнопку нижче.', { keyboard: [[{ text: 'Поділитися телефоном', request_contact: true }], [{ text: '❌ Скасувати' }]], resize_keyboard: true });
+      await message(settings.botToken, chatId, 'Надішліть, будь ласка, свій власний номер через кнопку нижче.', phoneKeyboard());
       return { handled: 'foreign-contact' };
+    }
+    if (text === 'Пропустити номер') {
+      await saveCareerTelegramSession({ ...session, phone: '', step: 'full_name' });
+      await message(settings.botToken, chatId, "Прізвище, ім'я, по батькові", cancelKeyboard);
+      return { handled: 'phone-skipped' };
     }
     const phone = clean(incoming?.contact?.phone_number ?? text, 60);
     if (!phoneIsValid(phone)) { await message(settings.botToken, chatId, 'Будь ласка, надішліть номер через кнопку «Поділитися телефоном».', cancelKeyboard); return { handled: 'phone-invalid' }; }
@@ -76,18 +83,35 @@ export async function processCareerTelegramUpdate(update: TelegramUpdate) {
     await message(settings.botToken, chatId, 'Оберіть магазин, у якому бажаєте працювати', { keyboard: [...stores.map((store) => [{ text: store.label }]), [{ text: '❌ Скасувати' }]], resize_keyboard: true, one_time_keyboard: true });
     return { handled: 'store-requested' };
   }
-  const stores = await listCareerTelegramStores(session.city);
-  const selectedStore = stores.find((store) => store.label === text);
-  if (!selectedStore) { await message(settings.botToken, chatId, 'Оберіть, будь ласка, магазин кнопкою нижче.', { keyboard: [...stores.map((store) => [{ text: store.label }]), [{ text: '❌ Скасувати' }]], resize_keyboard: true }); return { handled: 'store-invalid' }; }
-  const storeLabel = `${selectedStore.name}${selectedStore.addressLine ? ` — ${selectedStore.addressLine}` : ''}`;
-  const created = await createIncomingRequestInDb({ requestType: 'career_application', fullName: session.fullName, phone: session.phone, city: session.city, targetStore: storeLabel, message: `Анкета з Telegram. Обраний магазин: ${storeLabel}.`, sourcePage: 'telegram://career-bot', metadata: { store: storeLabel, channel: 'telegram', telegramUserId: session.telegramUserId, telegramUsername: session.telegramUsername } });
+  if (session.step === 'store') {
+    const stores = await listCareerTelegramStores(session.city);
+    const selectedStore = stores.find((store) => store.label === text);
+    if (!selectedStore) { await message(settings.botToken, chatId, 'Оберіть, будь ласка, магазин кнопкою нижче.', { keyboard: [...stores.map((store) => [{ text: store.label }]), [{ text: '❌ Скасувати' }]], resize_keyboard: true }); return { handled: 'store-invalid' }; }
+    const storeLabel = `${selectedStore.name}${selectedStore.addressLine ? ` — ${selectedStore.addressLine}` : ''}`;
+    if (!settings.vacancies.length) { await message(settings.botToken, chatId, 'Наразі перелік вакансій оновлюється. Спробуйте, будь ласка, трохи пізніше.', menuKeyboard); await deleteCareerTelegramSession(chatId); return { handled: 'vacancies-missing' }; }
+    await saveCareerTelegramSession({ ...session, storeLabel, step: 'vacancy' });
+    await message(settings.botToken, chatId, 'Оберіть вакансію, яка вас цікавить', vacanciesKeyboard(settings.vacancies));
+    return { handled: 'vacancy-requested' };
+  }
+  const vacancy = settings.vacancies.find((item) => item === text);
+  if (!vacancy) { await message(settings.botToken, chatId, 'Оберіть, будь ласка, вакансію кнопкою нижче.', vacanciesKeyboard(settings.vacancies)); return { handled: 'vacancy-invalid' }; }
+  const created = await createIncomingRequestInDb({ requestType: 'career_application', fullName: session.fullName, phone: session.phone, city: session.city, vacancy, targetStore: session.storeLabel, message: `Анкета з Telegram. Обраний магазин: ${session.storeLabel}. Вакансія: ${vacancy}.`, sourcePage: 'telegram://career-bot', metadata: { store: session.storeLabel, vacancy, channel: 'telegram', telegramChatId: chatId, telegramUserId: session.telegramUserId, telegramUsername: session.telegramUsername, telegramContactAvailable: true } });
   await deleteCareerTelegramSession(chatId);
   if (settings.hrChatId) {
-    try { await message(settings.botToken, settings.hrChatId, `📩 Нова заявка #${created.id} з Telegram\n\nПІБ: ${session.fullName}\nТелефон: ${session.phone}\nМісто: ${session.city}\nМагазин: ${storeLabel}${session.telegramUsername ? `\nTelegram: @${session.telegramUsername}` : ''}`); }
+    try { await message(settings.botToken, settings.hrChatId, `📩 Нова заявка #${created.id} з Telegram\n\nПІБ: ${session.fullName}\nТелефон: ${session.phone || 'не вказано'}\nМісто: ${session.city}\nМагазин: ${session.storeLabel}\nВакансія: ${vacancy}\nЗв’язок у Telegram: доступний через бота${session.telegramUsername ? ` (@${session.telegramUsername})` : ''}`); }
     catch (error) { console.error('Could not send career application to HR chat:', error); }
   }
   await message(settings.botToken, chatId, 'Дякуємо за відповіді! Ми вам зателефонуємо найближчим часом.', menuKeyboard);
   return { handled: 'completed', requestId: created.id };
+}
+
+export async function sendCareerTelegramCandidateMessage(chatId: string, text: string) {
+  const settings = await getCareerTelegramSettings();
+  if (!settings.enabled || !settings.botToken) throw new Error('Бот вакансій не налаштований або вимкнений.');
+  const normalizedChatId = chatId.trim();
+  const normalizedText = clean(text, 4000);
+  if (!/^-?\d{5,20}$/.test(normalizedChatId) || !normalizedText) throw new Error('Некоректні дані для повідомлення кандидату.');
+  await message(settings.botToken, normalizedChatId, normalizedText);
 }
 
 export async function registerCareerTelegramWebhook() {
