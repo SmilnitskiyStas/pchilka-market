@@ -9,6 +9,8 @@ out
 .env.development.local
 .env.test.local
 .env.production.local
+.env.local-pos-archive
+config/loyalty-rule-sync.local.json
 .deploy.local.json
 .DS_Store
 .claude

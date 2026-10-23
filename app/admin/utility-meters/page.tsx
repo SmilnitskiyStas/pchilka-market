@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -62,6 +62,7 @@ type ConsumptionStatisticItem = {
 type ConsumptionStatisticsPayload = {
   ok?: boolean;
   items?: ConsumptionStatisticItem[];
+  history?: ConsumptionHistoryItem[];
   totals?: {
     meters: number;
     readings: number;
@@ -73,6 +74,10 @@ type ConsumptionStatisticsPayload = {
 
 type ConsumptionHistoryItem = {
   periodMonth: string;
+  utilityType?: UtilityType;
+  utilityLabel?: string;
+  storeId?: string;
+  storeLabel?: string;
   readings: number;
   consumption: number;
   amount: number;
@@ -311,6 +316,9 @@ export default function AdminUtilityMetersPage() {
   const [statisticsRegions, setStatisticsRegions] = useState<string[]>([]);
   const [statisticsPayload, setStatisticsPayload] = useState<ConsumptionStatisticsPayload>({});
   const [isLoadingStatistics, setIsLoadingStatistics] = useState(false);
+  const [statisticsChartUtilityType, setStatisticsChartUtilityType] = useState<UtilityType>('electricity_active');
+  const [statisticsChartStoreId, setStatisticsChartStoreId] = useState('');
+  const [isStatisticsChartOpen, setIsStatisticsChartOpen] = useState(false);
   const [selectedChartMeter, setSelectedChartMeter] = useState<ConsumptionStatisticItem | null>(null);
   const [chartPayload, setChartPayload] = useState<ConsumptionHistoryPayload>({});
   const [isLoadingChart, setIsLoadingChart] = useState(false);
@@ -341,6 +349,7 @@ export default function AdminUtilityMetersPage() {
   const [isLoadingRates, setIsLoadingRates] = useState(false);
   const reviewRequestId = useRef(0);
   const statisticsRequestId = useRef(0);
+  const statisticsStoreFilterRef = useRef<HTMLDetailsElement>(null);
 
   const monthInputValue = useMemo(() => periodMonth.slice(0, 7), [periodMonth]);
   const activeStores = useMemo(() => stores.filter((store) => store.isActive), [stores]);
@@ -360,6 +369,48 @@ export default function AdminUtilityMetersPage() {
   const hasConfiguredMeters = activeStoreMeters.length > 0;
   const hasRatesForSelectedPeriod = storeRates.length > 0;
   const missingReviewItems = useMemo(() => (payload.items ?? []).filter((item) => !item.reading), [payload.items]);
+  const statisticsByUtilityType = useMemo(() => {
+    const groups = new Map<UtilityType, { meters: number; readings: number; consumption: number; amount: number }>();
+    for (const item of statisticsPayload.items ?? []) {
+      const current = groups.get(item.utilityType) ?? { meters: 0, readings: 0, consumption: 0, amount: 0 };
+      current.meters += 1; current.readings += item.readings; current.consumption += item.consumption; current.amount += item.amount;
+      groups.set(item.utilityType, current);
+    }
+    return UTILITY_TYPE_OPTIONS.map((option) => ({ utilityType: option.value, label: option.label, ...(groups.get(option.value) ?? { meters: 0, readings: 0, consumption: 0, amount: 0 }) })).filter((item) => item.meters > 0);
+  }, [statisticsPayload.items]);
+  const statisticsHistoryOptions = useMemo(
+    () => UTILITY_TYPE_OPTIONS.filter((option) => (statisticsPayload.history ?? []).some((item) => item.utilityType === option.value)),
+    [statisticsPayload.history]
+  );
+  const activeStatisticsChartUtilityType = statisticsHistoryOptions.some((option) => option.value === statisticsChartUtilityType)
+    ? statisticsChartUtilityType
+    : statisticsHistoryOptions[0]?.value;
+  const statisticsChartStoreOptions = useMemo(() => {
+    const storesById = new Map<string, string>();
+    for (const item of statisticsPayload.history ?? []) {
+      if (item.storeId) storesById.set(item.storeId, item.storeLabel || `Магазин #${item.storeId}`);
+    }
+    return [...storesById.entries()].map(([id, label]) => ({ id, label })).sort((left, right) => left.label.localeCompare(right.label, 'uk'));
+  }, [statisticsPayload.history]);
+  const activeStatisticsChartStoreId = statisticsChartStoreOptions.some((store) => store.id === statisticsChartStoreId)
+    ? statisticsChartStoreId
+    : '';
+  const statisticsChartItems = useMemo(() => {
+    const byMonth = new Map<string, ConsumptionHistoryItem>();
+    for (const item of statisticsPayload.history ?? []) {
+      if (item.utilityType !== activeStatisticsChartUtilityType) continue;
+      if (activeStatisticsChartStoreId && item.storeId !== activeStatisticsChartStoreId) continue;
+      const current = byMonth.get(item.periodMonth) ?? { periodMonth: item.periodMonth, readings: 0, consumption: 0, amount: 0 };
+      current.readings += item.readings;
+      current.consumption += item.consumption;
+      current.amount += item.amount;
+      byMonth.set(item.periodMonth, current);
+    }
+    return [...byMonth.values()].sort((left, right) => left.periodMonth.localeCompare(right.periodMonth));
+  }, [statisticsPayload.history, activeStatisticsChartUtilityType, activeStatisticsChartStoreId]);
+  const statisticsChartMaximum = Math.max(...statisticsChartItems.map((item) => item.consumption), 0);
+  const statisticsChartScaleMaximum = statisticsChartMaximum || 1;
+  const statisticsChartPeak = statisticsChartItems.reduce<ConsumptionHistoryItem | null>((peak, item) => !peak || item.consumption > peak.consumption ? item : peak, null);
 
   async function loadStores() {
     try {
@@ -504,6 +555,7 @@ export default function AdminUtilityMetersPage() {
   }
 
   function applyStatisticsFilters() {
+    statisticsStoreFilterRef.current?.removeAttribute('open');
     const configurationStoreId = statisticsStoreIds.length === 1 ? statisticsStoreIds[0] : '';
     setPeriodMonth(statisticsPeriodTo);
     setSelectedStoreId(configurationStoreId);
@@ -841,7 +893,7 @@ export default function AdminUtilityMetersPage() {
             </label>
               </div>
 
-            <details className="relative min-w-64 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700">
+            <details ref={statisticsStoreFilterRef} className="relative min-w-64 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700">
               <summary className="cursor-pointer font-semibold">Магазини та регіони: {statisticsStoreIds.length ? `обрано ${statisticsStoreIds.length}` : 'усі магазини'}</summary>
               <div className="absolute left-0 z-20 mt-3 w-[min(34rem,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
                 <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
@@ -959,8 +1011,8 @@ export default function AdminUtilityMetersPage() {
           <div className="rounded-lg bg-red-50 p-4 text-sm font-medium text-red-800 ring-1 ring-red-200">{payload.error}</div>
         ) : null}
 
-        <section className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-          <div className="hidden flex-wrap items-start justify-between gap-3">
+        <section id="analytics" className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-sm text-slate-500">Аналітика</div>
               <h2 className="mt-1 text-xl font-bold">Статистика споживання</h2>
@@ -1045,6 +1097,25 @@ export default function AdminUtilityMetersPage() {
           {statisticsPayload.error ? <div className="mt-4 rounded-md bg-red-50 p-3 text-sm font-medium text-red-800 ring-1 ring-red-200">{statisticsPayload.error}</div> : null}
           {statisticsPayload.totals ? (
             <>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  ['Лічильників', statisticsPayload.totals.meters], ['Показань', statisticsPayload.totals.readings], ['Споживання', number(statisticsPayload.totals.consumption)], ['Нараховано, грн', money(statisticsPayload.totals.amount)]
+                ].map(([label, value]) => <div key={String(label)} className="rounded-md bg-slate-50 p-3 ring-1 ring-slate-200"><div className="text-sm text-slate-500">{label}</div><div className="mt-1 text-xl font-bold tabular-nums">{value}</div></div>)}
+              </div>
+              {statisticsHistoryOptions.length > 0 ? (
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 p-4">
+                  <div>
+                    <h3 className="font-bold text-slate-950">Помісячне споживання</h3>
+                    <p className="mt-1 text-sm text-slate-600">Відкрийте графік, щоб порівняти місяці та побачити найбільше споживання.</p>
+                  </div>
+                  <button type="button" onClick={() => setIsStatisticsChartOpen(true)} className="rounded-md bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Відкрити графік</button>
+                </div>
+              ) : null}              <div className="mt-4 overflow-x-auto rounded-md border border-slate-200">
+                <table className="min-w-[760px] w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-3 py-3">Тип лічильника</th><th className="px-3 py-3 text-right">Лічильників</th><th className="px-3 py-3 text-right">Показань</th><th className="px-3 py-3 text-right">Споживання</th><th className="px-3 py-3 text-right">Нараховано, грн</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">{statisticsByUtilityType.map((item) => <tr key={item.utilityType}><td className="px-3 py-3 font-medium">{item.label}</td><td className="px-3 py-3 text-right tabular-nums">{item.meters}</td><td className="px-3 py-3 text-right tabular-nums">{item.readings}</td><td className="px-3 py-3 text-right tabular-nums">{number(item.consumption)}</td><td className="px-3 py-3 text-right tabular-nums">{money(item.amount)}</td></tr>)}</tbody>
+                </table>
+              </div>
               <div className="mt-4 overflow-x-auto rounded-md border border-slate-200">
                 <table className="min-w-[940px] w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-3 py-3">Регіон / магазин</th><th className="px-3 py-3">Лічильник</th><th className="px-3 py-3">Періодів</th><th className="px-3 py-3">Поточний показник</th><th className="px-3 py-3">Споживання</th><th className="px-3 py-3">Сума</th><th className="px-3 py-3">Графік</th></tr></thead>
@@ -1534,7 +1605,50 @@ export default function AdminUtilityMetersPage() {
           </section>
         </div>
       ) : null}
-      {selectedChartMeter ? (
+      {isStatisticsChartOpen && statisticsHistoryOptions.length > 0 ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="utility-statistics-chart-title" onMouseDown={() => setIsStatisticsChartOpen(false)}>
+          <section className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-sm text-slate-500">Аналітика за період {periodLabel(statisticsPeriodFrom)} — {periodLabel(statisticsPeriodTo)}</p>
+                <h2 id="utility-statistics-chart-title" className="mt-1 text-xl font-bold">Помісячне споживання</h2>
+                <p className="mt-1 text-sm text-slate-600">Оберіть тип лічильника — різні одиниці виміру не змішуються на одному графіку.</p>
+              </div>
+              <button type="button" onClick={() => setIsStatisticsChartOpen(false)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800">Закрити</button>
+            </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-semibold text-slate-700">Тип лічильника
+                <select value={activeStatisticsChartUtilityType ?? ''} onChange={(event) => setStatisticsChartUtilityType(event.target.value as UtilityType)} className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-normal">
+                  {statisticsHistoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm font-semibold text-slate-700">Магазин
+                <select value={activeStatisticsChartStoreId} onChange={(event) => setStatisticsChartStoreId(event.target.value)} className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-normal">
+                  <option value="">Усі магазини</option>
+                  {statisticsChartStoreOptions.map((store) => <option key={store.id} value={store.id}>{store.label}</option>)}
+                </select>
+              </label>
+            </div>
+            {statisticsChartPeak ? <div className="mt-4 inline-flex rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-950 ring-1 ring-amber-200">Найбільше: <span className="ml-1 font-bold">{periodLabel(statisticsChartPeak.periodMonth)} — {number(statisticsChartPeak.consumption)}</span></div> : null}
+            <div className="mt-5 overflow-x-auto">
+              <svg viewBox={`0 0 ${Math.max(640, statisticsChartItems.length * 92)} 280`} className="h-auto min-w-[640px] w-full" role="img" aria-label="Помісячний графік споживання">
+                <line x1="54" x2={Math.max(600, statisticsChartItems.length * 92 - 14)} y1="36" y2="36" stroke="#cbd5e1" strokeWidth="1" />
+                <line x1="54" x2={Math.max(600, statisticsChartItems.length * 92 - 14)} y1="126" y2="126" stroke="#e2e8f0" strokeWidth="1" />
+                <line x1="54" x2={Math.max(600, statisticsChartItems.length * 92 - 14)} y1="216" y2="216" stroke="#94a3b8" strokeWidth="1" />
+                <text x="48" y="40" textAnchor="end" fontSize="11" fill="#475569">{number(statisticsChartMaximum)}</text>
+                <text x="48" y="130" textAnchor="end" fontSize="11" fill="#475569">{number(statisticsChartMaximum / 2)}</text>
+                <text x="48" y="220" textAnchor="end" fontSize="11" fill="#475569">0</text>
+                {statisticsChartItems.map((item, index) => {
+                  const x = 72 + index * 92;
+                  const height = (item.consumption / statisticsChartScaleMaximum) * 180;
+                  const y = 216 - height;
+                  return <g key={`${item.utilityType}:${item.periodMonth}`}><rect x={x} y={y} width="46" height={height} rx="4" fill="#d97706"><title>{periodLabel(item.periodMonth)}: {number(item.consumption)}</title></rect><text x={x + 23} y="238" textAnchor="middle" fontSize="11" fill="#475569">{periodLabel(item.periodMonth)}</text><text x={x + 23} y={Math.max(28, y - 7)} textAnchor="middle" fontSize="11" fill="#92400e">{number(item.consumption)}</text></g>;
+                })}
+              </svg>
+            </div>
+          </section>
+        </div>
+      ) : null}      {selectedChartMeter ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-labelledby="meter-consumption-chart-title" onMouseDown={() => setSelectedChartMeter(null)}>
           <section className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl" onMouseDown={(event) => event.stopPropagation()}>
             <div className="flex items-start justify-between gap-4">

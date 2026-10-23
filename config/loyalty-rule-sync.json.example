@@ -1,0 +1,18 @@
+{
+  "sourceDatabase": {
+    "host": "192.168.100.200",
+    "port": 5432,
+    "database": "dbmain",
+    "user": "CHANGE_ME",
+    "password": "CHANGE_ME"
+  },
+  "target": {
+    "url": "https://pchilka-new.eatshock.com/api/analytics/loyalty-rules/ingest",
+    "secret": "CHANGE_ME"
+  },
+  "sync": {
+    "rules": [836, 838],
+    "lookbackDays": 2,
+    "batchSize": 1000
+  }
+}

@@ -93,7 +93,7 @@ export default async function OurStoresPage() {
   const profile = await getSiteProfileFromDb().catch(() => null);
 
   return (
-    <main className="mx-auto min-h-screen max-w-6xl px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <main className="site-container min-h-screen px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <section className="rounded-3xl border border-brand/25 bg-white/95 p-4 shadow-sm sm:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Про мережу</p>
         <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl lg:text-4xl">{profile?.storesPageTitle || 'Наші магазини'}</h1>

@@ -125,7 +125,7 @@ function LoginPageContent() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
+    <main className="site-container flex min-h-screen items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
       <section className="w-full max-w-md rounded-3xl border border-brand/25 bg-white p-5 shadow-sm sm:p-7">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Admin</p>
         <h1 className="mt-2 text-2xl font-bold text-slate-900">Безпечний вхід в адмін-панель</h1>
@@ -303,7 +303,7 @@ function LoginPageContent() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<main className="mx-auto min-h-screen max-w-6xl px-4 py-8" />}>
+    <Suspense fallback={<main className="site-container min-h-screen px-4 py-8" />}>
       <LoginPageContent />
     </Suspense>
   );

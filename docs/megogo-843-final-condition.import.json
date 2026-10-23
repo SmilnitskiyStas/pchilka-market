@@ -1,0 +1,11 @@
+[
+  "// Rule 843: code is printed only after a successful payment.\n",
+  "// The amount is the final total of the receipt after other discounts.\n",
+  "if (check.state != 2) return false\n",
+  "\n",
+  "def total = check.orderClient.sum_order ?: 0\n",
+  "def loyaltyCode = check.orderClient.interimData['uployalCode']?.toString()?.trim()\n",
+  "\n",
+  "// The customer must be a Uployal loyalty-program participant.\n",
+  "return total >= 500 && loyaltyCode"
+]

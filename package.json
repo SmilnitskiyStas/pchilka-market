@@ -10,6 +10,8 @@
     "deploy:sync": "powershell -ExecutionPolicy Bypass -File scripts/deploy-sync.ps1",
     "inventory:notify": "node run-inventory-notifications.cjs",
     "analytics:archive-pos": "node run-pos-archive.cjs",
+    "analytics:shock-price": "node scripts/build-shock-price-summary.mjs",
+    "analytics:shock-price:check": "node scripts/check-shock-price-summary.mjs",
     "utility-meters:import": "node scripts/import-utility-meters-from-xlsx.mjs",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
@@ -26,7 +28,8 @@
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-pageflip": "^2.0.3",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "@types/node": "22.10.5",

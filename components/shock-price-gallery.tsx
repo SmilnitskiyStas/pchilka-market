@@ -100,7 +100,7 @@ export default function ShockPriceGallery({ images, settings }: ShockPriceGaller
           role="dialog"
           aria-modal="true"
         >
-          <div className="relative w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
+          <div className="site-container relative" onClick={(event) => event.stopPropagation()}>
             <button
               type="button"
               onClick={() => setActiveIndex(null)}

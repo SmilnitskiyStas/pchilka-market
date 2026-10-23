@@ -23,7 +23,7 @@ export default async function SiteFooter() {
 
   return (
     <footer className="mt-12 border-t border-brand/25 bg-gradient-to-b from-slate-300/40 via-slate-200/35 to-brand/10 shadow-[inset_0_1px_0_rgba(15,23,42,0.08)]">
-      <div className="mx-auto max-w-6xl px-3 py-8 sm:px-6 lg:px-8">
+      <div className="site-container px-3 py-8 sm:px-6 lg:px-8">
         <div className="grid gap-6 md:grid-cols-3">
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <h2 className="text-base font-bold text-slate-900">{profile.companyName}</h2>

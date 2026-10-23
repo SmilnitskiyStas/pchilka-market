@@ -2010,3 +2010,95 @@ export async function updateUtilityMeterReadingInDb(input: {
     conn.release();
   }
 }
+
+export type UtilityMeterConsumptionHistoryByTypeItem = UtilityMeterConsumptionHistoryItem & {
+  utilityType: UtilityType;
+  utilityLabel: string;
+  storeId: string;
+  storeLabel: string;
+};
+
+export async function listUtilityMeterConsumptionHistoryByTypeInDb(input: {
+  periodFrom: string;
+  periodTo: string;
+  storeIds?: Array<string | number>;
+  regions?: string[];
+}): Promise<UtilityMeterConsumptionHistoryByTypeItem[]> {
+  await ensureUtilityMeteringSchema();
+  const pool = getDbPool();
+  const storeIds = (input.storeIds ?? [])
+    .map((value) => Number(value))
+    .filter((value, index, list) => Number.isFinite(value) && value > 0 && list.indexOf(value) === index);
+  const regions = [...new Set((input.regions ?? []).map((value) => value.trim()).filter(Boolean))];
+  const filters: string[] = [];
+  const params: Array<string | number> = [input.periodFrom, input.periodTo];
+
+  if (storeIds.length > 0) {
+    filters.push(`p.store_id IN (${storeIds.map(() => '?').join(', ')})`);
+    params.push(...storeIds);
+  }
+  if (regions.length > 0) {
+    filters.push(`s.region IN (${regions.map(() => '?').join(', ')})`);
+    params.push(...regions);
+  }
+
+  const [rows] = await pool.query<Array<RowDataPacket & {
+    period_month: Date | string;
+    utility_type: UtilityType;
+    utility_label: string;
+    store_id: number;
+    store_code: string | null;
+    store_label: string | null;
+    readings: string | number;
+    consumption: string | number;
+    amount: string | number;
+  }>>(
+    `
+      SELECT
+        r.period_month,
+        p.utility_type,
+        p.utility_label,
+        p.store_id,
+        p.store_code,
+        p.store_label,
+        COUNT(r.id) AS readings,
+        COALESCE(SUM(c.consumption), 0) AS consumption,
+        COALESCE(SUM(c.amount), 0) AS amount
+      FROM utility_meter_readings r
+      INNER JOIN utility_meter_charges c ON c.reading_id = r.id
+      INNER JOIN utility_meter_points p ON p.id = r.meter_point_id
+      LEFT JOIN stores s ON s.id = p.store_id
+      WHERE r.period_month BETWEEN ? AND ?
+        ${filters.length > 0 ? `AND ${filters.join(' AND ')}` : ''}
+      GROUP BY r.period_month, p.utility_type, p.utility_label, p.store_id, p.store_code, p.store_label
+      ORDER BY r.period_month ASC, p.utility_type ASC, p.store_code ASC, p.utility_label ASC
+    `,
+    params
+  );
+
+  const byMonthAndType = new Map<string, UtilityMeterConsumptionHistoryByTypeItem>();
+  for (const row of rows) {
+    const periodMonth = toIsoDate(row.period_month);
+    const key = `${periodMonth}:${row.utility_type}:${row.store_id}`;
+    const current = byMonthAndType.get(key) ?? {
+      periodMonth,
+      utilityType: row.utility_type,
+      utilityLabel: row.utility_label,
+      storeId: String(row.store_id),
+      storeLabel: [row.store_code, row.store_label].filter(Boolean).join(' · ') || `Магазин #${row.store_id}`,
+      readings: 0,
+      consumption: 0,
+      amount: 0
+    };
+    current.readings += Number(row.readings) || 0;
+    current.consumption += Number(row.consumption) || 0;
+    current.amount += Number(row.amount) || 0;
+    byMonthAndType.set(key, current);
+  }
+
+  return [...byMonthAndType.values()].map((item) => ({
+    ...item,
+    consumption: Math.round(item.consumption * 10000) / 10000,
+    amount: Math.round(item.amount * 100) / 100
+  }));
+}

@@ -1,0 +1,11 @@
+[
+  "// Тимчасовий тест: лише вказаний учасник Uployal; один код визначається сервером.",
+  "\n",
+  "if (check.state != 2) return false",
+  "\n",
+  "def total = check.orderClient.sum_order ?: 0",
+  "\n",
+  "def loyaltyCode = check.orderClient.interimData['uployalCode']?.toString()?.trim()",
+  "\n",
+  "return total >= 1 && loyaltyCode == '9967696506883'"
+]

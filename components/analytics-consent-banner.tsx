@@ -21,7 +21,7 @@ export default function AnalyticsConsentBanner() {
 
   return (
     <div className="fixed inset-x-0 bottom-3 z-[250] px-3 sm:bottom-4 sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:flex-row sm:items-center sm:justify-between">
+      <div className="site-container flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-700">
           Ми використовуємо аналітичні cookie для покращення роботи сайту. Дозволити збір аналітичних даних?
         </p>

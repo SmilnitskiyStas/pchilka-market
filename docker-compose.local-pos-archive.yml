@@ -1,0 +1,15 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: pchilka-local-pos-analytics
+    restart: unless-stopped
+    env_file:
+      - .env.local-pos-archive
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - D:/PchilkaPosAnalytics/mysql:/var/lib/mysql
+      - ./docs/sql/037_create_local_pos_analytics_archive.sql:/docker-entrypoint-initdb.d/037_schema.sql:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci

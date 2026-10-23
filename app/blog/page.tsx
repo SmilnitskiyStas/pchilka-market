@@ -15,7 +15,7 @@ export default function BlogPage() {
   const staticSlugs = blogPosts.map((post) => post.slug);
 
   return (
-    <main className="mx-auto min-h-screen max-w-6xl px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <main className="site-container min-h-screen px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <section className="rounded-3xl border border-brand/25 bg-white/95 p-4 shadow-sm sm:p-8">
         <div className="mb-6">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Блог</p>

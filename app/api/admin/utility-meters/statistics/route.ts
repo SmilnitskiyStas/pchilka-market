@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { listUtilityMeterConsumptionStatisticsInDb } from '@/lib/utility-metering-repository';
+import { listUtilityMeterConsumptionHistoryByTypeInDb, listUtilityMeterConsumptionStatisticsInDb } from '@/lib/utility-metering-repository';
 
 export const runtime = 'nodejs';
 
@@ -19,6 +19,7 @@ export async function GET(request: Request) {
     }
 
     const items = await listUtilityMeterConsumptionStatisticsInDb({ periodFrom, periodTo, storeIds, regions });
+    const history = await listUtilityMeterConsumptionHistoryByTypeInDb({ periodFrom, periodTo, storeIds, regions });
     const totals = items.reduce(
       (acc, item) => ({
         meters: acc.meters + 1,
@@ -32,6 +33,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       ok: true,
       items,
+      history,
       totals: {
         ...totals,
         consumption: Math.round(totals.consumption * 10000) / 10000,

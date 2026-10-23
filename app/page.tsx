@@ -154,7 +154,7 @@ export default async function HomePage() {
   ];
 
   return (
-    <main className="mx-auto min-h-screen max-w-6xl px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <main className="site-container min-h-screen px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <BannerCarousel slides={bannerSlides} intervalMs={4000} />
 
       <section className="mt-6 rounded-3xl border border-brand/25 bg-white/95 p-5 shadow-sm sm:mt-8 sm:p-8">

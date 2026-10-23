@@ -463,7 +463,7 @@ export default function SiteHeader() {
   return (
     <>
     <header className="relative z-[120] border-b border-brand/20 bg-white/90 backdrop-blur">
-      <div className="mx-auto max-w-6xl px-3 py-3 sm:px-6 lg:px-8">
+      <div className="site-container px-3 py-3 sm:px-6 lg:px-8">
         <nav className="relative z-[130] rounded-2xl border border-brand/30 bg-white p-3 shadow-sm sm:p-4">
           <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-3 sm:gap-4">
             <Link href="/" className="flex items-center">
