@@ -7,6 +7,7 @@ import {
   type SuspiciousInventoryExpiryDate
 } from '@/lib/inventory-expiry-date-rules';
 import { normalizeInventoryBarcode, type InventoryProductInput } from '@/lib/inventory-product-types';
+import { canManageInventoryUsers, type InventoryUserRole } from '@/lib/inventory-user-roles';
 import {
   getInventoryScannerCameraErrorMessage,
   INVENTORY_SCANNER_TIMEOUT_MS,
@@ -44,7 +45,7 @@ type IntakeContextPayload = {
     name: string;
     surname: string;
     positionTitle?: string;
-    role: string;
+    role: InventoryUserRole;
     storeId: string;
     storeLabel: string;
   };
@@ -282,7 +283,7 @@ function DateInputField({ label, value, onChange, placeholder, hint }: DateInput
 export default function InventoryIntakePage() {
   const [token, setToken] = useState('');
   const [userName, setUserName] = useState('');
-  const [userRole, setUserRole] = useState('staff');
+  const [userRole, setUserRole] = useState<InventoryUserRole>('staff');
   const [storeLabel, setStoreLabel] = useState('');
   const [products, setProducts] = useState<ProductView[]>([]);
   const [productSearchResults, setProductSearchResults] = useState<ProductView[]>([]);
@@ -1191,7 +1192,17 @@ export default function InventoryIntakePage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
       <section className="w-full max-w-3xl rounded-3xl border border-brand/20 bg-white p-5 shadow-sm sm:p-7">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory</p>
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Inventory</p>
+          {canManageInventoryUsers(userRole) ? (
+            <a
+              href={`/inventory/manage?token=${encodeURIComponent(token)}`}
+              className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5"
+            >
+              Admin
+            </a>
+          ) : null}
+        </div>
         <h1 className="mt-2 text-2xl font-bold text-slate-900">Нова партія товару</h1>
         <p className="mt-2 text-sm text-slate-600">
           Форма відкрита з Telegram. Партія буде записана у ваш магазин і прив'язана до вашого облікового запису.
