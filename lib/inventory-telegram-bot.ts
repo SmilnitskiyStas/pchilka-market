@@ -113,11 +113,11 @@ export async function processInventoryTelegramUpdate(update: TelegramUpdate) {
       return { handled: true, reason: 'meters_user_not_available' as const };
     }
 
-    if (existingUser.role !== 'store_manager') {
+    if (!['manager', 'store_manager', 'admin'].includes(existingUser.role)) {
       await sendInventoryTelegramMessage({
         botToken: settings.botToken,
         chatId,
-        text: 'Тестовий доступ до показників лічильників поки що відкритий лише для керівників магазинів.'
+        text: 'Доступ до показників лічильників доступний менеджерам, керівникам магазинів і адміністраторам.'
       });
       return { handled: true, reason: 'meters_access_denied' as const };
     }
