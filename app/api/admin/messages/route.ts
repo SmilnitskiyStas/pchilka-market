@@ -24,6 +24,7 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
+  const idRaw = url.searchParams.get('id');
   const statusRaw = url.searchParams.get('status');
   const typeRaw = url.searchParams.get('type');
   const query = (url.searchParams.get('q') ?? '').trim();
@@ -34,6 +35,13 @@ export async function GET(request: Request) {
   const limit = Number.isFinite(limitRaw) ? limitRaw : 300;
 
   try {
+    if (idRaw) {
+      const requestId = Number(idRaw);
+      if (!Number.isInteger(requestId) || requestId <= 0) return NextResponse.json({ ok: false, error: 'Invalid id.' }, { status: 400 });
+      const incomingRequest = await getIncomingRequestByIdFromDb(requestId);
+      if (!incomingRequest) return NextResponse.json({ ok: false, error: 'Request not found.' }, { status: 404 });
+      return NextResponse.json({ ok: true, request: incomingRequest });
+    }
     const [requests, unprocessedCount] = await Promise.all([
       listIncomingRequestsFromDb({
         status,

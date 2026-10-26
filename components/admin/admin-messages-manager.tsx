@@ -1,5 +1,6 @@
 ﻿'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -327,13 +328,12 @@ export default function AdminMessagesManager() {
                     </select>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => { setSelectedRequest(item); setTelegramReply(''); setTelegramConversation([]); }}
+                  <Link
+                    href={`/admin/messages/${encodeURIComponent(item.id)}`}
                     className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-brand hover:text-brand"
                   >
-                    Відкрити
-                  </button>
+                    Відкрити сторінку
+                  </Link>
                 </div>
               </li>
             ))}
