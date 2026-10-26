@@ -685,7 +685,7 @@ async function upsertSaleImportRow(
         sale_source,
         external_sale_id,
         file_name,
-        row_number,
+        \`row_number\`,
         store_label,
         cash_register,
         receipt_number,
@@ -706,7 +706,7 @@ async function upsertSaleImportRow(
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         file_name = VALUES(file_name),
-        row_number = VALUES(row_number),
+        \`row_number\` = VALUES(\`row_number\`),
         store_label = VALUES(store_label),
         cash_register = VALUES(cash_register),
         receipt_number = VALUES(receipt_number),
