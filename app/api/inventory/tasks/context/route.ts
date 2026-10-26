@@ -17,13 +17,14 @@ function isTaskVisibleForUser(task: RouteTaskView, userId: number, role: string,
 
   const effectiveAssigneeId = Number(task.assignedUserId ?? task.responsibleUserId ?? 0);
   const isPersonalTaskForUser = effectiveAssigneeId > 0 && effectiveAssigneeId === userId;
+  const isSharedTask = task.assignedUserId == null;
 
   if (mode === 'shared') {
     return task.taskAssignmentMode === 'shared';
   }
 
   if (mode === 'hybrid') {
-    return task.taskAssignmentMode === 'shared' || isPersonalTaskForUser;
+    return isSharedTask || isPersonalTaskForUser;
   }
 
   return isPersonalTaskForUser;

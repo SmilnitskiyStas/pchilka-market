@@ -25,7 +25,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Завдання не знайдено для цього магазину.' }, { status: 404 });
     }
 
-    if (task.taskAssignmentMode !== 'shared' && !canManageInventoryUsers(user.role)) {
+    const isSharedTask = task.taskAssignmentMode === 'shared' || (task.taskAssignmentMode === 'hybrid' && !task.assignedUserId);
+    if (!isSharedTask && !canManageInventoryUsers(user.role)) {
       return NextResponse.json({ ok: false, error: 'Це завдання не потребує ручного взяття в роботу.' }, { status: 400 });
     }
 

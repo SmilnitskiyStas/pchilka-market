@@ -6,7 +6,6 @@ import {
 import { createInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { sendInventoryTelegramMessage } from '@/lib/inventory-telegram-api';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
-import { type InventoryUserRole } from '@/lib/inventory-user-roles';
 import { listInventoryUsersFromDb, type InventoryUserRecord } from '@/lib/inventory-users-repository';
 
 function buildInventoryTasksUrl(baseUrl: string, token: string, notificationId?: number | null) {
@@ -16,10 +15,6 @@ function buildInventoryTasksUrl(baseUrl: string, token: string, notificationId?:
     url.searchParams.set('notificationId', String(notificationId));
   }
   return url.toString();
-}
-
-function rolePriority(role: InventoryUserRole) {
-  return role === 'admin' || role === 'store_manager' || role === 'manager' ? 0 : 1;
 }
 
 function normalizePositiveNumber(value: number | string | null | undefined) {
@@ -32,7 +27,7 @@ function normalizeRecipients(users: InventoryUserRecord[]) {
   const seen = new Set<number>();
   return [...users]
     .filter((user) => user.isActive && Boolean(user.userChatId))
-    .sort((a, b) => rolePriority(a.role) - rolePriority(b.role) || a.id - b.id)
+    .sort((a, b) => a.id - b.id)
     .filter((user) => {
       if (seen.has(user.id)) return false;
       seen.add(user.id);
@@ -41,18 +36,13 @@ function normalizeRecipients(users: InventoryUserRecord[]) {
 }
 
 function recipientsForTask(task: InventoryExpiryNotificationCandidate, users: InventoryUserRecord[]) {
-  const managers = users.filter((user) => rolePriority(user.role) === 0);
-  const responsibleUsers = users.filter((user) => user.id === task.responsibleUserId);
-
-  if (task.taskAssignmentMode === 'shared') {
+  // A shared task has not been taken by an employee yet. In the mixed mode
+  // this is used for critical products; all other tasks retain an assignee.
+  if (!task.assignedUserId) {
     return normalizeRecipients(users);
   }
 
-  if (task.taskAssignmentMode === 'hybrid') {
-    return normalizeRecipients([...users.filter((user) => rolePriority(user.role) === 1), ...managers]);
-  }
-
-  return normalizeRecipients([...responsibleUsers, ...managers]);
+  return normalizeRecipients(users.filter((user) => user.id === task.assignedUserId));
 }
 
 type RecipientDigest = {

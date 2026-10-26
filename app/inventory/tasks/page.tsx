@@ -437,7 +437,7 @@ export default function InventoryTasksPage() {
                   <div className="mt-4 space-y-3">
                     {filteredActiveTasks.map((task) => {
                       const isManagerView = canManageInventoryUsers(currentUserRole);
-                      const isSharedTask = task.taskAssignmentMode === 'shared';
+                      const isSharedTask = task.taskAssignmentMode === 'shared' || (task.taskAssignmentMode === 'hybrid' && !task.assignedUserId);
                       const isTakenByCurrentUser = Number(task.assignedUserId ?? 0) === Number(currentUserId);
                       const isTakenByAnotherUser =
                         Number(task.assignedUserId ?? 0) > 0 && Number(task.assignedUserId ?? 0) !== Number(currentUserId);

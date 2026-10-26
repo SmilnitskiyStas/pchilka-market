@@ -202,7 +202,7 @@ function getTaskAssignmentModeForBatch(
 ) {
   if (storeMode === 'shared') return 'shared';
   if (storeMode === 'hybrid') {
-    return riskLevel === 'critical' || riskLevel === 'high' ? 'personal' : 'shared';
+    return riskLevel === 'critical' ? 'shared' : 'personal';
   }
   return 'personal';
 }

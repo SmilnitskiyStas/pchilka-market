@@ -47,7 +47,8 @@ export async function GET(request: Request) {
       }
 
       if (!canManageInventoryUsers(user.role)) {
-        if (task.taskAssignmentMode === 'shared') {
+        const isSharedTask = task.taskAssignmentMode === 'shared' || (task.taskAssignmentMode === 'hybrid' && !task.assignedUserId);
+        if (isSharedTask) {
           if (task.assignedUserId && Number(task.assignedUserId) !== Number(user.id)) {
             return NextResponse.json({ ok: false, error: 'Цю задачу вже взяв у роботу інший працівник.' }, { status: 409 });
           }
