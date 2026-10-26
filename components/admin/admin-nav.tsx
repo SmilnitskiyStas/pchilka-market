@@ -127,7 +127,6 @@ export default function AdminNav() {
       {
         label: 'Маркетинг',
         children: [
-          { href: '/admin/marketing/rfm', label: 'RFM-аналіз' },
           { href: '/admin/marketing/loyalty-rule-analytics', label: 'Аналітика правил' },
           { href: '/admin/marketing/megogo-codes', label: 'Коди MEGOGO' },
           { href: '/admin/promotions', label: 'Акції' },
