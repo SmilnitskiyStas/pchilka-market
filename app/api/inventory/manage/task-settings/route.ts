@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { canManageInventoryTaskMode } from '@/lib/inventory-user-roles';
+import { syncInventoryExpiryTasksInDb } from '@/lib/inventory-expiry-tasks-repository';
 import { parseInventoryRegistrationToken } from '@/lib/inventory-registration-token';
 import { getInventoryTelegramSettingsFromDb } from '@/lib/inventory-telegram-settings-repository';
 import { findInventoryUserByChatId } from '@/lib/inventory-users-repository';
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
       storeId: actingUser.storeId,
       taskAssignmentMode: nextMode as InventoryTaskAssignmentMode
     });
+    await syncInventoryExpiryTasksInDb();
 
     const store = await findStoreByIdInDb(actingUser.storeId);
 
