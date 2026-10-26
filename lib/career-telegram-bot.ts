@@ -1,6 +1,7 @@
 import { createIncomingRequestInDb } from '@/lib/incoming-requests-repository';
 import { getCareerTelegramSettings, listCareerTelegramCities, listCareerTelegramStores } from '@/lib/career-telegram-settings-repository';
 import { deleteCareerTelegramSession, getCareerTelegramSession, saveCareerTelegramSession, type CareerTelegramSession } from '@/lib/career-telegram-sessions-repository';
+import { addCareerTelegramMessage, findLatestCareerTelegramRequestId } from '@/lib/career-telegram-messages-repository';
 
 type TelegramMessage = { chat?: { id?: number | string }; from?: { id?: number | string; username?: string }; text?: string; contact?: { phone_number?: string; user_id?: number | string } };
 type TelegramUpdate = { message?: TelegramMessage };
@@ -47,7 +48,16 @@ export async function processCareerTelegramUpdate(update: TelegramUpdate) {
     return { handled: 'phone-requested' };
   }
   const session = await getCareerTelegramSession(chatId);
-  if (!session) { await message(settings.botToken, chatId, 'Оберіть дію 👇', menuKeyboard); return { handled: 'menu-reminder' }; }
+  if (!session) {
+    const requestId = text ? await findLatestCareerTelegramRequestId(chatId) : null;
+    if (requestId) {
+      await addCareerTelegramMessage({ requestId, chatId, direction: 'incoming', text });
+      await message(settings.botToken, chatId, 'Дякуємо, HR отримав ваше повідомлення та відповість тут у Telegram.', menuKeyboard);
+      return { handled: 'candidate-message', requestId };
+    }
+    await message(settings.botToken, chatId, 'Оберіть дію 👇', menuKeyboard);
+    return { handled: 'menu-reminder' };
+  }
   if (session.step === 'phone') {
     if (incoming?.contact?.user_id != null && userId && String(incoming.contact.user_id) !== userId) {
       await message(settings.botToken, chatId, 'Надішліть, будь ласка, свій власний номер через кнопку нижче.', phoneKeyboard());
@@ -96,6 +106,7 @@ export async function processCareerTelegramUpdate(update: TelegramUpdate) {
   const vacancy = settings.vacancies.find((item) => item === text);
   if (!vacancy) { await message(settings.botToken, chatId, 'Оберіть, будь ласка, вакансію кнопкою нижче.', vacanciesKeyboard(settings.vacancies)); return { handled: 'vacancy-invalid' }; }
   const created = await createIncomingRequestInDb({ requestType: 'career_application', fullName: session.fullName, phone: session.phone, city: session.city, vacancy, targetStore: session.storeLabel, message: `Анкета з Telegram. Обраний магазин: ${session.storeLabel}. Вакансія: ${vacancy}.`, sourcePage: 'telegram://career-bot', metadata: { store: session.storeLabel, vacancy, channel: 'telegram', telegramChatId: chatId, telegramUserId: session.telegramUserId, telegramUsername: session.telegramUsername, telegramContactAvailable: true } });
+  await addCareerTelegramMessage({ requestId: created.id, chatId, direction: 'outgoing', text: 'Дякуємо за відповіді! Ми вам зателефонуємо найближчим часом.' });
   await deleteCareerTelegramSession(chatId);
   if (settings.hrChatId) {
     try { await message(settings.botToken, settings.hrChatId, `📩 Нова заявка #${created.id} з Telegram\n\nПІБ: ${session.fullName}\nТелефон: ${session.phone || 'не вказано'}\nМісто: ${session.city}\nМагазин: ${session.storeLabel}\nВакансія: ${vacancy}\nЗв’язок у Telegram: доступний через бота${session.telegramUsername ? ` (@${session.telegramUsername})` : ''}`); }

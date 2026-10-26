@@ -7,6 +7,7 @@ import {
   updateIncomingRequestStatusInDb
 } from '@/lib/incoming-requests-repository';
 import { sendCareerTelegramCandidateMessage } from '@/lib/career-telegram-bot';
+import { addCareerTelegramMessage } from '@/lib/career-telegram-messages-repository';
 import {
   isIncomingRequestStatus,
   isIncomingRequestType,
@@ -94,6 +95,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Для цієї заявки немає Telegram-чату кандидата.' }, { status: 400 });
     }
     await sendCareerTelegramCandidateMessage(chatId, message);
+    await addCareerTelegramMessage({ requestId: incomingRequest.id, chatId, direction: 'outgoing', text: message });
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'Не вдалося надіслати повідомлення.' }, { status: 500 });

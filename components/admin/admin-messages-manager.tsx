@@ -22,6 +22,7 @@ type AttachmentMetadata = {
   fileType?: string;
   url?: string;
 };
+type TelegramConversationMessage = { id: string; direction: 'incoming' | 'outgoing'; text: string; createdAt: string };
 
 function formatDateTime(value: string): string {
   const date = new Date(value);
@@ -102,6 +103,8 @@ export default function AdminMessagesManager() {
   const [error, setError] = useState('');
   const [telegramReply, setTelegramReply] = useState('');
   const [isSendingTelegramReply, setIsSendingTelegramReply] = useState(false);
+  const [telegramConversation, setTelegramConversation] = useState<TelegramConversationMessage[]>([]);
+  const [isLoadingTelegramConversation, setIsLoadingTelegramConversation] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState<'all' | IncomingRequestStatus>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | IncomingRequestType>('all');
@@ -152,6 +155,13 @@ export default function AdminMessagesManager() {
     return () => window.clearInterval(intervalId);
   }, []);
 
+  useEffect(() => {
+    if (!selectedRequest || !getTelegramChatId(selectedRequest)) { setTelegramConversation([]); return; }
+    void loadTelegramConversation(selectedRequest.id);
+    const intervalId = window.setInterval(() => void loadTelegramConversation(selectedRequest.id, true), 5000);
+    return () => window.clearInterval(intervalId);
+  }, [selectedRequest?.id]);
+
   async function applyFilters() {
     activeFiltersRef.current = { status: statusFilter, type: typeFilter, query };
     await loadRequests();
@@ -180,6 +190,20 @@ export default function AdminMessagesManager() {
     }
   }
 
+  async function loadTelegramConversation(requestId: string, silent = false) {
+    if (!silent) setIsLoadingTelegramConversation(true);
+    try {
+      const response = await fetch(`/api/admin/messages/${encodeURIComponent(requestId)}/telegram`, { cache: 'no-store' });
+      const payload = (await response.json()) as { ok?: boolean; error?: string; messages?: TelegramConversationMessage[] };
+      if (!response.ok || !payload.ok || !Array.isArray(payload.messages)) throw new Error(payload.error || 'Не вдалося завантажити діалог.');
+      setTelegramConversation(payload.messages);
+    } catch (loadError) {
+      if (!silent) setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити діалог.');
+    } finally {
+      if (!silent) setIsLoadingTelegramConversation(false);
+    }
+  }
+
   async function sendTelegramReply() {
     if (!selectedRequest || !telegramReply.trim()) return;
     setIsSendingTelegramReply(true);
@@ -189,6 +213,7 @@ export default function AdminMessagesManager() {
       const payload = (await response.json()) as { ok?: boolean; error?: string };
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'Не вдалося надіслати повідомлення.');
       setTelegramReply('');
+      await loadTelegramConversation(selectedRequest.id, true);
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : 'Не вдалося надіслати повідомлення.');
     } finally {
@@ -304,7 +329,7 @@ export default function AdminMessagesManager() {
 
                   <button
                     type="button"
-                    onClick={() => { setSelectedRequest(item); setTelegramReply(''); }}
+                    onClick={() => { setSelectedRequest(item); setTelegramReply(''); setTelegramConversation([]); }}
                     className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-brand hover:text-brand"
                   >
                     Відкрити
@@ -356,8 +381,14 @@ export default function AdminMessagesManager() {
 
             {getTelegramChatId(selectedRequest) ? (
               <section className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-4">
-                <p className="text-sm font-semibold text-slate-900">Написати кандидату в Telegram</p>
-                <p className="mt-1 text-xs text-slate-600">Повідомлення буде надіслано від імені бота вакансій у чат кандидата.</p>
+                <div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold text-slate-900">Діалог із кандидатом у Telegram</p><button type="button" onClick={() => void loadTelegramConversation(selectedRequest.id)} className="text-xs font-semibold text-brand hover:underline">Оновити</button></div>
+                <p className="mt-1 text-xs text-slate-600">Повідомлення надсилаються від імені бота вакансій. Діалог оновлюється кожні 5 секунд.</p>
+                <div className="mt-3 max-h-72 space-y-2 overflow-y-auto rounded-xl border border-sky-100 bg-white p-3">
+                  {isLoadingTelegramConversation ? <p className="text-sm text-slate-500">Завантаження діалогу...</p> : null}
+                  {!isLoadingTelegramConversation && telegramConversation.length === 0 ? <p className="text-sm text-slate-500">У діалозі ще немає повідомлень.</p> : null}
+                  {telegramConversation.map((item) => <div key={item.id} className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${item.direction === 'incoming' ? 'mr-auto bg-slate-100 text-slate-800' : 'ml-auto bg-brand text-white'}`}><p className="whitespace-pre-wrap">{item.text}</p><p className={`mt-1 text-[10px] ${item.direction === 'incoming' ? 'text-slate-500' : 'text-white/80'}`}>{item.direction === 'incoming' ? 'Кандидат' : 'HR'} · {formatDateTime(item.createdAt)}</p></div>)}
+                </div>
+                <p className="mt-4 text-sm font-semibold text-slate-900">Написати кандидату</p>
                 <textarea value={telegramReply} onChange={(event) => setTelegramReply(event.target.value)} maxLength={4000} rows={4} placeholder="Напишіть повідомлення кандидату..." className="mt-3 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-800 outline-none focus:border-brand" />
                 <button type="button" disabled={isSendingTelegramReply || !telegramReply.trim()} onClick={() => void sendTelegramReply()} className="mt-2 rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{isSendingTelegramReply ? 'Надсилання...' : 'Надіслати в Telegram'}</button>
               </section>

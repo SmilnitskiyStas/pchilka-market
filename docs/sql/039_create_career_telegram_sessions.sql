@@ -18,3 +18,15 @@ CREATE TABLE IF NOT EXISTS career_telegram_sessions (
   PRIMARY KEY (chat_id),
   KEY idx_career_telegram_sessions_updated (updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS career_telegram_messages (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  request_id BIGINT UNSIGNED NOT NULL,
+  chat_id VARCHAR(32) NOT NULL,
+  direction ENUM('incoming', 'outgoing') NOT NULL,
+  message_text TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_career_telegram_messages_request (request_id, id),
+  KEY idx_career_telegram_messages_chat (chat_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

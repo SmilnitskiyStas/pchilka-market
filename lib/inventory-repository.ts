@@ -1275,6 +1275,21 @@ async function ensureCareerTelegramSessionsTable() {
   await pool.query("ALTER TABLE career_telegram_sessions MODIFY COLUMN step ENUM('phone', 'full_name', 'city', 'store', 'vacancy') NOT NULL");
 }
 
+async function ensureCareerTelegramMessagesTable() {
+  const pool = getDbPool();
+  await pool.query(`CREATE TABLE IF NOT EXISTS career_telegram_messages (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    request_id BIGINT UNSIGNED NOT NULL,
+    chat_id VARCHAR(32) NOT NULL,
+    direction ENUM('incoming', 'outgoing') NOT NULL,
+    message_text TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_career_telegram_messages_request (request_id, id),
+    KEY idx_career_telegram_messages_chat (chat_id, id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+}
+
 async function ensureMarketingStoreTpCodes() {
   const pool = getDbPool();
   const columns = await listTableColumns('stores');
@@ -1385,6 +1400,7 @@ export async function applyInventorySchemaMigrations() {
   await ensureProductImportReviewQueueTable();
   await ensureTelegramRemindersTable();
   await ensureCareerTelegramSessionsTable();
+  await ensureCareerTelegramMessagesTable();
   await ensureMarketingStoreTpCodes();
   await ensureMarketingAnalyticsMart();
   await ensurePublicProductInfoTable();
