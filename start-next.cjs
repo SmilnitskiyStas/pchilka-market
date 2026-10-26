@@ -29,9 +29,18 @@ function getKyivDateParts() {
 
   return {
     dateKey: `${map.year}-${map.month}-${map.day}`,
+    year: Number(map.year || 0),
+    month: Number(map.month || 0),
+    day: Number(map.day || 0),
     hour: Number(map.hour || 0),
     minute: Number(map.minute || 0)
   };
+}
+
+function isWithinUtilityMeterReminderWindow({ year, month, day }) {
+  // The final four calendar days of each month, in Kyiv time.
+  const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return day >= lastDayOfMonth - 3;
 }
 
 function resolveNotifyBaseUrl() {
@@ -143,9 +152,11 @@ function startUtilityMeterRemindersScheduler() {
   let isRunning = false;
 
   async function tick() {
-    const { dateKey, hour: currentHour, minute } = getKyivDateParts();
+    const kyivNow = getKyivDateParts();
+    const { dateKey, hour: currentHour, minute } = kyivNow;
     // Allow a short recovery window if the app restarts during the scheduled minute.
     if (currentHour !== hour || minute > 5) return;
+    if (!isWithinUtilityMeterReminderWindow(kyivNow)) return;
     if (lastRunDateKey === dateKey || isRunning) return;
 
     isRunning = true;
@@ -179,7 +190,9 @@ function startUtilityMeterRemindersScheduler() {
   }, 30 * 1000);
   void tick();
 
-  console.log(`[utility-meter-reminders] auto-run enabled for ${String(hour).padStart(2, '0')}:00 Europe/Kiev via ${baseUrl}/api/utility-meters/reminders/run`);
+  console.log(
+    `[utility-meter-reminders] auto-run enabled for ${String(hour).padStart(2, '0')}:00 Europe/Kiev during the last 4 calendar days of each month via ${baseUrl}/api/utility-meters/reminders/run`
+  );
 
   return () => {
     clearInterval(timer);
