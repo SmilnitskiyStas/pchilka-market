@@ -1201,9 +1201,10 @@ export default function InventoryManagePage() {
 
             <SectionShell
               title="Налаштування"
-              subtitle="Єдиний блок для пошуку, перемикання режиму задач і швидкого керування всіма списками на сторінці."
+              subtitle="Налаштування режиму розподілу задач для цього магазину."
             >
-              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+              <div className="grid gap-4">
+                {false ? (
                 <div className="rounded-[28px] bg-slate-50 p-4">
                   <label className="block">
                     <span className="text-sm font-medium text-slate-700">Пошук по товарах, партіях і відповідальних</span>
@@ -1251,6 +1252,7 @@ export default function InventoryManagePage() {
                     Фільтр одночасно застосовується до активних поставок і до списку партій, які вже в контролі по терміну придатності.
                   </p>
                 </div>
+                ) : null}
 
                 {canManageInventoryTaskMode(currentUserRole) ? (
                   <div className="rounded-[28px] bg-slate-50 p-4">
@@ -1394,6 +1396,7 @@ export default function InventoryManagePage() {
               )}
             </SectionShell>
 
+            {false ? (
             <SectionShell
               title="Активні поставки"
               subtitle="Плоский список карток без вкладених блоків. Кожна картка веде в деталі товару, але основний список лишається легким і швидким для перегляду."
@@ -1420,6 +1423,7 @@ export default function InventoryManagePage() {
                 </div>
               )}
             </SectionShell>
+            ) : null}
 
             <SectionShell
               title="Контроль термінів"
