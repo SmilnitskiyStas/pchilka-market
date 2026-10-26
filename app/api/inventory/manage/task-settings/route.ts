@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Користувача не знайдено або обліковий запис недоступний.' }, { status: 403 });
     }
     if (!canManageInventoryTaskMode(actingUser.role)) {
-      return NextResponse.json({ ok: false, error: 'Лише керівник магазину або адміністратор може змінювати режим задач.' }, { status: 403 });
+      return NextResponse.json({ ok: false, error: 'Лише менеджер, керівник магазину або адміністратор може змінювати режим задач.' }, { status: 403 });
     }
 
     const nextMode = String(body?.taskAssignmentMode ?? '');

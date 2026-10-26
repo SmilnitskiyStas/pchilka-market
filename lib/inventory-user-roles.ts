@@ -28,7 +28,7 @@ export function canEditInventoryBatchExpiry(role: InventoryUserRole) {
 }
 
 export function canManageInventoryTaskMode(role: InventoryUserRole) {
-  return role === 'admin' || role === 'store_manager';
+  return role === 'admin' || role === 'store_manager' || role === 'manager';
 }
 
 export function canAssignInventoryRole(actingRole: InventoryUserRole, targetRole: InventoryUserRole) {
