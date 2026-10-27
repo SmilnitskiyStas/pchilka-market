@@ -1,5 +1,7 @@
 ﻿/** @type {import('next').NextConfig} */
 const nextConfig = {
+  // /qr-code/ must keep the exact URL encoded on printed materials.
+  skipTrailingSlashRedirect: true,
   images: {
     formats: ['image/webp', 'image/avif'],
     remotePatterns: [

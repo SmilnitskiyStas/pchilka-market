@@ -47,7 +47,7 @@ function isValidAttachment(file: File | null) {
 
 export default function SiteHeader() {
   const pathname = usePathname();
-  if (pathname === '/loyalty/mobile-app/download') return null;
+  if (pathname?.replace(/\/+$/, '') === '/qr-code' || pathname === '/loyalty/mobile-app/download') return null;
   return <SiteHeaderContent />;
 }
 

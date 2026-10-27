@@ -60,7 +60,7 @@ export default async function LoyaltyMobileAppPage() {
 
         <div className="mt-4">
           <Link
-            href="/loyalty/mobile-app/download"
+            href="/qr-code/"
             className="inline-flex rounded-full border border-brand/40 bg-brand/5 px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand hover:text-white"
           >
             Окрема сторінка завантаження
