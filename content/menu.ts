@@ -72,3 +72,14 @@ export const mainMenu: MenuItem[] = [
     ]
   }
 ];
+
+// The public header follows the six sections in the homepage design.
+// Keep the full menu above for the sitemap and administrative link pickers.
+export const headerMenu: MenuItem[] = ['Головна', 'Про мережу', 'Власне класне', 'Акції', 'Програма лояльності', 'Співпраця'].map((label) => {
+  const item = mainMenu.find((entry) => entry.label === label)!;
+  if (label !== 'Про мережу') return item;
+  return {
+    ...item,
+    children: [...(item.children ?? []), ...mainMenu.filter((entry) => entry.href === '/blog' || entry.href === '/career')]
+  };
+});

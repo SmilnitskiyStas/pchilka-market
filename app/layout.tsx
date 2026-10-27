@@ -6,6 +6,7 @@ import SeoRuntimeLoader from '@/components/seo-runtime-loader';
 import SiteFooter from '@/components/site-footer';
 import SiteHeader from '@/components/site-header';
 import './globals.css';
+import './public-site.css';
 
 export const metadata: Metadata = {
   title: 'Pchilka Market',

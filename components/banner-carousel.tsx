@@ -69,6 +69,10 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
   }, [slides.length, intervalMs]);
 
   useEffect(() => {
+    setActiveIndex((index) => index < slides.length ? index : 0);
+  }, [slides.length]);
+
+  useEffect(() => {
     videoElements.current.forEach((video, index) => {
       if (index !== activeIndex) {
         video.pause();
@@ -84,8 +88,8 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
   if (slides.length === 0) return null;
 
   return (
-    <section className="group relative mb-6 overflow-hidden rounded-3xl border border-brand/30 bg-white shadow-sm">
-      <div className="relative aspect-[1200/460] w-full">
+    <section className="home-banner-carousel" aria-label="Пропозиції мережі">
+      <div className="home-banner-media">
         {slides.map((slide, index) => {
           const isActive = index === activeIndex;
           const isVideo = isVideoSource(slide.src);
@@ -138,6 +142,7 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
                 isActive ? 'pointer-events-auto z-10 opacity-100' : 'pointer-events-none z-0 opacity-0'
               }`}
               aria-hidden={!isActive}
+              inert={!isActive}
             >
               {slide.href ? (
                 <Link href={slide.href} aria-label={slide.alt} className="block h-full w-full">
@@ -151,7 +156,7 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
         })}
       </div>
 
-      <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/40 px-3 py-2 opacity-100 transition-opacity duration-300 md:bottom-4 md:opacity-0 md:group-hover:opacity-100">
+      <div className="home-banner-controls">
         {slides.map((slide, index) => {
           const isActive = index === activeIndex;
 
@@ -160,11 +165,9 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
               key={slide.src}
               type="button"
               aria-label={`Перейти до банера ${index + 1}`}
-              onMouseEnter={() => setActiveIndex(index)}
+              aria-pressed={isActive}
               onClick={() => setActiveIndex(index)}
-              className={`h-2.5 rounded-full transition-all ${
-                isActive ? 'w-6 bg-brand' : 'w-2.5 bg-white/85 hover:bg-white'
-              }`}
+              className={isActive ? 'is-active' : ''}
             />
           );
         })}

@@ -476,6 +476,18 @@ export default function AdminNetworkManager() {
             </div>
           </div>
 
+          <div className="grid gap-3 xl:grid-cols-2">
+            {(['instagram', 'tiktok', 'youtube', 'facebook'] as const).map((network) => (
+              <label key={network} className="block text-sm font-semibold text-slate-900">
+                {({ instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', facebook: 'Facebook' })[network]}
+                <input type="url" value={settings.socialLinks[network]} placeholder="https://..." onChange={(event) => {
+                  setSettings((prev) => ({ ...prev, socialLinks: { ...prev.socialLinks, [network]: event.target.value } }));
+                  setIsSaved(false);
+                }} className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
+              </label>
+            ))}
+          </div>
+
           <div>
             <label className="block text-sm font-semibold text-slate-900">Блок тексту сторінки контактів (по одному рядку)</label>
             <textarea

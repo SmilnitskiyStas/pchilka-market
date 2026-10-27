@@ -5,7 +5,8 @@ import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { mainMenu, type MenuItem } from '@/content/menu';
+import { headerMenu, type MenuItem } from '@/content/menu';
+import SiteSearch from '@/components/site-search';
 import { trackAnalyticsEvent } from '@/lib/analytics-events';
 import { getSiteLogoUrl } from '@/lib/site-branding';
 import { defaultSiteProfileSettings } from '@/lib/site-profile-settings';
@@ -46,11 +47,12 @@ function isValidAttachment(file: File | null) {
 
 export default function SiteHeader() {
   const pathname = usePathname();
-  const hiddenOnRoutes = ['/loyalty/mobile-app/download'];
+  if (pathname === '/loyalty/mobile-app/download') return null;
+  return <SiteHeaderContent />;
+}
 
-  if (pathname && hiddenOnRoutes.includes(pathname)) {
-    return null;
-  }
+function SiteHeaderContent() {
+  const pathname = usePathname();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const phonesMenuRef = useRef<HTMLDivElement | null>(null);
@@ -83,6 +85,13 @@ export default function SiteHeader() {
 
   useEffect(() => {
     setIsMounted(true);
+    const openFeedback = () => {
+      setFeedbackSuccess('');
+      setIsFeedbackOpen(true);
+      trackAnalyticsEvent('feedback_open', { page_path: window.location.pathname });
+    };
+    window.addEventListener('pchilka:open-feedback', openFeedback);
+    return () => window.removeEventListener('pchilka:open-feedback', openFeedback);
   }, []);
 
   useEffect(() => {
@@ -222,24 +231,25 @@ export default function SiteHeader() {
       return (
         <div
           key={item.label}
-          className="relative"
+          className="site-nav-item"
           onMouseEnter={() => setOpenMenuLabel(item.label)}
           onMouseLeave={() => setOpenMenuLabel((prev) => (prev === item.label ? null : prev))}
+          onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpenMenuLabel(null); }}
         >
           <button
             type="button"
             onClick={() => setOpenMenuLabel((prev) => (prev === item.label ? null : item.label))}
             aria-expanded={openMenuLabel === item.label}
-            aria-haspopup="menu"
-            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-brand hover:text-brand"
+            aria-controls={`nav-${headerMenu.indexOf(item)}`}
+            className="site-nav-link"
           >
             {item.label}
           </button>
 
           <div
-            className={`absolute left-0 top-12 z-[140] w-72 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg transition-all duration-200 ${
-              openMenuLabel === item.label ? 'visible opacity-100' : 'invisible opacity-0'
-            }`}
+            id={`nav-${headerMenu.indexOf(item)}`}
+            className="site-nav-dropdown"
+            hidden={openMenuLabel !== item.label}
           >
             <ul className="space-y-1">
               {item.children.map((subItem) => (
@@ -264,7 +274,8 @@ export default function SiteHeader() {
         key={item.label}
         href={item.href}
         onClick={() => setOpenMenuLabel(null)}
-        className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-brand hover:text-brand"
+        className="site-nav-link"
+        aria-current={pathname === item.href ? 'page' : undefined}
       >
         {item.label}
       </Link>
@@ -280,6 +291,7 @@ export default function SiteHeader() {
           <button
             type="button"
             onClick={() => setOpenMobileMenuLabel((prev) => (prev === item.label ? null : item.label))}
+            aria-expanded={isOpen}
             className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-semibold text-slate-800"
           >
             <span>{item.label}</span>
@@ -462,87 +474,34 @@ export default function SiteHeader() {
 
   return (
     <>
-    <header className="relative z-[120] border-b border-brand/20 bg-white/90 backdrop-blur">
-      <div className="site-container px-3 py-3 sm:px-6 lg:px-8">
-        <nav className="relative z-[130] rounded-2xl border border-brand/30 bg-white p-3 shadow-sm sm:p-4">
-          <div className="flex items-center justify-between gap-2 border-b border-slate-200 pb-3 sm:gap-4">
-            <Link href="/" className="flex items-center">
-              <Image src={logoUrl} alt="Pchilka Market" width={160} height={52} priority className="h-9 w-auto sm:h-10" />
-            </Link>
-
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="relative" ref={phonesMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setIsPhonesOpen((prev) => !prev)}
-                  aria-expanded={isPhonesOpen}
-                  aria-haspopup="listbox"
-                  className="rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:border-brand hover:text-brand sm:px-3 sm:py-2 sm:text-xs lg:text-sm"
-                >
-                  <span className="hidden sm:inline">{primaryPhone}</span>
-                  <span className="sm:hidden">Тел.</span>
-                </button>
-
-                <div
-                  className={`absolute right-0 top-12 z-[160] min-w-[220px] rounded-2xl border border-slate-200 bg-white p-2 shadow-lg transition-all duration-200 ${
-                    isPhonesOpen ? 'visible opacity-100' : 'invisible opacity-0'
-                  }`}
-                >
-                  <ul className="space-y-1" role="listbox" aria-label="Контактні телефони">
-                    {contactPhones.map((phone) => (
-                      <li key={phone}>
-                        <a
-                          href={`tel:${toTel(phone)}`}
-                          onClick={() => {
-                            trackAnalyticsEvent('contact_phone_click', {
-                              phone_label: phone,
-                              page_path: pathname ?? '/'
-                            });
-                          }}
-                          className="block rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-brand"
-                          title="Зателефонувати"
-                        >
-                          {phone}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setFeedbackSuccess('');
-                  setIsFeedbackOpen(true);
-                  trackAnalyticsEvent('feedback_open', { page_path: pathname ?? '/' });
-                }}
-                className="rounded-full bg-brand px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 sm:px-4 sm:text-sm"
-              >
-                <span className="hidden sm:inline">Зворотний зв’язок</span>
-                <span className="sm:hidden">Зв’язок</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsMobileMenuOpen((prev) => !prev)}
-                aria-expanded={isMobileMenuOpen}
-                aria-label="Відкрити меню"
-                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-brand hover:text-brand lg:hidden"
-              >
-                {isMobileMenuOpen ? 'Закрити' : 'Меню'}
-              </button>
-            </div>
+    <header className="public-header" onKeyDown={(event) => {
+      if (event.key === 'Escape') {
+        setOpenMenuLabel(null);
+        setIsMobileMenuOpen(false);
+        setIsPhonesOpen(false);
+      }
+    }}>
+      <div className="public-header-inner">
+        <Link href="/" className="public-logo" aria-label="Пчілка маркет — головна">
+          <Image src={logoUrl} alt="Пчілка маркет" width={224} height={74} priority />
+        </Link>
+        <nav className="site-desktop-nav" aria-label="Головне меню">{headerMenu.map(renderDesktopMenuItem)}</nav>
+        <div className="public-header-actions">
+          <SiteSearch />
+          <div className="site-phone-menu" ref={phonesMenuRef}>
+            <button type="button" onClick={() => setIsPhonesOpen((prev) => !prev)} aria-expanded={isPhonesOpen} aria-controls="header-contact-phones" className="site-primary-phone">
+              {primaryPhone}
+            </button>
+            {isPhonesOpen ? <div className="site-phones-dropdown" id="header-contact-phones">
+              {contactPhones.map((phone) => <a key={phone} href={`tel:${toTel(phone)}`} onClick={() => trackAnalyticsEvent('contact_phone_click', { phone_label: phone, page_path: pathname ?? '/' })}>{phone}</a>)}
+            </div> : null}
           </div>
-
-          <div className="mt-3 hidden flex-wrap items-center gap-3 lg:flex">{mainMenu.map(renderDesktopMenuItem)}</div>
-
-          {isMobileMenuOpen ? (
-            <div className="mt-3 space-y-2 lg:hidden">{mainMenu.map(renderMobileMenuItem)}</div>
-          ) : null}
-        </nav>
+          <button type="button" className="site-mobile-toggle" onClick={() => setIsMobileMenuOpen((prev) => !prev)} aria-expanded={isMobileMenuOpen} aria-controls="site-mobile-nav" aria-label={isMobileMenuOpen ? 'Закрити меню' : 'Відкрити меню'}>
+            {isMobileMenuOpen ? '×' : <svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" /></svg>}
+          </button>
+        </div>
       </div>
-
+      {isMobileMenuOpen ? <nav id="site-mobile-nav" className="site-mobile-nav" aria-label="Мобільне меню">{headerMenu.map(renderMobileMenuItem)}</nav> : null}
     </header>
     {isMounted ? createPortal(feedbackModal, document.body) : null}
     </>

@@ -11,6 +11,7 @@ export type SiteProfileSettings = {
   storesPageDescription: string;
   storesMapEmbedUrl: string;
   storesMapTitle: string;
+  socialLinks: Record<'instagram' | 'tiktok' | 'youtube' | 'facebook', string>;
   updatedAt: string;
 };
 
@@ -34,6 +35,7 @@ export const defaultSiteProfileSettings: SiteProfileSettings = {
   storesPageDescription: 'Актуальний список магазинів Pchilka Market за містами та населеними пунктами.',
   storesMapEmbedUrl: '',
   storesMapTitle: 'Карта магазинів Pchilka Market',
+  socialLinks: { instagram: '', tiktok: '', youtube: '', facebook: '' },
   updatedAt: ''
 };
 
@@ -52,6 +54,15 @@ function normalizeLogoUrl(value: unknown): string {
 function normalizeStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => normalizeString(item)).filter(Boolean);
+}
+
+function normalizeSocialUrl(value: unknown): string {
+  try {
+    const url = new URL(normalizeString(value));
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch {
+    return '';
+  }
 }
 
 export function normalizeSiteProfileSettings(
@@ -74,6 +85,12 @@ export function normalizeSiteProfileSettings(
       normalizeString(raw?.storesPageDescription) || defaultSiteProfileSettings.storesPageDescription,
     storesMapEmbedUrl: normalizeString(raw?.storesMapEmbedUrl),
     storesMapTitle: normalizeString(raw?.storesMapTitle) || defaultSiteProfileSettings.storesMapTitle,
+    socialLinks: {
+      instagram: normalizeSocialUrl(raw?.socialLinks?.instagram),
+      tiktok: normalizeSocialUrl(raw?.socialLinks?.tiktok),
+      youtube: normalizeSocialUrl(raw?.socialLinks?.youtube),
+      facebook: normalizeSocialUrl(raw?.socialLinks?.facebook)
+    },
     updatedAt: normalizeString(raw?.updatedAt)
   };
 }
