@@ -29,7 +29,7 @@ export async function getPromotionCatalogPageImages(id: string): Promise<string[
   const entries = await fs.readdir(renderDir, { withFileTypes: true }).catch(() => []);
 
   return entries
-    .filter((entry) => entry.isFile() && /^page-\d+\.webp$/i.test(entry.name))
+    .filter((entry) => entry.isFile() && /^page-\d+\.(?:webp|jpe?g|png)$/i.test(entry.name))
     .sort((a, b) => Number(a.name.match(/\d+/)?.[0]) - Number(b.name.match(/\d+/)?.[0]))
     .map((entry) => buildMediaUrl([...RENDER_FOLDER, ...renderParts, entry.name]));
 }
@@ -45,7 +45,8 @@ export async function renderPromotionCatalog(id: string): Promise<string[]> {
   const outputPrefix = path.join(renderDir, 'page');
 
   try {
-    await execFileAsync('pdftoppm', ['-webp', '-r', '150', sourcePath, outputPrefix], { maxBuffer: 1024 * 1024 });
+    // pdftoppm supports JPEG/PNG output; WebP is not a supported output flag.
+    await execFileAsync('pdftoppm', ['-jpeg', '-jpegopt', 'quality=90', '-r', '150', sourcePath, outputPrefix], { maxBuffer: 1024 * 1024 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Невідома помилка Poppler.';
     throw new Error(`Не вдалося підготувати сторінки каталогу: ${message}`);

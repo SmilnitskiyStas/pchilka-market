@@ -105,6 +105,14 @@ async function main() {
   await invoke(catalogRoutes.PUT, 'PUT', { id: f3, metadata: { pageId: 'f3' } });
   await invoke(pageRoutes.DELETE, 'DELETE', { id: seasonal.id });
   assert.ok(!fs.readFileSync(path.join(catalogDir, 'catalog-pages.json'), 'utf8').includes('seasonal'));
+  const renderer = require('../lib/promotion-catalog-renderer.ts');
+  const renderDir = path.join(temporary, 'promotions', 'catalog-renders', '2026', '10', 'legacy');
+  fs.mkdirSync(renderDir, { recursive: true });
+  fs.writeFileSync(path.join(renderDir, 'page-1.jpg'), 'jpeg fixture');
+  fs.writeFileSync(path.join(renderDir, 'page-2.webp'), 'legacy webp fixture');
+  fs.writeFileSync(path.join(renderDir, 'ignored.txt'), 'not a page');
+  assert.deepEqual((await renderer.getPromotionCatalogPageImages(legacy)).map(url => url.split('/').at(-1)), ['page-1.jpg', 'page-2.webp']);
+  console.log('PASS: JPEG render output and existing WebP pages are both supported.');
   console.log('PASS: authorization, legacy F1 migration, page CRUD, unique/safe URLs, PDF isolation and reassignment, per-page archives, deletion protection, hidden direct links, noindex and sitemap exclusion.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
