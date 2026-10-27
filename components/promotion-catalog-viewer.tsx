@@ -1,8 +1,8 @@
 ﻿'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import CatalogFlipbook from '@/components/catalog-flipbook';
 
-const FLIP_DURATION_MS = 800;
 const MAX_AUTO_FLIPBOOK_PAGES = 16;
 
 export type PromotionCatalog = {
@@ -50,9 +50,6 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
   const [isPreparing, setIsPreparing] = useState(false);
   const [viewerMode, setViewerMode] = useState<'flipbook' | 'iframe'>('iframe');
   const [flipbookError, setFlipbookError] = useState('');
-  const [flippingPage, setFlippingPage] = useState<{ imageSrc: string; direction: 'next' | 'prev' } | null>(null);
-  const flipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const touchStartX = useRef<number | null>(null);
   const renderSession = useRef(0);
 
   const activeCatalog = useMemo(
@@ -66,7 +63,7 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
   );
 
   const canEnableFlipbook = Boolean(activeCatalog) &&
-    (activeCatalog?.pageImages?.length || activeCatalog?.pageCount || 1) <= MAX_AUTO_FLIPBOOK_PAGES;
+    (Boolean(activeCatalog?.pageImages?.length) || (activeCatalog?.pageCount || 1) <= MAX_AUTO_FLIPBOOK_PAGES);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -74,7 +71,6 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
     setViewerMode(canEnableFlipbook ? 'flipbook' : 'iframe');
     setTotalPages(activeCatalog?.pageCount ?? 1);
     setIsPreparing(false);
-    setFlippingPage(null);
     setFlipbookError('');
     renderSession.current += 1;
   }, [activeCatalog]);
@@ -89,7 +85,6 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
 
   useEffect(() => () => {
     renderSession.current += 1;
-    if (flipTimer.current) clearTimeout(flipTimer.current);
   }, []);
   const canGoPrev = currentPage > 1 && (viewerMode !== 'flipbook' || Boolean(pageImages[currentPage - 2]));
   const canGoNext = currentPage < totalPages && (viewerMode !== 'flipbook' || Boolean(pageImages[currentPage]));
@@ -192,22 +187,7 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
     );
   }
 
-  const goToPage = (page: number) => {
-    const nextPage = clampPage(page, totalPages);
-    if (nextPage === currentPage || flippingPage) return;
-
-    if (viewerMode !== 'flipbook' || !pageImages[currentPage - 1]) {
-      setCurrentPage(nextPage);
-      return;
-    }
-
-    const direction = nextPage > currentPage ? 'next' : 'prev';
-    setFlippingPage({ imageSrc: pageImages[currentPage - 1], direction });
-    setCurrentPage(nextPage);
-    if (flipTimer.current) clearTimeout(flipTimer.current);
-    flipTimer.current = setTimeout(() => setFlippingPage(null), FLIP_DURATION_MS);
-  };
-
+  const goToPage = (page: number) => setCurrentPage(clampPage(page, totalPages));
   const goFirst = () => goToPage(1);
   const goPrev = () => goToPage(currentPage - 1);
   const goNext = () => goToPage(currentPage + 1);
@@ -220,173 +200,34 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Каталог акцій</p>
           <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">{activeCatalog.title || activeCatalog.name}</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Оновлено: {formatUpdatedAt(activeCatalog.updatedAt)} | Сторінок: {totalPages}
+            Оновлено: {formatUpdatedAt(activeCatalog.updatedAt)} | Сторінок у PDF: {totalPages}
           </p>
         </div>
 
         <div className="px-4 pb-5 pt-4 sm:px-6 sm:pb-6">
-          <div className="mb-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/80 p-3">
-            <p className="text-sm font-medium text-slate-700">{`Сторінка ${currentPage} з ${totalPages}`}</p>
-            <div className="flex items-center gap-3">
-              {viewerMode === 'iframe' ? <p className="text-xs text-slate-500">Швидкий режим</p> : null}
-
-              {viewerMode === 'flipbook' ? (
-                <button
-                  type="button"
-                  onClick={() => setViewerMode('iframe')}
-                  className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-brand hover:text-brand"
-                >
-                  PDF-режим
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={enableFlipbook}
-                  disabled={!canEnableFlipbook || isPreparing}
-                  className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
-                  title={
-                    canEnableFlipbook
-                      ? 'Увімкнути книжковий режим'
-                      : `Книжковий режим доступний для каталогів до ${MAX_AUTO_FLIPBOOK_PAGES} сторінок`
-                  }
-                >
-                  Книжковий режим
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="relative rounded-2xl border border-slate-300 bg-[#eef2e8] p-3 sm:p-4">
-            <button
-              type="button"
-              onClick={goPrev}
-              disabled={!canGoPrev || isPreparing}
-              aria-label="Попередня сторінка"
-              className="absolute left-2 top-1/2 z-20 -translate-y-1/2 rounded bg-white/95 px-2 py-1.5 text-3xl leading-none text-slate-400 shadow-md transition hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-35 sm:left-3 sm:px-3 sm:py-2 sm:text-4xl"
-            >
-              &#8249;
-            </button>
-
-            <button
-              type="button"
-              onClick={goNext}
-              disabled={!canGoNext || isPreparing}
-              aria-label="Наступна сторінка"
-              className="absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded bg-white/95 px-2 py-1.5 text-3xl leading-none text-slate-400 shadow-md transition hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-35 sm:right-3 sm:px-3 sm:py-2 sm:text-4xl"
-            >
-              &#8250;
-            </button>
-
-            <div
-              className={`rounded-xl border border-slate-400 bg-white shadow-[0_10px_24px_rgba(0,0,0,0.12)] ${
-                viewerMode === 'flipbook'
-                  ? 'min-h-[62vh] overflow-auto sm:min-h-[68vh] lg:min-h-[72vh]'
-                  : 'h-[62vh] overflow-hidden sm:h-[68vh] lg:h-[72vh]'
-              }`}
-            >
-              {isPreparing ? (
-                <div className="flex min-h-[62vh] flex-col items-center justify-center gap-3 text-sm text-slate-500 sm:min-h-[68vh] lg:min-h-[72vh]">
-                  <span className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-brand" />
-                  <span>Підготовка книжкового режиму...</span>
-                </div>
-              ) : viewerMode === 'flipbook' && pageImages.length > 0 ? (
-                <div
-                  className="flex min-h-[62vh] touch-pan-y items-center justify-center bg-[#20251f] p-3 sm:min-h-[68vh] sm:p-6 lg:min-h-[72vh]"
-                  onTouchStart={(event) => { touchStartX.current = event.touches[0]?.clientX ?? null; }}
-                  onTouchEnd={(event) => {
-                    if (touchStartX.current === null) return;
-                    const delta = event.changedTouches[0].clientX - touchStartX.current;
-                    touchStartX.current = null;
-                    if (Math.abs(delta) < 45) return;
-                    if (delta < 0) goNext(); else goPrev();
-                  }}
-                >
-                  <div className="relative w-full max-w-[680px]" style={{ perspective: '2200px' }}>
-                    <div className="absolute inset-y-2 left-3 right-1 z-0 rounded-md bg-black/45 shadow-[0_22px_36px_rgba(0,0,0,0.65)]" />
-                    <div className="relative z-10 overflow-hidden rounded-md bg-white shadow-[0_26px_48px_rgba(0,0,0,0.48)]">
-                      <img
-                        src={pageImages[currentPage - 1]}
-                        alt={`Сторінка ${currentPage}`}
-                        draggable={false}
-                        className="block h-auto max-h-[72vh] w-full object-contain"
-                      />
-                      {flippingPage ? (
-                        <div
-                          className={`absolute inset-0 z-30 ${flippingPage.direction === 'next' ? 'book-flip-next' : 'book-flip-prev'}`}
-                          style={{ transformOrigin: flippingPage.direction === 'next' ? 'left center' : 'right center' }}
-                        >
-                          <img src={flippingPage.imageSrc} alt="" draggable={false} className="h-full w-full object-cover" />
-                          <span className="absolute inset-0 bg-gradient-to-r from-black/45 via-transparent to-white/20" />
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="pointer-events-none absolute inset-x-4 bottom-0 z-0 h-5 rounded-full bg-black/35 blur-lg" />
-                  </div>
-                </div>
-              ) : (
-                <iframe
-                  key={`${activeCatalog.id}-${currentPage}`}
-                  src={buildPdfViewerUrl(activeCatalog.url, currentPage)}
-                  title={`Сторінка ${currentPage}`}
-                  className="pointer-events-none h-full w-full select-none border-0"
-                />
-              )}
-            </div>
-          </div>
-
-          {!canEnableFlipbook ? (
-            <p className="mt-3 text-xs text-slate-500">
-              Для великих каталогів автоматично використовується швидкий PDF-режим для кращої продуктивності.
-            </p>
-          ) : null}
-
-          {viewerMode === 'iframe' && flipbookError ? (
-            <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              3D-перегляд тимчасово недоступний: {flipbookError}
-            </p>
-          ) : null}
-
-          <div className="mt-3 flex items-center justify-center gap-3 rounded-xl bg-white/85 p-2 text-slate-600">
-            <button
-              type="button"
-              onClick={goFirst}
-              disabled={!canGoPrev}
-              className="rounded px-2 py-1 text-sm hover:bg-slate-100 disabled:opacity-35"
-              aria-label="Перша сторінка"
-            >
-              &#171;
-            </button>
-            <button
-              type="button"
-              onClick={goPrev}
-              disabled={!canGoPrev}
-              className="rounded px-2 py-1 text-sm hover:bg-slate-100 disabled:opacity-35"
-              aria-label="Попередня сторінка"
-            >
-              &#8249;
-            </button>
-            <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-              {currentPage}/{totalPages}
-            </span>
-            <button
-              type="button"
-              onClick={goNext}
-              disabled={!canGoNext}
-              className="rounded px-2 py-1 text-sm hover:bg-slate-100 disabled:opacity-35"
-              aria-label="Наступна сторінка"
-            >
-              &#8250;
-            </button>
-            <button
-              type="button"
-              onClick={goLast}
-              disabled={!canGoNext}
-              className="rounded px-2 py-1 text-sm hover:bg-slate-100 disabled:opacity-35"
-              aria-label="Остання сторінка"
-            >
-              &#187;
-            </button>
-          </div>
+          {viewerMode === 'flipbook' && pageImages.length > 0 ? (
+            <CatalogFlipbook key={activeCatalog.id} images={pageImages} totalPages={totalPages} initialPage={currentPage} onPageChange={setCurrentPage} onPdfMode={() => setViewerMode('iframe')} />
+          ) : (
+            <>
+              <div className="catalog-book-toolbar">
+                <p>{`Сторінка ${currentPage} з ${totalPages}`}</p>
+                <button type="button" onClick={enableFlipbook} disabled={!canEnableFlipbook || isPreparing}>Книжковий режим</button>
+              </div>
+              <p className="catalog-book-hint">Швидкий режим</p>
+              <div className="relative h-[68vh] min-h-[360px] overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                {isPreparing ? <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-slate-500"><span className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-brand" /><span>Підготовка книжкового режиму...</span></div> : <iframe key={`${activeCatalog.id}-${currentPage}`} src={buildPdfViewerUrl(activeCatalog.url, currentPage)} title={`Сторінка ${currentPage}`} className="pointer-events-none h-full w-full select-none border-0" />}
+              </div>
+              {flipbookError ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs text-amber-800">Книжковий перегляд тимчасово недоступний: {flipbookError}</p> : null}
+              {!canEnableFlipbook ? <p className="catalog-book-hint">Для цього каталогу доступний PDF-режим.</p> : null}
+              <div className="catalog-book-navigation">
+                <button type="button" onClick={goFirst} disabled={!canGoPrev || isPreparing} aria-label="Перша сторінка">«</button>
+                <button type="button" onClick={goPrev} disabled={!canGoPrev || isPreparing} aria-label="Попередня сторінка">‹</button>
+                <span>{currentPage} / {totalPages}</span>
+                <button type="button" onClick={goNext} disabled={!canGoNext || isPreparing} aria-label="Наступна сторінка">›</button>
+                <button type="button" onClick={goLast} disabled={!canGoNext || isPreparing} aria-label="Остання сторінка">»</button>
+              </div>
+            </>
+          )}
         </div>
       </section>
 

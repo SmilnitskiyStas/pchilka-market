@@ -31,7 +31,8 @@ const react = {
 };
 const output = ts.transpileModule(fs.readFileSync(sourcePath, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 const exportsObject = {};
-vm.runInNewContext(output, { exports: exportsObject, require: name => name === 'react' ? react : require(name), console, setTimeout, clearTimeout });
+const BookComponent = () => null;
+vm.runInNewContext(output, { exports: exportsObject, require: name => name === 'react' ? react : name === '@/components/catalog-flipbook' ? { default: BookComponent } : require(name), console, setTimeout, clearTimeout });
 function render(catalogs) {
   cursor = 0; effects = [];
   const element = exportsObject.default({ catalogs, showArchive: true });
@@ -46,6 +47,11 @@ function textOf(node) {
   if (Array.isArray(node)) return node.map(textOf).join(' ');
   return textOf(node.props?.children);
 }
+function findBook(node) {
+  if (node?.type === BookComponent) return node;
+  if (Array.isArray(node)) return node.map(findBook).find(Boolean);
+  return node?.props ? findBook(node.props.children) : undefined;
+}
 assert.ok(textOf(render([])).includes('Актуальних PDF-каталогів ще немає.'));
 const large = { id: 'catalog', name: 'Large PDF', url: '/large.pdf', updatedAt: '2026-10-27T12:00:00Z', pageCount: 20 };
 render([large]);
@@ -53,9 +59,33 @@ assert.ok(textOf(render([large])).includes('Швидкий режим'));
 render([]);
 const small = { ...large, name: 'Prepared PDF', pageCount: 2, pageImages: ['/page-1.webp', '/page-2.webp'] };
 render([small]);
-assert.ok(textOf(render([small])).includes('PDF-режим'));
+assert.deepEqual(findBook(render([small])).props.images, small.pageImages);
 render([large]);
 assert.ok(textOf(render([large])).includes('Швидкий режим'));
 render([]);
 for (const slot of slots) if (slot.type === 'effect') slot.cleanup?.();
 console.log('PASS: empty catalog effects; stable hooks through empty/populated transitions; PDF and prepared flipbook modes; switching catalogs with the same ID.');
+
+const spreadModule = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', 'lib', 'catalog-spread.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: spreadModule });
+const spread = (index, total, portrait) => JSON.parse(JSON.stringify(spreadModule.getCatalogSpread(index, total, portrait)));
+assert.deepEqual(spread(0, 9, false), { first: 1, last: 1 });
+assert.deepEqual(spread(1, 9, false), { first: 2, last: 3 });
+assert.deepEqual(spread(7, 9, false), { first: 8, last: 9 });
+assert.deepEqual(spread(8, 9, false), { first: 8, last: 9 });
+assert.deepEqual(spread(9, 10, false), { first: 10, last: 10 });
+assert.deepEqual(spread(1, 9, true), { first: 2, last: 2 });
+assert.deepEqual(spread(8, 9, true), { first: 9, last: 9 });
+console.log('PASS: separate cover, paired spreads, odd/even final pages and single-page mobile navigation.');
+const sourcePages = Array.from({ length: 9 }, (_, index) => ({ src: `page-${index + 1}.jpg`, width: index === 0 || index === 8 ? 1199 : 2398, height: 1772 }));
+const model = spreadModule.buildCatalogLeaves(sourcePages);
+assert.equal(model.leaves.length, 16);
+assert.equal(model.leaves[0].part, 'full');
+assert.equal(model.leaves[1].part, 'left');
+assert.equal(model.leaves[2].part, 'right');
+assert.equal(model.leaves[1].pdfPage, 2);
+assert.equal(model.leaves[2].pdfPage, 2);
+assert.equal(model.leaves[15].pdfPage, 9);
+assert.equal(model.leaves[15].part, 'full');
+assert.equal(spreadModule.buildCatalogLeaves(sourcePages.map(page => ({ ...page, width: 1199 }))).leaves.length, 9);
+console.log('PASS: already paired PDF spreads become separate book leaves, preserve covers and map back to their source PDF page.');
