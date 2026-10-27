@@ -52,19 +52,25 @@ function findBook(node) {
   if (Array.isArray(node)) return node.map(findBook).find(Boolean);
   return node?.props ? findBook(node.props.children) : undefined;
 }
+function findTag(node, tag) {
+  if (node?.type === tag) return node;
+  if (Array.isArray(node)) return node.map(child => findTag(child, tag)).find(Boolean);
+  return node?.props ? findTag(node.props.children, tag) : undefined;
+}
 assert.ok(textOf(render([])).includes('Актуальних PDF-каталогів ще немає.'));
-const large = { id: 'catalog', name: 'Large PDF', url: '/large.pdf', updatedAt: '2026-10-27T12:00:00Z', pageCount: 20 };
+const large = { id: 'catalog', name: 'Large PDF', url: '/large.pdf', updatedAt: '2026-10-27T12:00:00Z', pageCount: 20, pageImages: Array.from({length: 20}, (_, index) => `/large-page-${index + 1}.jpg`) };
 render([large]);
-assert.ok(textOf(render([large])).includes('Швидкий режим'));
+assert.deepEqual(findBook(render([large])).props.images, large.pageImages);
+assert.equal(findTag(render([large]), 'iframe'), undefined);
 render([]);
 const small = { ...large, name: 'Prepared PDF', pageCount: 2, pageImages: ['/page-1.webp', '/page-2.webp'] };
 render([small]);
 assert.deepEqual(findBook(render([small])).props.images, small.pageImages);
 render([large]);
-assert.ok(textOf(render([large])).includes('Швидкий режим'));
+assert.deepEqual(findBook(render([large])).props.images, large.pageImages);
 render([]);
 for (const slot of slots) if (slot.type === 'effect') slot.cleanup?.();
-console.log('PASS: empty catalog effects; stable hooks through empty/populated transitions; PDF and prepared flipbook modes; switching catalogs with the same ID.');
+console.log('PASS: empty catalog effects; stable hooks through empty/populated transitions; small and large catalogs use book mode only; switching catalogs with the same ID.');
 
 const spreadModule = {};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', 'lib', 'catalog-spread.ts'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: spreadModule });

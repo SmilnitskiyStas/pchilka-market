@@ -11,9 +11,9 @@ type BookEngine = {
   flipPrev: (corner?: 'top' | 'bottom') => void;
   flip: (index: number, corner?: 'top' | 'bottom') => void;
 };
-type Props = { images: string[]; totalPages: number; initialPage: number; onPageChange: (page: number) => void; onPdfMode: () => void };
+type Props = { images: string[]; totalPages: number };
 
-export default function CatalogFlipbook({ images, totalPages, initialPage, onPageChange, onPdfMode }: Props) {
+export default function CatalogFlipbook({ images, totalPages }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const book = useRef<{ pageFlip: () => BookEngine } | null>(null);
   const pageIndexRef = useRef(0);
@@ -36,7 +36,7 @@ export default function CatalogFlipbook({ images, totalPages, initialPage, onPag
     }))).then((pages) => {
       if (cancelled) return;
       const model = buildCatalogLeaves(pages);
-      const start = Math.max(0, model.leaves.findIndex((leaf) => leaf.pdfPage === initialPage));
+      const start = Math.min(pageIndexRef.current, Math.max(0, model.leaves.length - 1));
       pageIndexRef.current = start; setIndex(start);
       setPrepared({ ...model, images });
     }).catch(() => { if (!cancelled) setLoadError(true); });
@@ -67,15 +67,13 @@ export default function CatalogFlipbook({ images, totalPages, initialPage, onPag
   const onFlip = useCallback((event: { data: number }) => {
     setIndex(event.data);
     pageIndexRef.current = event.data;
-    onPageChange(prepared?.leaves[event.data]?.pdfPage ?? 1);
-  }, [onPageChange, prepared]);
+  }, []);
   const onOrientation = useCallback((event: { data: string }) => setPortrait(event.data === 'portrait'), []);
   const onState = useCallback((event: { data: string }) => setBusy(event.data !== 'read' && event.data !== 'fold_corner'), []);
   const onInit = useCallback((event: { data: { page: number; mode: string } }) => {
     setReady(true); setBusy(false); setPortrait(event.data.mode === 'portrait');
     setIndex(event.data.page); pageIndexRef.current = event.data.page;
-    onPageChange(prepared?.leaves[event.data.page]?.pdfPage ?? 1);
-  }, [onPageChange, prepared]);
+  }, []);
   const leaves = useMemo(() => prepared?.leaves.map((leaf, page) => (
     <div key={`${leaf.src}-${leaf.part}`} className={`catalog-book-leaf catalog-book-leaf-${leaf.part}`} data-density="soft">
       <img src={leaf.src} alt={`Сторінка ${page + 1}`} draggable={false} />
@@ -99,7 +97,6 @@ export default function CatalogFlipbook({ images, totalPages, initialPage, onPag
     }}>
       <div className="catalog-book-toolbar">
         <p aria-live="polite">{leafCount ? <>{spread.first === spread.last ? 'Сторінка' : 'Сторінки'} {range} з {leafCount}</> : 'Підготовка сторінок...'}</p>
-        <button type="button" onClick={onPdfMode}>PDF-режим</button>
       </div>
       <p className="catalog-book-hint">Потягніть за кут сторінки або скористайтеся стрілками</p>
       <div ref={host} className="catalog-book-host">
@@ -116,7 +113,7 @@ export default function CatalogFlipbook({ images, totalPages, initialPage, onPag
             renderOnlyPageLengthChange
             onFlip={onFlip} onChangeOrientation={onOrientation} onChangeState={onState} onInit={onInit}
           >{leaves}</HTMLFlipBook>
-        </div> : <p className="catalog-book-loading">{loadError ? 'Не вдалося завантажити сторінки. Скористайтеся PDF-режимом.' : 'Підготовка книжкового перегляду...'}</p>}
+        </div> : <p className="catalog-book-loading" role={loadError ? 'alert' : 'status'}>{loadError ? 'Не вдалося завантажити сторінки. Оновіть сторінку та спробуйте ще раз.' : 'Підготовка книжкового перегляду...'}</p>}
       </div>
       <div className="catalog-book-navigation">
         <button type="button" onClick={goFirst} disabled={!canPrev} aria-label="Перша сторінка">«</button>
