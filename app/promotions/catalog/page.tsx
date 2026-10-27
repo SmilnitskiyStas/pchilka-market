@@ -1,96 +1,21 @@
-import { promises as fs } from 'fs';
-import path from 'path';
 import type { Metadata } from 'next';
-import PromotionCatalogViewer, { type PromotionCatalog } from '@/components/promotion-catalog-viewer';
-import { getPromotionCatalogMetadata, getPromotionCatalogSettings } from '@/lib/promotion-catalog-metadata';
-import { renderPromotionCatalog } from '@/lib/promotion-catalog-renderer';
-import { buildMediaUrl, getUploadsDir } from '@/lib/uploads';
+import Link from 'next/link';
+import { getPromotionCatalogPages } from '@/lib/promotion-catalog-pages';
+import { catalogPageHref } from '@/lib/promotion-catalog-page-types';
 
-// Catalogs are added through the admin panel after deployment, so this page
-// must read the file list anew for every request instead of using build output.
 export const dynamic = 'force-dynamic';
-
-async function readPdfPageCount(absolutePath: string): Promise<number> {
-  try {
-    const fileBuffer = await fs.readFile(absolutePath);
-    const fileContent = fileBuffer.toString('latin1');
-    const countMatches = fileContent.match(/\/Count\s+(\d+)/g) ?? [];
-    const pageCounts = countMatches
-      .map((match) => Number(match.replace('/Count', '').trim()))
-      .filter((count) => Number.isFinite(count) && count > 0 && count < 5000);
-
-    if (pageCounts.length === 0) return 1;
-    return Math.max(...pageCounts);
-  } catch {
-    return 1;
-  }
-}
-
-async function readCatalogs(
-  directory: string,
-  buildUrl: (relativePath: string) => string,
-  idPrefix: string,
-  metadata: Awaited<ReturnType<typeof getPromotionCatalogMetadata>>,
-  relativeDirectory = ''
-): Promise<PromotionCatalog[]> {
-  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
-  const nested = await Promise.all(
-    entries.map(async (entry) => {
-      const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
-      const absolutePath = path.join(directory, entry.name);
-
-      if (entry.isDirectory()) return readCatalogs(absolutePath, buildUrl, idPrefix, metadata, relativePath);
-      if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.pdf')) return [];
-
-      const stats = await fs.stat(absolutePath);
-      const pageImages = await renderPromotionCatalog(relativePath).catch(() => []);
-      return [{
-        id: `${idPrefix}:${relativePath}`,
-        name: entry.name.replace(/\.pdf$/i, ''),
-        url: buildUrl(relativePath),
-        updatedAt: stats.mtime.toISOString(),
-        pageCount: await readPdfPageCount(absolutePath),
-        pageImages,
-        ...metadata[relativePath]
-      }];
-    })
-  );
-
-  return nested.flat();
-}
-
-async function getPromotionCatalogs(): Promise<PromotionCatalog[]> {
-  const uploadedDir = path.join(getUploadsDir(), 'promotions', 'catalogs');
-  const metadata = await getPromotionCatalogMetadata();
-  const catalogs = await readCatalogs(
-    uploadedDir,
-    (relativePath) => buildMediaUrl(['promotions', 'catalogs', ...relativePath.split('/')]),
-    'uploaded',
-    metadata
-  );
-
-  return catalogs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-}
-
-export async function generateMetadata(): Promise<Metadata> {
-  const currentCatalog = (await getPromotionCatalogs())[0];
-  if (!currentCatalog) {
-    return { title: 'Каталог акцій | Pchilka Market', description: 'Актуальні каталоги акцій Pchilka Market.' };
-  }
-
-  return {
-    title: currentCatalog.seoTitle || `${currentCatalog.title || currentCatalog.name} | Pchilka Market`,
-    description: currentCatalog.seoDescription || 'Актуальний каталог акцій Pchilka Market.',
-    keywords: currentCatalog.seoKeywords || undefined
-  };
-}
+export const metadata: Metadata = { title: 'Каталоги акцій | Pchilka Market', description: 'Оберіть актуальний каталог акцій Пчілка маркет.' };
 
 export default async function PromotionsCatalogPage() {
-  const [catalogs, settings] = await Promise.all([getPromotionCatalogs(), getPromotionCatalogSettings()]);
-
+  const pages = (await getPromotionCatalogPages()).filter((page) => page.showInList);
   return (
     <main className="site-container min-h-screen px-4 py-10 sm:px-6 lg:px-8">
-      <PromotionCatalogViewer catalogs={catalogs} showArchive={settings.showArchive} />
+      <h1 className="text-3xl font-bold text-slate-900">Каталоги акцій</h1>
+      <p className="mt-3 text-slate-600">Оберіть потрібний каталог, щоб переглянути актуальні пропозиції.</p>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        {pages.map((page) => <Link key={page.id} href={catalogPageHref(page)} className="rounded-3xl border border-slate-200 bg-white p-6 transition hover:border-brand hover:shadow-md"><h2 className="text-2xl font-bold text-brand">{page.title}</h2><p className="mt-3 text-sm text-slate-600">{page.description}</p><span className="mt-5 inline-block font-semibold text-brand">Переглянути каталог →</span></Link>)}
+      </div>
+      {pages.length === 0 ? <p className="mt-6 text-slate-600">Сторінок каталогів поки немає.</p> : null}
     </main>
   );
 }

@@ -2,6 +2,8 @@
 
 import { mainMenu } from '@/content/menu';
 import { getSeoRulesFromDb } from '@/lib/seo-rules-repository';
+import { getPromotionCatalogPages } from '@/lib/promotion-catalog-pages';
+import { catalogPageHref } from '@/lib/promotion-catalog-page-types';
 
 export const runtime = 'nodejs';
 
@@ -28,7 +30,10 @@ function collectMenuPaths(): string[] {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const fallback: MetadataRoute.Sitemap = collectMenuPaths().map((path) => ({
+  const allCatalogPages = await getPromotionCatalogPages();
+  const pages = allCatalogPages.filter((page) => page.showInList);
+  const visibleCatalogPaths = new Set(pages.map(catalogPageHref));
+  const fallback: MetadataRoute.Sitemap = [...collectMenuPaths(), ...pages.map(catalogPageHref)].map((path) => ({
     url: toAbsoluteUrl(path),
     lastModified: new Date(),
     changeFrequency: path === '/' ? 'daily' : 'weekly',
@@ -40,7 +45,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (rules.length === 0) return fallback;
 
     const fromRules: MetadataRoute.Sitemap = rules
-      .filter((rule) => rule.includeInSitemap && rule.robots !== 'noindex,nofollow')
+      .filter((rule) => {
+        const rulePath = rule.path.replace(/\/+$/, '');
+        return rule.includeInSitemap && rule.robots !== 'noindex,nofollow' &&
+          (!rulePath.startsWith('/promotions/catalog/') || visibleCatalogPaths.has(rulePath));
+      })
       .map((rule) => ({
         url: toAbsoluteUrl(rule.path),
         lastModified: rule.updatedAt ? new Date(rule.updatedAt) : new Date(),

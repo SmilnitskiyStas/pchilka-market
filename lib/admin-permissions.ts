@@ -71,7 +71,7 @@ export function resourceForAdminPath(pathname: string): AdminResource {
   if (pathname.includes('/product-info')) return 'inventory';
   if (pathname.includes('/messages')) return 'messages';
   if (pathname.includes('/home-slides') || pathname.includes('/banners')) return 'banners';
-  if (pathname.includes('/promotions') || pathname.includes('/shock-price')) return 'promotions';
+  if (pathname.includes('/promotions') || pathname.includes('/promotion-catalogs') || pathname.includes('/shock-price')) return 'promotions';
   if (pathname.includes('/media') || pathname.includes('/assets') || pathname.includes('/images')) return 'media';
   if (pathname.includes('/network') || pathname.includes('/stores') || pathname.includes('/site-profile')) return 'network';
   if (pathname.includes('/seo')) return 'seo';

@@ -13,6 +13,8 @@ import {
 } from '@/lib/promotion-catalog-metadata';
 import { removePromotionCatalogRender, renderPromotionCatalog } from '@/lib/promotion-catalog-renderer';
 import { buildMediaUrl, getUploadsDir, resolveUploadPath } from '@/lib/uploads';
+import { getPromotionCatalogPages, updatePromotionCatalogPages } from '@/lib/promotion-catalog-pages';
+import { DEFAULT_CATALOG_PAGE_ID } from '@/lib/promotion-catalog-page-types';
 
 export const runtime = 'nodejs';
 
@@ -90,8 +92,8 @@ async function listCatalogs(): Promise<CatalogFile[]> {
 
 export async function GET(request: Request) {
   if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse();
-  const [catalogs, settings] = await Promise.all([listCatalogs(), getPromotionCatalogSettings()]);
-  return NextResponse.json({ ok: true, catalogs, settings });
+  const [catalogs, settings, pages] = await Promise.all([listCatalogs(), getPromotionCatalogSettings(), getPromotionCatalogPages()]);
+  return NextResponse.json({ ok: true, catalogs, settings, pages });
 }
 
 export async function POST(request: Request) {
@@ -102,7 +104,12 @@ export async function POST(request: Request) {
     const year = String(now.getFullYear());
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const formData = await request.formData();
+    const pageId = String(formData.get('pageId') ?? DEFAULT_CATALOG_PAGE_ID);
+    if (!(await getPromotionCatalogPages()).some((page) => page.id === pageId)) {
+      return NextResponse.json({ ok: false, error: 'Оберіть наявну сторінку каталогу.' }, { status: 400 });
+    }
     const metadata: PromotionCatalogMetadata = {
+      pageId,
       title: String(formData.get('title') ?? ''),
       seoTitle: String(formData.get('seoTitle') ?? ''),
       seoDescription: String(formData.get('seoDescription') ?? ''),
@@ -172,12 +179,20 @@ export async function PUT(request: Request) {
   if (!isAdminRequestAuthorized(request)) return unauthorizedAdminResponse();
 
   try {
-    const { id, metadata, settings } = (await request.json()) as {
+    const { id, metadata, settings, pageId } = (await request.json()) as {
       id?: string;
       metadata?: PromotionCatalogMetadata;
       settings?: { showArchive?: boolean };
+      pageId?: string;
     };
     if (settings) {
+      if (pageId) {
+        const pages = await updatePromotionCatalogPages((items) => {
+          if (!items.some((item) => item.id === pageId)) throw new Error('Сторінку не знайдено.');
+          return items.map((item) => item.id === pageId ? { ...item, showArchive: settings.showArchive === true } : item);
+        });
+        return NextResponse.json({ ok: true, pages, settings: { showArchive: pages.find((page) => page.id === pageId)!.showArchive } });
+      }
       const savedSettings = await savePromotionCatalogSettings(settings);
       return NextResponse.json({ ok: true, settings: savedSettings });
     }
@@ -188,7 +203,12 @@ export async function PUT(request: Request) {
 
     const file = await fs.stat(resolveUploadPath([...CATALOG_FOLDER, ...relativePath]));
     if (!file.isFile()) return NextResponse.json({ ok: false, error: 'Каталог не знайдено.' }, { status: 404 });
-    await savePromotionCatalogMetadata(relativePath.join('/'), metadata ?? {});
+    const previous = (await getPromotionCatalogMetadata())[relativePath.join('/')] ?? {};
+    const merged = { ...previous, ...metadata };
+    if (!(await getPromotionCatalogPages()).some((page) => page.id === (merged.pageId || DEFAULT_CATALOG_PAGE_ID))) {
+      return NextResponse.json({ ok: false, error: 'Оберіть наявну сторінку каталогу.' }, { status: 400 });
+    }
+    await savePromotionCatalogMetadata(relativePath.join('/'), merged);
     return NextResponse.json({ ok: true, catalogs: await listCatalogs() });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Не вдалося зберегти дані каталогу.';

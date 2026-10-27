@@ -2,8 +2,10 @@ import { promises as fs } from 'fs';
 import path from 'path';
 
 import { getUploadsDir } from '@/lib/uploads';
+import { DEFAULT_CATALOG_PAGE_ID } from '@/lib/promotion-catalog-page-types';
 
 export type PromotionCatalogMetadata = {
+  pageId?: string;
   title?: string;
   seoTitle?: string;
   seoDescription?: string;
@@ -47,6 +49,7 @@ export async function savePromotionCatalogSettings(
 
 function normalizeMetadata(value: Partial<PromotionCatalogMetadata>): PromotionCatalogMetadata {
   return {
+    pageId: String(value.pageId ?? '').trim() || DEFAULT_CATALOG_PAGE_ID,
     title: String(value.title ?? '').trim(),
     seoTitle: String(value.seoTitle ?? '').trim(),
     seoDescription: String(value.seoDescription ?? '').trim(),
