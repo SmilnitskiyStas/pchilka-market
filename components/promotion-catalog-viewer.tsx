@@ -65,6 +65,9 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
     [catalogs, activeCatalog]
   );
 
+  const canEnableFlipbook = Boolean(activeCatalog) &&
+    (activeCatalog?.pageImages?.length || activeCatalog?.pageCount || 1) <= MAX_AUTO_FLIPBOOK_PAGES;
+
   useEffect(() => {
     setCurrentPage(1);
     setPageImages([]);
@@ -85,22 +88,14 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
   }, [activeCatalog]);
 
   useEffect(() => () => {
+    renderSession.current += 1;
     if (flipTimer.current) clearTimeout(flipTimer.current);
   }, []);
-
-  if (!activeCatalog) {
-    return (
-      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-600">
-        Актуальних PDF-каталогів ще немає.
-      </div>
-    );
-  }
-
-  const canEnableFlipbook = totalPages <= MAX_AUTO_FLIPBOOK_PAGES;
   const canGoPrev = currentPage > 1 && (viewerMode !== 'flipbook' || Boolean(pageImages[currentPage - 2]));
   const canGoNext = currentPage < totalPages && (viewerMode !== 'flipbook' || Boolean(pageImages[currentPage]));
 
   const enableFlipbook = async () => {
+    if (!activeCatalog) return;
     if (activeCatalog.pageImages?.length) {
       setPageImages(activeCatalog.pageImages);
       setTotalPages(activeCatalog.pageImages.length);
@@ -175,6 +170,7 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
 
       await pdf.destroy();
     } catch (error) {
+      if (renderSession.current !== sessionId) return;
       const message = error instanceof Error ? error.message : 'Не вдалося підготувати 3D-перегляд.';
       setFlipbookError(message);
       setViewerMode('iframe');
@@ -186,7 +182,15 @@ export default function PromotionCatalogViewer({ catalogs, showArchive = false }
   useEffect(() => {
     if (!canEnableFlipbook) return;
     void enableFlipbook();
-  }, [activeCatalog?.id]);
+  }, [activeCatalog]);
+
+  if (!activeCatalog) {
+    return (
+      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-600">
+        Актуальних PDF-каталогів ще немає.
+      </div>
+    );
+  }
 
   const goToPage = (page: number) => {
     const nextPage = clampPage(page, totalPages);

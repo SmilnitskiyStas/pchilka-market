@@ -12,4 +12,4 @@
 
 Дані зберігаються поряд з наявними каталогами в `UPLOADS_DIR/promotions/catalogs/catalog-pages.json`. Призначення PDF записується в `catalog-metadata.json` через поле `pageId`. Під час перенесення сервера потрібно переносити весь `UPLOADS_DIR`, як і раніше; зміни схеми БД не потрібні.
 
-Перевірки: `npm run typecheck` та `node scripts/check-promotion-catalog-pages.cjs`. Інтеграційна перевірка створює ізольовану тимчасову папку та не змінює робочі каталоги.
+Перевірки: `npm run typecheck`, `node scripts/check-promotion-catalog-pages.cjs` та `node scripts/check-promotion-catalog-viewer.cjs`. Інтеграційна перевірка створює ізольовану тимчасову папку та не змінює робочі каталоги. Перевірка переглядача виконує ефекти після рендера та перевіряє стабільний порядок хуків при переходах між порожнім каталогом, PDF-режимом і підготовленим книжковим режимом.
