@@ -4,6 +4,8 @@ import { mainMenu } from '@/content/menu';
 import { getSeoRulesFromDb } from '@/lib/seo-rules-repository';
 import { getPromotionCatalogPages } from '@/lib/promotion-catalog-pages';
 import { catalogPageHref } from '@/lib/promotion-catalog-page-types';
+import { listVisualPages } from '@/lib/visual-pages-repository';
+import { visualPageHref } from '@/lib/visual-pages';
 
 export const runtime = 'nodejs';
 
@@ -33,7 +35,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const allCatalogPages = await getPromotionCatalogPages();
   const pages = allCatalogPages.filter((page) => page.showInList);
   const visibleCatalogPaths = new Set(pages.map(catalogPageHref));
-  const fallback: MetadataRoute.Sitemap = [...collectMenuPaths(), ...pages.map(catalogPageHref)].map((path) => ({
+  const visualPages = await listVisualPages().catch(() => []);
+  const excludedPagePaths = new Set(visualPages.flatMap((page) => page.published?.seo?.noIndex ? [visualPageHref(page.published.slug)] : []));
+  const publishedPagePaths = visualPages.flatMap((page) => page.published && !page.published.seo?.noIndex ? [visualPageHref(page.published.slug)] : []);
+  const fallback: MetadataRoute.Sitemap = [...new Set([...collectMenuPaths(), ...pages.map(catalogPageHref), ...publishedPagePaths])].filter((path) => !excludedPagePaths.has(path)).map((path) => ({
     url: toAbsoluteUrl(path),
     lastModified: new Date(),
     changeFrequency: path === '/' ? 'daily' : 'weekly',
@@ -48,6 +53,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .filter((rule) => {
         const rulePath = rule.path.replace(/\/+$/, '');
         return rule.includeInSitemap && rule.robots !== 'noindex,nofollow' &&
+          !excludedPagePaths.has(rulePath) &&
+          (!rulePath.startsWith('/pages/') || publishedPagePaths.includes(rulePath)) &&
           (!rulePath.startsWith('/promotions/catalog/') || visibleCatalogPaths.has(rulePath));
       })
       .map((rule) => ({

@@ -25,6 +25,8 @@ async function main(){
  const repo=require('../lib/site-menu-repository.ts');
  const contentRepo=require('../lib/blog-content-repository.ts');
  contentRepo.getBlogContentFromDb=async()=>({entries:[{contentType:'blog',pagePath:'/about/why-pchilka-not-bdzhilka',status:'published'}],categories:[]});
+ const visualRepo=require('../lib/visual-pages-repository.ts');
+ visualRepo.listVisualPages=async()=>[{published:{slug:'visual-test',title:'Нова сторінка'}},{published:null,draft:{slug:'secret-draft'}}];
  const {filterContentMenu}=require('../lib/menu-content.ts');
  const auth=require('../lib/admin-auth.ts');const{NextResponse}=require('next/server');
  const permissions=require('../lib/admin-permissions.ts');
@@ -37,6 +39,9 @@ async function main(){
  const defaults=await repo.getSiteMenuSettings();assert.deepEqual(defaults,model.defaultSiteMenu);
  assert.ok(!fs.existsSync(path.join(temporary,'navigation','menu.json')));
  const payload=await(await api.GET(req('GET',null,cookie('editor',['content:read'])))).json();assert.equal(payload.ok,true);assert.ok(payload.destinations.some(item=>item.href==='/promotions/catalog/f1'));
+ assert.ok(payload.destinations.some(item=>item.href==='/pages/visual-test'));
+ assert.ok(!payload.destinations.some(item=>item.href==='/pages/secret-draft'));
+ assert.ok(payload.populatedPaths.includes('/pages/visual-test') && !payload.populatedPaths.includes('/pages/secret-draft'));
  assert.equal((await api.PUT(req('PUT',defaults,cookie('editor',['content:read'])))).status,401);
  const original=structuredClone(defaults.items);
  let moved=model.moveMenuItem(original,original[0].id,null,2);assert.equal(moved[2].id,original[0].id);assert.deepEqual(defaults.items,original);

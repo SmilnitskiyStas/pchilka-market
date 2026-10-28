@@ -6,6 +6,8 @@ import { newsPosts } from '@/content/news';
 import { charityPosts } from '@/content/charity';
 import { getPromotionCatalogPages } from '@/lib/promotion-catalog-pages';
 import { catalogPageHref } from '@/lib/promotion-catalog-page-types';
+import { listVisualPages } from '@/lib/visual-pages-repository';
+import { visualPageHref } from '@/lib/visual-pages';
 
 export async function getPopulatedMenuPaths() {
   let contentAvailable = true;
@@ -16,6 +18,8 @@ export async function getPopulatedMenuPaths() {
   if (charityPosts.length) paths.add('/about/charity');
   for (const page of await getPromotionCatalogPages()) if (page.showInList) paths.add(catalogPageHref(page));
   paths.add('/qr-code');
+  const visualPages = await listVisualPages().catch(() => { contentAvailable = false; return []; });
+  for (const page of visualPages) if (page.published) paths.add(visualPageHref(page.published.slug));
   return { populatedPaths: [...paths], contentAvailable };
 }
 export async function getPublicSiteMenu() {

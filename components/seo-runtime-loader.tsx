@@ -78,6 +78,7 @@ export default function SeoRuntimeLoader() {
 
     async function applySeo() {
       removeManagedTags();
+      if (normalizedPath.startsWith('/pages/') || (normalizedPath === '/cooperation/rental' && (new URLSearchParams(window.location.search).has('preview') || document.querySelector('meta[name="pchilka-visual-seo"]')))) return;
 
       const rule = await fetchSeoRule(normalizedPath, controller.signal);
       if (!rule) return;

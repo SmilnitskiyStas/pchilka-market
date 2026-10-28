@@ -8,6 +8,7 @@ import SiteHeader from '@/components/site-header';
 import SiteContentProvider, { PageAssignedArticles } from '@/components/site-content-provider';
 import './globals.css';
 import './public-site.css';
+import './visual-pages.css';
 
 export const metadata: Metadata = {
   title: 'Pchilka Market',

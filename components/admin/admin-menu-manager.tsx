@@ -7,7 +7,7 @@ import { filterContentMenu } from '@/lib/menu-content';
 
 const inputClass = 'mt-1 block w-full min-w-0 rounded-xl border border-slate-300 bg-white p-2.5 text-sm font-normal';
 type Destination = { label: string; href: string };
-export default function AdminMenuManager() {
+export default function AdminMenuManager({ initialHref = '' }: { initialHref?: string } = {}) {
   const [settings, setSettings] = useState<SiteMenuSettings>(() => structuredClone(defaultSiteMenu));
   const [saved, setSaved] = useState<SiteMenuSettings>(() => structuredClone(defaultSiteMenu));
   const [destinations, setDestinations] = useState<Destination[]>([]);
@@ -20,6 +20,9 @@ export default function AdminMenuManager() {
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [openPreview, setOpenPreview] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(() => new Set());
+  const [destinationParent, setDestinationParent] = useState('');
+  const requestedDestination = destinations.find((item) => item.href === initialHref);
+  const destinationExists = !!requestedDestination && settings.items.some((item) => item.href === initialHref || item.children?.some((child) => child.href === initialHref));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -46,8 +49,8 @@ export default function AdminMenuManager() {
     try { update(moveMenuItem(settings.items, id, parentId, position)); }
     catch (e) { setError(e instanceof Error ? e.message : 'Не вдалося перемістити пункт.'); }
   }
-  function add(parentId: string | null) {
-    const item: ManagedMenuItem = { id: crypto.randomUUID(), label: 'Новий пункт', href: '/', visibility: 'auto' };
+  function add(parentId: string | null, destination?: Destination) {
+    const item: ManagedMenuItem = { id: crypto.randomUUID(), label: destination?.label || 'Новий пункт', href: destination?.href || '/', visibility: 'auto' };
     if (parentId) patch(parentId, { children: [...(settings.items.find((row) => row.id === parentId)?.children ?? []), item] });
     else update([...settings.items, item]);
     setExpandedItems((current) => new Set([...current, item.id, ...(parentId ? [parentId] : [])]));
@@ -110,6 +113,13 @@ export default function AdminMenuManager() {
     {loading ? <p role="status" className="mt-3 text-sm">Завантаження меню...</p> : null}
     {error ? <p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
     {success ? <p role="status" className="mt-3 rounded-xl bg-green-50 p-3 text-sm text-green-800">{success}</p> : null}
+    {requestedDestination ? <section className="mt-4 space-y-3 rounded-2xl border border-brand/30 bg-brand/5 p-4">
+      <h2 className="font-semibold">Сторінка: {requestedDestination.label}</h2>
+      <p className="text-sm">{requestedDestination.href}{destinationExists ? ' — посилання вже є в меню.' : ''}</p>
+      <label className="block text-sm">Де додати<select className={inputClass} value={destinationParent} onChange={(event) => setDestinationParent(event.target.value)}><option value="">Головний рівень</option>{settings.items.map((item) => <option key={item.id} value={item.id}>Підменю: {item.label}</option>)}</select></label>
+      <button type="button" disabled={loading || saving || destinationExists} className="rounded-xl border border-brand px-3 py-2 text-sm font-semibold text-brand disabled:opacity-50" onClick={() => add(destinationParent || null, requestedDestination)}>Додати пункт у чернетку меню</button>
+      <p className="text-xs text-slate-600">Після перевірки розміщення натисніть «Зберегти меню» внизу сторінки.</p>
+    </section> : null}
     <details className="my-5 rounded-2xl border border-brand/30 bg-slate-50 p-4">
       <summary className="cursor-pointer font-semibold">Попередній перегляд меню на сайті</summary>
       <section className="mt-4" aria-label="Попередній перегляд меню">

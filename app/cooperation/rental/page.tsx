@@ -4,8 +4,10 @@ import path from 'path';
 import type { ReactNode } from 'react';
 
 import CooperationRentalForm from '@/components/cooperation-rental-form';
+import rentalVisualContent from '@/components/rental-visual-content';
 import PageArticles from '@/components/page-articles';
 import { listPublishedFormEntries } from '@/lib/public-content-repository';
+import { getVisualPage } from '@/lib/visual-pages-repository';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,10 +16,21 @@ type RentalContent = {
   lines: string[];
 };
 
-export const metadata: Metadata = {
+const rentalMetadata: Metadata = {
   title: 'Пропонуємо в оренду | Pchilka Market',
   description: 'Сторінка співпраці Pchilka Market: пропозиція оренди площ і форма подання запиту.'
 };
+
+export async function generateMetadata({ searchParams }: { searchParams?: Promise<{ preview?: string }> } = {}): Promise<Metadata> {
+  const query = await searchParams;
+  const page = (await getVisualPage('rental-intro').catch(() => null))?.published;
+  const title = page?.seo?.title || rentalMetadata.title;
+  return { ...rentalMetadata, metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || 'https://pchilka-market.ua'), title, description: page?.description || rentalMetadata.description,
+    ...(page?.seo ? { other: { 'pchilka-visual-seo': 'true' } } : {}),
+    alternates: { canonical: '/cooperation/rental' },
+    ...(page?.seo?.image ? { openGraph: { images: [page.seo.image] }, twitter: { card: 'summary_large_image', images: [page.seo.image] } } : {}),
+    ...(query?.preview || page?.seo?.noIndex ? { robots: { index: false, follow: false } } : {}) };
+}
 
 async function readRentalContent(): Promise<RentalContent | null> {
   const filePath = path.join(process.cwd(), 'public', 'img', 'cooperation', 'we_offer_rental.txt');
@@ -75,7 +88,9 @@ function contentLineToNode(line: string, index: number) {
   );
 }
 
-export default async function RentalPage() {
+export default async function RentalPage({ searchParams }: { searchParams?: Promise<{ preview?: string }> } = {}) {
+  const query = await searchParams;
+  const visual = await rentalVisualContent(query?.preview === '1');
   const articles = await listPublishedFormEntries('/cooperation/rental').catch(() => []);
   const content = await readRentalContent();
   const securityLine = content?.lines.find((line) => /Служби безпеки/i.test(line)) ?? null;
@@ -87,6 +102,7 @@ export default async function RentalPage() {
   return (
     <main className="site-container min-h-screen px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <section className="rounded-3xl border border-brand/25 bg-white/95 p-5 shadow-sm sm:p-8">
+        {visual.toolbar}
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Співпраця</p>
         <h1 className="mt-2 text-3xl font-bold text-slate-900 sm:text-4xl">{content?.title ?? 'Пропонуємо в оренду'}</h1>
 
@@ -112,6 +128,7 @@ export default async function RentalPage() {
         )}
 
         {articles.length ? <div className="mt-6"><PageArticles articles={articles} /></div> : null}
+        {visual.body}
         <CooperationRentalForm />
       </section>
     </main>
