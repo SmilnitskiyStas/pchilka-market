@@ -137,7 +137,7 @@ export default function AdminNav() {
       },
       {
         label: 'Контент',
-        children: [{ href: '/admin/content', label: 'Статті' }, { href: '/admin/cooperation/offer-product', label: 'Співпраця: запропонувати товар' }]
+        children: [{ href: '/admin/content', label: 'Статті' }, { href: '/admin/menu', label: 'Меню сайту' }, { href: '/admin/cooperation/offer-product', label: 'Співпраця: запропонувати товар' }]
       },
       {
         label: 'Комунальні нарахування',

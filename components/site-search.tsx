@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { mainMenu } from '@/content/menu';
-
-const pages = Array.from(new Map(mainMenu.flatMap((item) => [item, ...(item.children ?? [])])
-  .filter((item) => item.href.startsWith('/') && item.href !== '/promotions')
-  .map((item) => [item.href, { title: item.label, href: item.href }])).values());
+import { useContentMenu } from '@/components/site-content-provider';
 
 export default function SiteSearch() {
+  const menu = useContentMenu();
+  const pages = Array.from(new Map(menu.flatMap((item) => [item, ...(item.children ?? [])])
+    .filter((item) => item.href.startsWith('/') && item.href !== '/promotions')
+    .map((item) => [item.href, { title: item.label, href: item.href }])).values());
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');

@@ -7,11 +7,10 @@ import { filterContentMenu, dedicatedArticlePages } from '@/lib/menu-content';
 import type { ContentEntry } from '@/lib/content-entries';
 import PageArticles from '@/components/page-articles';
 
-const empty = { entries: [] as ContentEntry[], populatedPaths: [] as string[] };
+const empty = { entries: [] as ContentEntry[], populatedPaths: [] as string[], menu: filterContentMenu(headerMenu, new Set<string>()) };
 const ContentContext = createContext(empty);
 export function useContentMenu() {
-  const { populatedPaths } = useContext(ContentContext);
-  return filterContentMenu(headerMenu, new Set(populatedPaths));
+  return useContext(ContentContext).menu;
 }
 
 export default function SiteContentProvider({ children }: { children: ReactNode }) {
@@ -23,11 +22,17 @@ export default function SiteContentProvider({ children }: { children: ReactNode 
     const load = () => { void fetch('/api/site/content', { cache: 'no-store', signal: controller.signal }).then(async (response) => {
       if (!response.ok) return;
       const payload = await response.json() as typeof empty;
-      if (!controller.signal.aborted) setContent(payload);
+      if (!controller.signal.aborted) setContent((previous) => ({ ...previous, entries: payload.entries, populatedPaths: payload.populatedPaths }));
     }).catch(() => {}); };
-    load();
-    window.addEventListener('focus', load);
-    return () => { controller.abort(); window.removeEventListener('focus', load); };
+    const loadMenu = () => { void fetch('/api/site/menu', { cache: 'no-store', signal: controller.signal }).then(async (response) => {
+      if (!response.ok) return;
+      const payload = await response.json() as { menu: typeof empty.menu };
+      if (!controller.signal.aborted) setContent((previous) => ({ ...previous, menu: payload.menu }));
+    }).catch(() => {}); };
+    const refresh = () => { load(); loadMenu(); };
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => { controller.abort(); window.removeEventListener('focus', refresh); };
   }, [pathname]);
   return <ContentContext.Provider value={content}>{children}</ContentContext.Provider>;
 }

@@ -16,6 +16,7 @@ export const adminSections: AdminSection[] = [
     description: 'Статті та категорії: блог, новини мережі, благодійність.'
   },
   { href: '/admin/cooperation/offer-product', title: 'Співпраця: запропонувати товар', description: 'Тексти сторінки, відділи, контакти та ілюстрації.' },
+  { href: '/admin/menu', title: 'Меню сайту', description: 'Пункти головного меню, підменю, порядок і попередній перегляд.' },
   {
     href: '/admin/home-slides',
     title: 'Банери',

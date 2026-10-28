@@ -4,9 +4,9 @@
 .public-header-inner { max-width: var(--public-container-max-width); margin: auto; min-height: 120px; padding: 20px 40px; display: flex; align-items: center; gap: 30px; }
 .public-logo { display: block; flex-shrink: 0; }
 .public-logo img { width: 224px; height: auto; }
-.site-desktop-nav { display: flex; flex: 1; justify-content: space-between; align-items: center; gap: 18px; }
-.site-nav-item { position: relative; }
-.site-nav-link { display: block; padding: 15px 0; white-space: nowrap; font-size: 14px; font-weight: 600; border: 0; background: none; cursor: pointer; }
+.site-desktop-nav { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 18px; }
+.site-nav-item { position: relative; min-width: 0; max-width: 100%; }
+.site-nav-link { display: block; max-width: 100%; padding: 15px 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; border: 0; background: none; cursor: pointer; }
 .site-nav-link:hover, .site-nav-link[aria-expanded='true'] { color: var(--color-brand); }
 .site-nav-dropdown { position: absolute; top: 100%; left: -16px; width: 280px; padding: 10px; background: #fff; border: 1px solid #e6e8e3; border-radius: 16px; box-shadow: 0 15px 35px #10332120; }
 .site-nav-item:last-child .site-nav-dropdown { left: auto; right: -16px; }

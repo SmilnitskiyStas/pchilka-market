@@ -80,7 +80,7 @@ export function resourceForAdminPath(pathname: string): AdminResource {
   if (pathname.includes('/fun-telegram') || pathname.includes('/career-telegram')) return 'telegram';
   if (pathname.includes('/training')) return 'training';
   if (pathname.includes('/own-brand')) return 'own_brand';
-  if (pathname.includes('/content') || pathname.includes('/blog') || pathname.includes('/cooperation')) return 'content';
+  if (pathname.includes('/content') || pathname.includes('/blog') || pathname.includes('/cooperation') || pathname.includes('/menu')) return 'content';
   return 'system';
 }
 

@@ -1,6 +1,5 @@
-import Link from 'next/link';
 import FeedbackTrigger from '@/components/feedback-trigger';
-import { headerMenu } from '@/content/menu';
+import FooterMenuLinks from '@/components/footer-menu-links';
 import { getSiteProfileFromDb } from '@/lib/site-profile-repository';
 import { defaultSiteProfileSettings } from '@/lib/site-profile-settings';
 
@@ -25,7 +24,7 @@ export default async function SiteFooter() {
           <section><h2>{profile.companyName}</h2><p>Мережа магазинів зі щоденними пропозиціями, програмою лояльності та зручною навігацією по магазинах.</p></section>
           <section className="footer-contacts"><h2>Контакти</h2><address><p>{profile.contactAddress}</p><a className="footer-email" href={`mailto:${profile.contactEmail}`}>{profile.contactEmail}</a>{profile.contactPhones.map((phone) => <a key={phone} href={`tel:${toTel(phone)}`}>{phone}</a>)}</address></section>
         </div>
-        <nav aria-label="Швидкі посилання"><h2>Швидкі посилання</h2><ul>{headerMenu.map((item) => <li key={item.label}><Link href={item.href === '#' ? item.children![0].href : item.href === '/promotions' ? '/promotions/catalog' : item.href}>{item.label}</Link></li>)}</ul></nav>
+        <FooterMenuLinks />
         <section><h2>Зворотний зв’язок</h2><a className="footer-primary-phone" href={`tel:${toTel(primaryPhone)}`}>{primaryPhone}</a><FeedbackTrigger />
           {socialLinks.length > 0 ? <div className="footer-social"><h3>Ми в соціальних мережах</h3><div>{socialLinks.map((key) => <a key={key} href={profile.socialLinks[key]} target="_blank" rel="noopener noreferrer" aria-label={socialNames[key]}><svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">{socialIcons[key]}</svg></a>)}</div></div> : null}
         </section>

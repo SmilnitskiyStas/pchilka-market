@@ -1,4 +1,6 @@
 export type MenuItem = {
+  id?: string;
+  visibility?: 'auto' | 'always' | 'hidden';
   label: string;
   href: string;
   children?: MenuItem[];

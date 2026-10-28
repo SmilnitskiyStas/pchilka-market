@@ -13,11 +13,13 @@ const functionalPages = new Set(['/', '/about/stores', '/about/contacts', '/abou
 
 export function filterContentMenu(menu: MenuItem[], populatedPaths: Set<string>): MenuItem[] {
   return menu.flatMap((item) => {
+    if (item.visibility === 'hidden') return [];
     const children = item.children ? filterContentMenu(item.children, populatedPaths) : undefined;
-    const visible = functionalPages.has(item.href) || populatedPaths.has(item.href);
+    const pathname = item.href.split(/[?#]/)[0].replace(/\/+$/, '') || '/';
+    const visible = item.href !== '#' && (item.visibility === 'always' || /^https:\/\//.test(item.href) || functionalPages.has(pathname) || populatedPaths.has(pathname));
     if (!visible && !children?.length) return [];
-    if (children?.length && populatedPaths.has(item.href) && !children.some((child) => child.href === item.href)) {
-      children.unshift({ label: item.label, href: item.href });
+    if (item.href !== '#' && children?.length && (populatedPaths.has(pathname) || item.visibility === 'always') && !children.some((child) => child.href === item.href)) {
+      children.unshift({ id: item.id ? `${item.id}-overview` : undefined, label: item.label, href: item.href });
     }
     return [{ ...item, href: visible ? item.href : children![0].href, children }];
   });
