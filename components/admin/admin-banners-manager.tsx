@@ -9,6 +9,8 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { HomeBanner } from '@/content/home-banners';
 import { mainMenu } from '@/content/menu';
 import { doesBannerMatchDate, getBannerPublicationState } from '@/lib/banner-datetime';
+import { useMediaCatalog } from '@/lib/use-media-catalog';
+import { mediaCatalogPage, mediaPreviewUrl } from '@/lib/media-catalog';
 
 type BannerLinkOption = {
   label: string;
@@ -189,8 +191,8 @@ function getFileName(assetUrl: string): string {
   return normalized[normalized.length - 1] ?? assetUrl;
 }
 
-async function fetchMediaAssets(): Promise<MediaAsset[]> {
-  const response = await fetch('/api/admin/images', { cache: 'no-store' });
+async function fetchMediaAssets(signal: AbortSignal): Promise<MediaAsset[]> {
+  const response = await fetch('/api/admin/images', { cache: 'no-store', signal });
   const payload = (await response.json()) as MediaImagesPayload;
 
   if (!response.ok || !payload.ok) {
@@ -292,10 +294,10 @@ export default function AdminBannersManager() {
   const [publishTo, setPublishTo] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [formError, setFormError] = useState('');
-  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
-  const [isMediaLoading, setIsMediaLoading] = useState(false);
   const [mediaSearchQuery, setMediaSearchQuery] = useState('');
+  const [mediaPage, setMediaPage] = useState(1);
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const { items: mediaAssets, isLoading: isMediaLoading, error: mediaError, refresh: refreshMedia } = useMediaCatalog(isCatalogOpen, fetchMediaAssets);
   const [imageDebugInfo, setImageDebugInfo] = useState<ImageDebugInfo | null>(null);
 
   useEffect(() => {
@@ -342,36 +344,7 @@ export default function AdminBannersManager() {
     });
   }, [mediaAssets, mediaSearchQuery]);
 
-  useEffect(() => {
-    if (!isCatalogOpen || mediaAssets.length > 0 || isMediaLoading) return;
-
-    let cancelled = false;
-
-    async function loadMediaAssets() {
-      setIsMediaLoading(true);
-      try {
-        const loadedAssets = await fetchMediaAssets();
-        if (!cancelled) {
-          setMediaAssets(loadedAssets);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          const message = error instanceof Error ? error.message : 'Не вдалося завантажити медіафайли.';
-          setFormError(message);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsMediaLoading(false);
-        }
-      }
-    }
-
-    void loadMediaAssets();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isCatalogOpen, isMediaLoading, mediaAssets.length]);
+  const catalogPage = mediaCatalogPage(filteredMediaAssets, mediaPage);
 
   function getPublicationState(banner: HomeBanner) {
     return getBannerPublicationState(banner.publishFrom, banner.publishTo);
@@ -415,6 +388,7 @@ export default function AdminBannersManager() {
     setIsActive(true);
     setFormError('');
     setMediaSearchQuery('');
+    setMediaPage(1);
     setIsCatalogOpen(false);
     setImageDebugInfo(null);
   }
@@ -905,7 +879,7 @@ export default function AdminBannersManager() {
                     />
                     <button
                       type="button"
-                      onClick={() => setIsCatalogOpen(true)}
+                      onClick={() => { setMediaPage(1); setIsCatalogOpen(true); }}
                       className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-brand hover:text-brand"
                     >
                       Каталог
@@ -1065,16 +1039,19 @@ export default function AdminBannersManager() {
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <input
                 value={mediaSearchQuery}
-                onChange={(event) => setMediaSearchQuery(event.target.value)}
+                onChange={(event) => { setMediaSearchQuery(event.target.value); setMediaPage(1); }}
+                aria-label="Пошук медіафайлів"
                 placeholder="Пошук по назві або шляху..."
                 className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white p-3 text-sm outline-none transition focus:border-brand"
               />
               <p className="text-sm text-slate-500">Знайдено: {filteredMediaAssets.length}</p>
+              <button type="button" onClick={refreshMedia} disabled={isMediaLoading} className="rounded-full border border-slate-300 px-3 py-2 text-sm disabled:opacity-50">Оновити каталог</button>
             </div>
 
             {isMediaLoading ? <p className="mt-4 text-sm text-slate-600">Завантаження медіафайлів...</p> : null}
+            {mediaError ? <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{mediaError} Натисніть «Оновити каталог», щоб повторити.</p> : null}
 
-            {!isMediaLoading && filteredMediaAssets.length === 0 ? (
+            {!isMediaLoading && !mediaError && filteredMediaAssets.length === 0 ? (
               <p className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 Немає доступних медіафайлів за цим фільтром.
               </p>
@@ -1107,8 +1084,8 @@ export default function AdminBannersManager() {
               </div>
             ) : null}
 
-            <div className="mt-4 grid max-h-[70vh] gap-4 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredMediaAssets.map((asset) => {
+            <div key={`${catalogPage.page}:${mediaSearchQuery}`} className="mt-4 grid max-h-[55vh] gap-4 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {catalogPage.items.map((asset) => {
                 const isSelected = normalizeImagePathInput(src) === asset.url;
                 return (
                   <button
@@ -1127,21 +1104,19 @@ export default function AdminBannersManager() {
                   >
                     <div className="aspect-[4/3] overflow-hidden bg-slate-100">
                       {isVideoAsset(asset.url) ? (
-                        <video
-                          src={asset.url}
-                          aria-label={asset.metadata?.alt || getFileName(asset.url)}
-                          className="h-full w-full object-cover"
-                          muted
-                          playsInline
-                          preload="metadata"
-                        />
+                        <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-600"><span aria-hidden="true" className="mr-2 text-3xl">▷</span>Відео</div>
                       ) : (
-                        <img
-                          src={asset.url}
+                        <Image
+                          src={mediaPreviewUrl(asset.url)}
                           alt={asset.metadata?.alt || getFileName(asset.url)}
+                          width={320}
+                          height={240}
+                          sizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 240px"
+                          quality={60}
+                          loading="lazy"
                           className="h-full w-full object-cover"
                           onError={() => {
-                            void inspectImageUrl(asset.url, 'Catalog image', asset.url).then(setImageDebugInfo);
+                            setImageDebugInfo({ context: 'Catalog image', requestedUrl: mediaPreviewUrl(asset.url), originalSrc: asset.url, responseText: 'Не вдалося завантажити прев’ю. Спробуйте оновити каталог.' });
                           }}
                         />
                       )}
@@ -1154,6 +1129,11 @@ export default function AdminBannersManager() {
                 );
               })}
             </div>
+            {catalogPage.pages > 1 ? <nav aria-label="Сторінки каталогу" className="mt-4 flex items-center justify-between gap-3 text-sm">
+              <button type="button" disabled={catalogPage.page === 1} onClick={() => setMediaPage(catalogPage.page - 1)} className="rounded-full border px-4 py-2 disabled:opacity-40">Назад</button>
+              <span>Сторінка {catalogPage.page} з {catalogPage.pages}</span>
+              <button type="button" disabled={catalogPage.page === catalogPage.pages} onClick={() => setMediaPage(catalogPage.page + 1)} className="rounded-full border px-4 py-2 disabled:opacity-40">Далі</button>
+            </nav> : null}
           </div>
         </div>
       ) : null}
