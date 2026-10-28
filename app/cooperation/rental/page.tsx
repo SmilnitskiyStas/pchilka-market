@@ -16,12 +16,14 @@ type RentalContent = {
   lines: string[];
 };
 
+type RentalPageProps = { searchParams?: Promise<{ preview?: string }> };
+
 const rentalMetadata: Metadata = {
   title: 'Пропонуємо в оренду | Pchilka Market',
   description: 'Сторінка співпраці Pchilka Market: пропозиція оренди площ і форма подання запиту.'
 };
 
-export async function generateMetadata({ searchParams }: { searchParams?: Promise<{ preview?: string }> } = {}): Promise<Metadata> {
+export async function generateMetadata({ searchParams }: RentalPageProps): Promise<Metadata> {
   const query = await searchParams;
   const page = (await getVisualPage('rental-intro').catch(() => null))?.published;
   const title = page?.seo?.title || rentalMetadata.title;
@@ -88,7 +90,7 @@ function contentLineToNode(line: string, index: number) {
   );
 }
 
-export default async function RentalPage({ searchParams }: { searchParams?: Promise<{ preview?: string }> } = {}) {
+export default async function RentalPage({ searchParams }: RentalPageProps) {
   const query = await searchParams;
   const visual = await rentalVisualContent(query?.preview === '1');
   const articles = await listPublishedFormEntries('/cooperation/rental').catch(() => []);

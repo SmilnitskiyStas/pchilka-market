@@ -105,7 +105,7 @@ async function main() {
     const footer = { ...text, id:'footer', slug:'footer', placement:'after-content', title:'Текст наприкінці' };
     assert.equal((await api.PUT(request('PUT', { entries:[text, hidden, footer], categories:[] }))).status, 200);
     assert.equal(stored.entries[0].placement, 'before-form');
-    const html = renderToStaticMarkup(await require(`../app${pagePath}/page.tsx`).default());
+    const html = renderToStaticMarkup(await require(`../app${pagePath}/page.tsx`).default({ searchParams: Promise.resolve({}) }));
     assert.ok(html.indexOf('id="article-program"') >= 0, pagePath);
     assert.ok(html.indexOf('id="article-program"') < html.indexOf('<form'), `Content must precede form: ${pagePath}`);
     assert.ok(html.includes('Текст над формою') && !html.includes('Неопублікований текст') && !html.includes('Текст наприкінці'), pagePath);
