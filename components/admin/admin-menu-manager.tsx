@@ -19,6 +19,7 @@ export default function AdminMenuManager() {
   const [success, setSuccess] = useState('');
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop');
   const [openPreview, setOpenPreview] = useState<string | null>(null);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -49,6 +50,7 @@ export default function AdminMenuManager() {
     const item: ManagedMenuItem = { id: crypto.randomUUID(), label: 'Новий пункт', href: '/', visibility: 'auto' };
     if (parentId) patch(parentId, { children: [...(settings.items.find((row) => row.id === parentId)?.children ?? []), item] });
     else update([...settings.items, item]);
+    setExpandedItems((current) => new Set([...current, item.id, ...(parentId ? [parentId] : [])]));
   }
   async function save(event: FormEvent) {
     event.preventDefault(); setSaving(true); setError(''); setSuccess('');
@@ -64,17 +66,21 @@ export default function AdminMenuManager() {
   const visibleIds = new Set(preview.flatMap((item) => [item.id, ...(item.children ?? []).map((child) => child.id)]));
 
   function row(item: ManagedMenuItem, parent: ManagedMenuItem | null, index: number, length: number) {
+    const expanded = expandedItems.has(item.id);
     return <div key={item.id} className="min-w-0 rounded-2xl border border-slate-200 bg-white p-3 sm:p-4" onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
       event.preventDefault(); event.stopPropagation(); const id = event.dataTransfer.getData('text/plain'); if (id && id !== item.id) move(id, parent?.id ?? null, index);
     }}>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2"><button type="button" draggable aria-label={`Перетягнути ${item.label}`} onDragStart={(event) => { event.dataTransfer.setData('text/plain', item.id); event.dataTransfer.effectAllowed = 'move'; }} className="cursor-grab rounded-lg border px-2 py-1 text-lg">⠿</button><div><p className="text-xs font-semibold text-slate-500">{parent ? `Підменю «${parent.label}»` : 'Головний рядок'} · позиція {index + 1}</p><p className={`text-xs ${visibleIds.has(item.id) ? 'text-green-700' : 'text-amber-700'}`}>{visibleIds.has(item.id) ? 'Відображається на сайті' : 'Приховано на сайті'}</p></div></div>
+        <button type="button" aria-expanded={expanded} aria-controls={`menu-settings-${item.id}`} onClick={() => setExpandedItems((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg px-2 py-2 text-left font-semibold text-slate-900">
+          <span className="min-w-0 break-words">{item.label}{item.children?.length ? <span className="ml-2 text-xs font-normal text-slate-500">Підпунктів: {item.children.length}</span> : null}</span><span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
+        </button>
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={index === 0} aria-label={`Підняти ${item.label}`} onClick={() => move(item.id, parent?.id ?? null, index - 1)} className="rounded-full border px-3 py-1 disabled:opacity-40">↑</button>
           <button type="button" disabled={index === length - 1} aria-label={`Опустити ${item.label}`} onClick={() => move(item.id, parent?.id ?? null, index + 1)} className="rounded-full border px-3 py-1 disabled:opacity-40">↓</button>
-          <button type="button" onClick={() => remove(item.id)} className="rounded-full border border-red-300 px-3 py-1 text-sm text-red-700">Видалити{item.children?.length ? ' разом із підменю' : ''}</button>
         </div>
       </div>
+      <div id={`menu-settings-${item.id}`} hidden={!expanded} className="mt-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm font-semibold">Назва пункту<input required maxLength={100} value={item.label} onChange={(event) => patch(item.id, { label: event.target.value })} className={inputClass} /></label>
         <label className="text-sm font-semibold">Де розмістити<select value={parent?.id ?? ''} onChange={(event) => { const id = event.target.value || null; move(item.id, id, id ? settings.items.find((entry) => entry.id === id)?.children?.length ?? 0 : settings.items.length); }} className={inputClass} disabled={!!item.children?.length}>
@@ -92,6 +98,8 @@ export default function AdminMenuManager() {
         <div className="mt-4 space-y-3 border-l-2 border-brand/30 pl-3 sm:pl-5">{item.children?.map((child, childIndex) => row(child, item, childIndex, item.children!.length))}</div>
         <button type="button" onClick={() => add(item.id)} className="mt-3 rounded-full border border-brand px-3 py-1.5 text-sm font-semibold text-brand">+ Додати підпункт до «{item.label}»</button>
       </> : null}
+      <button type="button" onClick={() => remove(item.id)} className="mt-3 rounded-full border border-red-300 px-3 py-1 text-sm text-red-700">Видалити{item.children?.length ? ' разом із підменю' : ''}</button>
+      </div>
     </div>;
   }
 
@@ -102,7 +110,9 @@ export default function AdminMenuManager() {
     {loading ? <p role="status" className="mt-3 text-sm">Завантаження меню...</p> : null}
     {error ? <p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
     {success ? <p role="status" className="mt-3 rounded-xl bg-green-50 p-3 text-sm text-green-800">{success}</p> : null}
-    <section className="my-5 rounded-2xl border border-brand/30 bg-slate-50 p-4" aria-label="Попередній перегляд меню">
+    <details className="my-5 rounded-2xl border border-brand/30 bg-slate-50 p-4">
+      <summary className="cursor-pointer font-semibold">Попередній перегляд меню на сайті</summary>
+      <section className="mt-4" aria-label="Попередній перегляд меню">
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">Попередній перегляд на сайті</h2><div className="flex gap-2">{(['desktop', 'mobile'] as const).map((mode) => <button type="button" key={mode} aria-pressed={previewMode === mode} onClick={() => setPreviewMode(mode)} className={`rounded-full border px-3 py-1 text-sm ${previewMode === mode ? 'border-brand bg-brand/10 text-brand' : 'border-slate-300'}`}>{mode === 'desktop' ? 'Комп’ютер' : 'Телефон'}</button>)}</div></div>
       <p className="mt-2 text-xs text-slate-600">Показує незбережені зміни. Натисніть пункт із підменю, щоб переглянути вкладені посилання. Швидкі посилання у футері повторюють головний рівень.</p>
       {!contentAvailable ? <p className="mt-2 text-xs text-amber-800">Не вдалося перевірити статті. Автоматична видимість інформаційних сторінок може відрізнятися після відновлення доступу до контенту.</p> : null}
@@ -115,6 +125,7 @@ export default function AdminMenuManager() {
         {!preview.length ? <p className="text-sm text-slate-500">Меню порожнє: додайте пункт або змініть видимість.</p> : null}
       </div>
     </section>
+    </details>
     <form onSubmit={save}><fieldset disabled={loading || saving} className="min-w-0 space-y-4">
       {settings.items.map((item, index) => row(item, null, index, settings.items.length))}
       <button type="button" onClick={() => add(null)} className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand">+ Додати пункт головного меню</button>
