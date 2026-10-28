@@ -182,7 +182,7 @@ export async function PUT(request: Request) {
     const { id, metadata, settings, pageId } = (await request.json()) as {
       id?: string;
       metadata?: PromotionCatalogMetadata;
-      settings?: { showArchive?: boolean };
+      settings?: { showArchive?: boolean; landingTitle?: string };
       pageId?: string;
     };
     if (settings) {

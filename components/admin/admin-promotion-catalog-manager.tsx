@@ -24,6 +24,7 @@ type MediaAsset = {
 
 type CatalogSettings = {
   showArchive: boolean;
+  landingTitle?: string;
 };
 
 async function requestCatalogs(): Promise<{ catalogs: Catalog[]; settings: CatalogSettings; pages: PromotionCatalogPage[] }> {
@@ -51,11 +52,14 @@ export default function AdminPromotionCatalogManager() {
   const [seoKeywords, setSeoKeywords] = useState('');
   const [settings, setSettings] = useState<CatalogSettings>({ showArchive: false });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [landingTitle, setLandingTitle] = useState('Каталоги акцій');
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
 
   useEffect(() => {
     void requestCatalogs()
       .then((payload) => {
         setCatalogs(payload.catalogs);
+        setLandingTitle(payload.settings.landingTitle || 'Каталоги акцій');
         updatePages(payload.pages);
       })
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити каталоги.'))
@@ -238,6 +242,22 @@ export default function AdminPromotionCatalogManager() {
   return (
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
       <h2 className="text-lg font-semibold text-slate-900">Каталоги акцій</h2>
+      <form className="mt-4 rounded-2xl border border-slate-200 p-4" onSubmit={async (event) => {
+        event.preventDefault();
+        setIsSavingTitle(true); setError(''); setSuccess('');
+        try {
+          const response = await fetch('/api/admin/promotion-catalogs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings: { landingTitle } }) });
+          const payload = await response.json() as { ok?: boolean; settings?: { landingTitle: string }; error?: string };
+          if (!response.ok || !payload.ok || !payload.settings) throw new Error(payload.error || 'Не вдалося зберегти назву.');
+          setLandingTitle(payload.settings.landingTitle);
+          setSuccess('Назву сторінки збережено.');
+        } catch (e) { setError(e instanceof Error ? e.message : 'Не вдалося зберегти назву.'); }
+        finally { setIsSavingTitle(false); }
+      }}>
+        <label className="block text-sm font-semibold">Назва загальної сторінки каталогів<input required maxLength={150} value={landingTitle} onChange={(event) => setLandingTitle(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-300 p-2.5" /></label>
+        <p className="mt-2 text-sm text-slate-600">Назва у заголовку сторінки вибору каталогів і вкладці браузера. Якщо видима лише одна сторінка каталогу, вона відкривається одразу.</p>
+        <button type="submit" disabled={isSavingTitle || isLoading} className="mt-3 rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isSavingTitle ? 'Збереження...' : 'Зберегти назву сторінки'}</button>
+      </form>
       <AdminCatalogPagesManager pages={pages} onChange={updatePages} disabled={isLoading || isSaving || isSavingSettings} />
       <label className="mt-5 block text-sm font-semibold text-slate-900">Сторінка для PDF-каталогів
         <select value={selectedPageId} disabled={isLoading || isSaving || isSavingSettings} onChange={(event) => setSelectedPageId(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white p-3">

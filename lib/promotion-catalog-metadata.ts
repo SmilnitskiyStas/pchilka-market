@@ -17,7 +17,10 @@ const SETTINGS_FILE_NAME = 'catalog-settings.json';
 
 export type PromotionCatalogSettings = {
   showArchive: boolean;
+  landingTitle: string;
 };
+
+const DEFAULT_LANDING_TITLE = 'Каталоги акцій';
 
 function metadataFilePath(): string {
   return path.join(getUploadsDir(), 'promotions', 'catalogs', METADATA_FILE_NAME);
@@ -31,16 +34,20 @@ export async function getPromotionCatalogSettings(): Promise<PromotionCatalogSet
   try {
     const raw = await fs.readFile(settingsFilePath(), 'utf8');
     const parsed = JSON.parse(raw) as Partial<PromotionCatalogSettings>;
-    return { showArchive: parsed.showArchive === true };
+    return { showArchive: parsed.showArchive === true, landingTitle: String(parsed.landingTitle ?? '').trim() || DEFAULT_LANDING_TITLE };
   } catch {
-    return { showArchive: false };
+    return { showArchive: false, landingTitle: DEFAULT_LANDING_TITLE };
   }
 }
 
 export async function savePromotionCatalogSettings(
   settings: Partial<PromotionCatalogSettings>
 ): Promise<PromotionCatalogSettings> {
-  const normalized = { showArchive: settings.showArchive === true };
+  const existing = await getPromotionCatalogSettings();
+  const normalized = {
+    showArchive: settings.showArchive === undefined ? existing.showArchive : settings.showArchive === true,
+    landingTitle: settings.landingTitle === undefined ? existing.landingTitle : String(settings.landingTitle).trim().slice(0, 150) || DEFAULT_LANDING_TITLE
+  };
   const filePath = settingsFilePath();
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, JSON.stringify(normalized, null, 2), 'utf8');

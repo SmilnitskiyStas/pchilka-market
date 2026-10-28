@@ -71,6 +71,20 @@ async function main() {
   assert.equal((await publicPage.generateMetadata({ params: Promise.resolve({ slug: 'seasonal' }) })).robots.index, false);
   assert.ok(!(await sitemap.default()).some(item => item.url.endsWith('/seasonal')));
 
+  await invoke(catalogRoutes.PUT, 'PUT', { settings: { landingTitle: 'Наші пропозиції' } });
+  assert.ok(textOf(await landing.default()).includes('Наші пропозиції'));
+  assert.equal((await landing.generateMetadata()).title, 'Наші пропозиції | Pchilka Market');
+  assert.equal((await meta.getPromotionCatalogSettings()).showArchive, true);
+  await meta.savePromotionCatalogSettings({ showArchive: false });
+  assert.equal((await meta.getPromotionCatalogSettings()).landingTitle, 'Наші пропозиції');
+  await invoke(pageRoutes.PUT, 'PUT', { ...defaults[1], showInList: false });
+  await assert.rejects(landing.default(), error => error.digest === 'NEXT_REDIRECT;replace;/promotions/catalog/f1;307;');
+  await invoke(pageRoutes.PUT, 'PUT', { ...defaults[0], showInList: false });
+  assert.ok(textOf(await landing.default()).includes('Сторінок каталогів поки немає.'));
+  await invoke(pageRoutes.PUT, 'PUT', defaults[0]);
+  await invoke(pageRoutes.PUT, 'PUT', defaults[1]);
+  console.log('PASS: one visible catalog redirects, multiple catalogs show selection, no visible catalogs show empty state; editable landing title persists in heading and metadata.');
+
   const catalogDir = path.join(temporary, 'promotions', 'catalogs');
   fs.mkdirSync(path.join(catalogDir, '2026', '10'), { recursive: true });
   const legacy = '2026/10/legacy.pdf';
