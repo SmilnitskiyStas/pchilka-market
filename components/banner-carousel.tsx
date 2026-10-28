@@ -50,23 +50,39 @@ function getBannerImageSrc(src: string, cacheKey?: string): string {
 }
 
 function isVideoSource(src: string): boolean {
-  const pathname = src.split('?')[0]?.toLowerCase() ?? src.toLowerCase();
+  const pathname = src.split(/[?#]/)[0]?.toLowerCase() ?? src.toLowerCase();
   return pathname.endsWith('.mp4') || pathname.endsWith('.webm');
 }
 
 export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isOnScreen, setIsOnScreen] = useState(true);
+  const [pageVisible, setPageVisible] = useState(true);
+  const [failedVideo, setFailedVideo] = useState<string | null>(null);
+  const container = useRef<HTMLElement | null>(null);
   const videoElements = useRef(new Map<number, HTMLVideoElement>());
+  const activeSlide = slides[activeIndex] ?? slides[0];
+  const activeVideo = isVideoSource(activeSlide?.src ?? '');
+  const canPlay = isOnScreen && pageVisible;
 
   useEffect(() => {
-    if (slides.length <= 1) return;
+    const updateVisibility = () => setPageVisible(!document.hidden);
+    updateVisibility();
+    document.addEventListener('visibilitychange', updateVisibility);
+    const observer = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(([entry]) => setIsOnScreen(entry.isIntersecting), { threshold: 0.1 });
+    if (container.current) observer?.observe(container.current);
+    return () => { document.removeEventListener('visibilitychange', updateVisibility); observer?.disconnect(); };
+  }, []);
 
-    const timer = setInterval(() => {
+  useEffect(() => {
+    if (slides.length <= 1 || !canPlay || (activeVideo && failedVideo !== activeSlide?.src)) return;
+
+    const timer = setTimeout(() => {
       setActiveIndex((prev) => (prev + 1) % slides.length);
     }, intervalMs);
 
-    return () => clearInterval(timer);
-  }, [slides.length, intervalMs]);
+    return () => clearTimeout(timer);
+  }, [activeIndex, slides.length, intervalMs, canPlay, activeVideo, activeSlide?.src, failedVideo]);
 
   useEffect(() => {
     setActiveIndex((index) => index < slides.length ? index : 0);
@@ -74,7 +90,7 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
 
   useEffect(() => {
     videoElements.current.forEach((video, index) => {
-      if (index !== activeIndex) {
+      if (index !== activeIndex || !canPlay) {
         video.pause();
         return;
       }
@@ -83,12 +99,12 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
         // Autoplay may be restricted by a browser despite muted playback.
       });
     });
-  }, [activeIndex, slides]);
+  }, [activeIndex, slides, canPlay]);
 
   if (slides.length === 0) return null;
 
   return (
-    <section className="home-banner-carousel" aria-label="Пропозиції мережі">
+    <section ref={container} className="home-banner-carousel" aria-label="Пропозиції мережі">
       <div className="home-banner-media">
         {slides.map((slide, index) => {
           const isActive = index === activeIndex;
@@ -96,7 +112,7 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
           const useNativeImage = shouldUseNativeImage(slide.src);
           const imageSrc = getBannerImageSrc(slide.src, slide.id);
           const imageClassName = 'h-full w-full object-contain';
-          const media = isVideo ? (
+          const media = isVideo ? (isActive ? (
             <video
               ref={(element) => {
                 if (element) videoElements.current.set(index, element);
@@ -105,13 +121,15 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
               src={slide.src}
               aria-label={slide.alt}
               className={imageClassName}
-              autoPlay={isActive}
-              loop
+              autoPlay={canPlay}
+              loop={slides.length === 1}
               muted
               playsInline
-              preload={index === 0 ? 'auto' : 'metadata'}
+              preload={canPlay ? 'auto' : 'none'}
+              onEnded={() => { if (slides.length > 1) setActiveIndex((previous) => (previous + 1) % slides.length); }}
+              onError={() => setFailedVideo(slide.src)}
             />
-          ) : useNativeImage ? (
+          ) : null) : useNativeImage ? (
             <img
               src={imageSrc}
               alt={slide.alt}
@@ -151,6 +169,7 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
               ) : (
                 <div className="h-full w-full">{media}</div>
               )}
+              {isActive && failedVideo === slide.src ? <p role="status" className="absolute inset-x-4 bottom-4 rounded-xl bg-white/90 p-3 text-center text-sm text-slate-700">Не вдалося відтворити відео.</p> : null}
             </div>
           );
         })}
@@ -166,7 +185,7 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
               type="button"
               aria-label={`Перейти до банера ${index + 1}`}
               aria-pressed={isActive}
-              onClick={() => setActiveIndex(index)}
+              onClick={() => { setFailedVideo(null); setActiveIndex(index); }}
               className={isActive ? 'is-active' : ''}
             />
           );

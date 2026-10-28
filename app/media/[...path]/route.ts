@@ -3,15 +3,17 @@ import { stat } from 'fs/promises';
 import { Readable } from 'stream';
 
 import { resolveUploadPath, getContentType } from '../../../lib/uploads';
+import { parseByteRange } from '@/lib/http-byte-range';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 type Params = { path: string[] };
 
-export async function GET(
+async function serveMedia(
   request: Request,
-  { params }: { params: Promise<Params> }
+  { params }: { params: Promise<Params> },
+  headOnly = false
 ) {
   try {
     const { path } = await params;
@@ -23,11 +25,12 @@ export async function GET(
     }
 
     const contentType = getContentType(filePath);
+    if (headOnly) return new Response(null, { headers: { 'Content-Type': contentType, 'Content-Length': String(fileStat.size), 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=3600' } });
     const rangeHeader = request.headers.get('range');
 
     if (rangeHeader) {
-      const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
-      if (!match) {
+      const range = parseByteRange(rangeHeader, fileStat.size);
+      if (!range) {
         return new Response('Invalid range', {
           status: 416,
           headers: {
@@ -36,25 +39,7 @@ export async function GET(
         });
       }
 
-      const start = match[1] ? Number.parseInt(match[1], 10) : 0;
-      const end = match[2] ? Number.parseInt(match[2], 10) : fileStat.size - 1;
-
-      if (
-        Number.isNaN(start) ||
-        Number.isNaN(end) ||
-        start < 0 ||
-        end < start ||
-        start >= fileStat.size
-      ) {
-        return new Response('Invalid range', {
-          status: 416,
-          headers: {
-            'Content-Range': `bytes */${fileStat.size}`
-          }
-        });
-      }
-
-      const safeEnd = Math.min(end, fileStat.size - 1);
+      const { start, end: safeEnd } = range;
       const chunkSize = safeEnd - start + 1;
       const partialStream = createReadStream(filePath, { start, end: safeEnd });
       const partialWebStream = Readable.toWeb(partialStream) as ReadableStream;
@@ -95,3 +80,6 @@ export async function GET(
     return new Response('Media error', { status: 500 });
   }
 }
+
+export function GET(request: Request, context: { params: Promise<Params> }) { return serveMedia(request, context); }
+export function HEAD(request: Request, context: { params: Promise<Params> }) { return serveMedia(request, context, true); }
