@@ -272,3 +272,33 @@
   .catalog-book-navigation span { min-width: 64px; }
 }
 @media (prefers-reduced-motion: reduce) { .catalog-book-position { transition: none; } }
+
+@font-face { font-family: 'Pchilka Source Sans'; src: url('/fonts/source-sans-pro-regular.ttf') format('truetype'); font-style: normal; font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Pchilka Source Sans'; src: url('/fonts/source-sans-pro-bold.ttf') format('truetype'); font-style: normal; font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Pchilka Appetite'; src: url('/fonts/appetite.otf') format('opentype'); font-style: normal; font-weight: 400; font-display: swap; }
+.cooperation-product-screen { background: #fff; color: #080808; }
+.cooperation-product-page { padding-top: 32px; padding-bottom: 64px; font-family: 'Pchilka Source Sans', sans-serif; }
+.cooperation-product-page > h1 { margin: 0 0 48px; text-align: center; font-size: clamp(40px, 5vw, 64px); line-height: 1.15; font-weight: 700; color: var(--color-brand); }
+.cooperation-product-intro h2 { margin-bottom: 12px; font-size: clamp(28px, 3.4vw, 40px); line-height: 1.2; font-weight: 700; }
+.cooperation-product-intro p { font-size: 16px; line-height: 1.45; white-space: pre-line; }
+.cooperation-departments { margin-top: 62px; }
+.cooperation-department { display: flow-root; margin: 0 0 78px; padding-left: 60px; border-left: 2px solid var(--color-brand); }
+.cooperation-department > h2 { margin: -8px 0 42px; font-family: 'Pchilka Appetite', 'Pchilka Source Sans', sans-serif; font-size: clamp(32px, 4vw, 52px); line-height: 1.2; font-weight: 400; color: var(--color-brand); overflow-wrap: anywhere; }
+.cooperation-department-art { float: right; width: 42%; max-width: 500px; height: auto; margin: -20px 0 24px 28px; }
+.cooperation-contact { margin-bottom: 36px; break-inside: avoid; }
+.cooperation-contact:last-child { margin-bottom: 0; }
+.cooperation-contact h3 { font-size: clamp(22px, 2.4vw, 30px); line-height: 1.15; font-weight: 700; }
+.cooperation-contact a { color: #2499e7; font-size: 22px; line-height: 1.25; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.cooperation-contact p { margin-top: 4px; font-size: 21px; line-height: 1.3; }
+.cooperation-department-description { margin-bottom: 6px; font-size: 21px; line-height: 1.3; font-weight: 700; white-space: pre-line; }
+.cooperation-product-form { clear: both; margin-top: 30px; }
+@media (max-width: 767px) {
+  .cooperation-product-page { padding-top: 26px; padding-bottom: 40px; }
+  .cooperation-product-page > h1 { margin-bottom: 32px; }
+  .cooperation-departments { margin-top: 42px; }
+  .cooperation-department { padding-left: 20px; margin-bottom: 48px; }
+  .cooperation-department > h2 { margin-bottom: 24px; }
+  .cooperation-department-art { float: none; width: 100%; max-width: 360px; margin: 0 auto 28px; }
+  .cooperation-contact { margin-bottom: 28px; }
+  .cooperation-contact a, .cooperation-contact p, .cooperation-department-description { font-size: 18px; }
+}
