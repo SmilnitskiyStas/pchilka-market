@@ -79,10 +79,14 @@ async function main() {
   assert.equal((await meta.getPromotionCatalogSettings()).landingTitle, 'Наші пропозиції');
   await invoke(pageRoutes.PUT, 'PUT', { ...defaults[1], showInList: false });
   await assert.rejects(landing.default(), error => error.digest === 'NEXT_REDIRECT;replace;/promotions/catalog/f1;307;');
+  assert.ok(!textOf(await publicPage.default({ params: Promise.resolve({ slug: 'f1' }) })).includes('← Усі каталоги'));
+  assert.ok(!textOf(await publicPage.default({ params: Promise.resolve({ slug: 'seasonal' }) })).includes('← Усі каталоги'));
   await invoke(pageRoutes.PUT, 'PUT', { ...defaults[0], showInList: false });
   assert.ok(textOf(await landing.default()).includes('Сторінок каталогів поки немає.'));
+  assert.ok(!textOf(await publicPage.default({ params: Promise.resolve({ slug: 'f1' }) })).includes('← Усі каталоги'));
   await invoke(pageRoutes.PUT, 'PUT', defaults[0]);
   await invoke(pageRoutes.PUT, 'PUT', defaults[1]);
+  assert.ok(textOf(await publicPage.default({ params: Promise.resolve({ slug: 'f1' }) })).includes('← Усі каталоги'));
   console.log('PASS: one visible catalog redirects, multiple catalogs show selection, no visible catalogs show empty state; editable landing title persists in heading and metadata.');
 
   const catalogDir = path.join(temporary, 'promotions', 'catalogs');

@@ -9,9 +9,10 @@ import { getPromotionCatalogs } from '@/lib/promotion-catalogs';
 export const dynamic = 'force-dynamic';
 type Props = { params: Promise<{ slug: string }> };
 const getPage = cache(async (slug: string) => {
-  const page = (await getPromotionCatalogPages()).find((item) => item.slug === slug);
+  const pages = await getPromotionCatalogPages();
+  const page = pages.find((item) => item.slug === slug);
   if (!page) notFound();
-  return { page, catalogs: await getPromotionCatalogs(page.id) };
+  return { page, catalogs: await getPromotionCatalogs(page.id), showCatalogListLink: pages.filter((item) => item.showInList).length > 1 };
 });
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -26,10 +27,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function CatalogPage({ params }: Props) {
-  const { page, catalogs } = await getPage((await params).slug);
+  const { page, catalogs, showCatalogListLink } = await getPage((await params).slug);
   return (
     <main className="site-container min-h-screen px-4 py-10 sm:px-6 lg:px-8">
-      <Link href="/promotions/catalog" className="text-sm font-semibold text-brand hover:underline">← Усі каталоги</Link>
+      {showCatalogListLink ? <Link href="/promotions/catalog" className="text-sm font-semibold text-brand hover:underline">← Усі каталоги</Link> : null}
       <h1 className="mt-4 text-3xl font-bold text-slate-900">{page.title}</h1>
       {page.description ? <p className="mt-3 text-slate-600">{page.description}</p> : null}
       <div className="mt-6"><PromotionCatalogViewer catalogs={catalogs} showArchive={page.showArchive} /></div>
