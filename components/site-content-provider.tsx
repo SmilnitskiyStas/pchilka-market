@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { usePathname } from 'next/navigation';
 import { headerMenu } from '@/content/menu';
 import { filterContentMenu, dedicatedArticlePages } from '@/lib/menu-content';
-import type { ContentEntry } from '@/lib/content-entries';
+import type { ContentEntry, ContentPlacement } from '@/lib/content-entries';
 import PageArticles from '@/components/page-articles';
 
 const empty = { entries: [] as ContentEntry[], populatedPaths: [] as string[], menu: filterContentMenu(headerMenu, new Set<string>()) };
@@ -37,14 +37,14 @@ export default function SiteContentProvider({ children }: { children: ReactNode 
   return <ContentContext.Provider value={content}>{children}</ContentContext.Provider>;
 }
 
-export function PageAssignedArticles() {
+export function PageAssignedArticles({ placement = 'after-content' }: { placement?: ContentPlacement }) {
   const pathname = usePathname().replace(/\/+$/, '') || '/';
   const { entries } = useContext(ContentContext);
   useEffect(() => {
     const id = window.location.hash.slice(1);
     if (id.startsWith('article-')) document.getElementById(id)?.scrollIntoView();
   }, [entries, pathname]);
-  const articles = entries.filter((entry) => entry.status === 'published' && entry.pagePath === pathname)
+  const articles = entries.filter((entry) => entry.status === 'published' && entry.pagePath === pathname && (entry.placement || 'after-content') === placement)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   if (!articles.length || dedicatedArticlePages.includes(pathname)) return null;
   return <section aria-label="Статті сторінки" className="site-container space-y-6 px-4 py-8 sm:px-6 lg:px-8">

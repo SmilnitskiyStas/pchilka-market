@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import { getCategoryContentTypes, type BlogCategory } from '@/lib/blog-categories';
-import { normalizeSlug } from '@/lib/content-entries';
-import { contentPages, entryPagePath } from '@/lib/menu-content';
+import { normalizeSlug, contentPlacements } from '@/lib/content-entries';
+import { contentPages, entryPagePath, formContentPages, dedicatedArticlePages, legacyContentPaths } from '@/lib/menu-content';
 import type { ContentEntry } from '@/lib/content-entries';
 import { getBlogContentFromDb, saveBlogContentToDb } from '@/lib/blog-content-repository';
 
@@ -14,6 +14,10 @@ function validateEntries(entries: ContentEntry[]): string | null {
 
   for (const entry of entries) {
     if (entry.pagePath && !contentPages.some((page) => page.href === entry.pagePath)) return 'Оберіть сторінку з меню сайту.';
+    if (entry.pagePath && Object.values(legacyContentPaths).includes(entry.pagePath)) return 'Для статті оберіть Блог, Новини мережі або Благодійність як місце публікації.';
+    if (entry.placement !== undefined && !contentPlacements.includes(entry.placement)) return 'Невідоме розміщення тексту.';
+    if (entry.placement === 'before-form' && (!entry.pagePath || !formContentPages.includes(entry.pagePath))) return 'Розміщення над формою доступне лише для сторінок співпраці.';
+    if (entry.pagePath && dedicatedArticlePages.includes(entry.pagePath) && entry.placement && entry.placement !== 'after-content') return 'На цій сторінці текст відображається в основному вмісті.';
     const title = String(entry.title ?? '').trim();
     const excerpt = String(entry.excerpt ?? '').trim();
     const body = String(entry.body ?? '').trim();
@@ -22,9 +26,9 @@ function validateEntries(entries: ContentEntry[]): string | null {
 
     if (!title) return 'У статті відсутній заголовок.';
     if (!slug) return 'У статті відсутній slug.';
-    if (!excerpt) return 'У статті відсутній короткий опис.';
+    if (!entry.pagePath && !excerpt) return 'У статті відсутній короткий опис.';
     if (!body) return 'У статті відсутній основний текст.';
-    if (!coverImage) return "У статті відсутнє cover image.";
+    if (!entry.pagePath && !coverImage) return "У статті відсутнє cover image.";
 
     const key = `${entryPagePath(entry)}:${slug}`;
     if (slugByType.has(key)) {

@@ -15,6 +15,13 @@ export async function listPublishedEntriesByType(contentType: ContentType): Prom
     .sort((a, b) => toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt));
 }
 
+export async function listPublishedFormEntries(pagePath: string): Promise<ContentEntry[]> {
+  const payload = await getBlogContentFromDb();
+  return payload.entries
+    .filter((entry) => entry.pagePath === pagePath && entry.placement === 'before-form' && entry.status === 'published')
+    .sort((a, b) => toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt));
+}
+
 export async function getPublishedEntryByTypeAndSlug(
   contentType: ContentType,
   slug: string

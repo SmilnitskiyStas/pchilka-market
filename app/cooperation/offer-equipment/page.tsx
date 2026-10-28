@@ -4,6 +4,10 @@ import path from 'path';
 import type { ReactNode } from 'react';
 
 import CooperationOfferForm from '@/components/cooperation-offer-form';
+import PageArticles from '@/components/page-articles';
+import { listPublishedFormEntries } from '@/lib/public-content-repository';
+
+export const dynamic = 'force-dynamic';
 
 type CooperationContent = {
   title: string;
@@ -79,6 +83,7 @@ function contentLineToNode(line: string, index: number) {
 }
 
 export default async function OfferEquipmentPage() {
+  const articles = await listPublishedFormEntries('/cooperation/offer-equipment').catch(() => []);
   const content = await readCooperationContent();
   const securityLine = content?.lines.find((line) => /Служби безпеки/i.test(line)) ?? null;
   const baseLines = content?.lines.filter((line) => !/Служби безпеки/i.test(line)) ?? [];
@@ -119,6 +124,7 @@ export default async function OfferEquipmentPage() {
           </p>
         )}
 
+        {articles.length ? <div className="mt-6"><PageArticles articles={articles} /></div> : null}
         <CooperationOfferForm />
       </section>
     </main>

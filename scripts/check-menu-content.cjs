@@ -93,6 +93,87 @@ async function main() {
     assert.ok(emptyHtml.includes('Чому Пчілка не Бджілка'));
     assert.ok(!emptyHtml.includes('public/info') && !emptyHtml.includes('не знайдено'));
   } finally { fs.promises.readFile = originalRead; }
+  // Text-only page content is saved through the real authenticated API and rendered
+  // before each real cooperation form, without changing a database or submitting it.
+  const { formContentPages } = require('../lib/menu-content.ts');
+  const offerProductRepo = require('../lib/offer-product-repository.ts');
+  const { defaultOfferProductSettings } = require('../lib/offer-product-settings.ts');
+  offerProductRepo.getOfferProductSettings = async () => defaultOfferProductSettings;
+  for (const pagePath of formContentPages) {
+    const text = { ...article, id:'form-intro', pagePath, placement:'before-form', excerpt:'', coverImage:'', title:'Умови співпраці', body:'**Текст над формою**' };
+    const hidden = { ...text, id:'hidden', slug:'hidden', title:'Неопублікований текст', status:'draft' };
+    const footer = { ...text, id:'footer', slug:'footer', placement:'after-content', title:'Текст наприкінці' };
+    assert.equal((await api.PUT(request('PUT', { entries:[text, hidden, footer], categories:[] }))).status, 200);
+    assert.equal(stored.entries[0].placement, 'before-form');
+    const html = renderToStaticMarkup(await require(`../app${pagePath}/page.tsx`).default());
+    assert.ok(html.indexOf('id="article-program"') >= 0, pagePath);
+    assert.ok(html.indexOf('id="article-program"') < html.indexOf('<form'), `Content must precede form: ${pagePath}`);
+    assert.ok(html.includes('Текст над формою') && !html.includes('Неопублікований текст') && !html.includes('Текст наприкінці'), pagePath);
+    assert.ok(!html.includes('src=""'), 'No empty cover image');
+    assert.equal((html.match(/id="article-program"/g) || []).length, 1);
+    assert.equal((await publicRepo.listPublishedEntriesByType('blog')).length, 0);
+  }
+  const text = { ...article, pagePath:'/cooperation/rental', placement:'before-form', coverImage:'', excerpt:'' };
+  assert.equal((await api.PUT(request('PUT', { entries:[{...text, pagePath:undefined}], categories:[] }))).status, 400);
+  assert.equal((await api.PUT(request('PUT', { entries:[{...text, pagePath:'/loyalty/about'}], categories:[] }))).status, 400);
+  assert.equal((await api.PUT(request('PUT', { entries:[{...text, placement:'unknown'}], categories:[] }))).status, 400);
+  assert.equal((await api.PUT(request('PUT', { entries:[{...text, body:''}], categories:[] }))).status, 400);
+  assert.equal((await api.PUT(request('PUT', { entries:[{...text, pagePath:'/loyalty/about', placement:'before-content'}], categories:[] }))).status, 200);
+  assert.equal((await (await publicApi.GET()).json()).entries[0].placement, 'before-content');
+  assert.equal(normalizeContentEntry({}).placement, 'after-content', 'Existing entries retain their old placement');
+  // Exercise the actual editor event handlers with a small hook-state harness.
+  // External persistence still uses the real API above and the in-memory repository.
+  const React = require('react');
+  const client = require('../lib/blog-content-client.ts');
+  const Editor = require('../components/admin/admin-content-manager.tsx').default;
+  const originals = Object.fromEntries(['useState','useEffect','useMemo','useRef'].map(key => [key, React[key]]));
+  const originalSave = client.saveBlogContentPayload;
+  const state = [];
+  let cursor = 0;
+  React.useState = initial => {
+    const index = cursor++;
+    // The editor's only initially true state is the initial loading indicator.
+    if (!(index in state)) state[index] = initial === true ? false : initial;
+    return [state[index], value => { state[index] = typeof value === 'function' ? value(state[index]) : value; }];
+  };
+  React.useEffect = () => {};
+  React.useMemo = callback => callback();
+  React.useRef = () => ({ current:null });
+  const editor = () => { cursor = 0; return Editor(); };
+  const elements = node => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(elements) : [node, ...elements(node.props?.children)];
+  const field = id => elements(editor()).find(node => node.props?.id === id);
+  const change = (id, value) => field(id).props.onChange({target:{value}});
+  try {
+    assert.ok(field('content-destination') && !field('content-type'));
+    change('content-destination', 'page:/cooperation/rental');
+    assert.equal(field('content-placement').props.value, 'before-form');
+    change('content-title', 'Умови оренди');
+    change('content-body', 'Текст, введений адміністратором');
+    change('content-status', 'published');
+    client.saveBlogContentPayload = async () => { throw new Error('Test save failure'); };
+    await elements(editor()).find(node => node.type === 'form').props.onSubmit({ preventDefault() {} });
+    assert.equal(field('content-body').props.value, 'Текст, введений адміністратором');
+    assert.equal(field('content-destination').props.value, 'page:/cooperation/rental');
+    client.saveBlogContentPayload = async payload => {
+      const response = await api.PUT(request('PUT', payload));
+      assert.equal(response.status, 200);
+      return response.json();
+    };
+    await elements(editor()).find(node => node.type === 'form').props.onSubmit({ preventDefault() {} });
+    assert.equal(stored.entries[0].pagePath, '/cooperation/rental');
+    assert.equal(stored.entries[0].placement, 'before-form');
+    assert.equal(stored.entries[0].coverImage, '');
+    assert.equal(field('content-body').props.value, '');
+    assert.equal(field('content-destination').props.value, 'article:blog');
+    change('content-destination', 'article:news');
+    assert.equal(field('content-destination').props.value, 'article:news');
+    assert.ok(!field('content-placement'));
+  } finally {
+    Object.assign(React, originals);
+    client.saveBlogContentPayload = originalSave;
+  }
+  console.log('PASS: editor uses one destination, defaults rental text above the form, preserves input after save failure, saves text-only page content through the API and resets only after success.');
+  console.log('PASS: text-only content saves and renders before all five cooperation forms; drafts, other placements and other pages are excluded; invalid placements and incomplete blog articles are rejected; legacy placement is preserved.');
   console.log('PASS: story page renders published Admin articles in main content, preserves Markdown, excludes drafts and legacy notices, and retains legacy file fallback.');
   console.log('PASS: assignment round trip; drafts and deleted articles hide informational pages; publication shows them; functional pages remain; empty groups disappear; public API excludes drafts; legacy blog/news isolation; assignment and duplicate validation.');
 }

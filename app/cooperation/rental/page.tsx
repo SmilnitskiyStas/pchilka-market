@@ -4,6 +4,10 @@ import path from 'path';
 import type { ReactNode } from 'react';
 
 import CooperationRentalForm from '@/components/cooperation-rental-form';
+import PageArticles from '@/components/page-articles';
+import { listPublishedFormEntries } from '@/lib/public-content-repository';
+
+export const dynamic = 'force-dynamic';
 
 type RentalContent = {
   title: string;
@@ -72,6 +76,7 @@ function contentLineToNode(line: string, index: number) {
 }
 
 export default async function RentalPage() {
+  const articles = await listPublishedFormEntries('/cooperation/rental').catch(() => []);
   const content = await readRentalContent();
   const securityLine = content?.lines.find((line) => /Служби безпеки/i.test(line)) ?? null;
   const baseLines = content?.lines.filter((line) => !/Служби безпеки/i.test(line)) ?? [];
@@ -106,6 +111,7 @@ export default async function RentalPage() {
           </p>
         )}
 
+        {articles.length ? <div className="mt-6"><PageArticles articles={articles} /></div> : null}
         <CooperationRentalForm />
       </section>
     </main>

@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import CooperationOfferForm from '@/components/cooperation-offer-form';
+import PageArticles from '@/components/page-articles';
+import { listPublishedFormEntries } from '@/lib/public-content-repository';
 import { getOfferProductSettings } from '@/lib/offer-product-repository';
 import { defaultOfferProductSettings, offerProductCategories } from '@/lib/offer-product-settings';
 
@@ -9,6 +11,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: content.title + ' | Pchilka Market', description: content.intro.slice(0, 160) };
 }
 export default async function OfferProductPage() {
+  const articles = await listPublishedFormEntries('/cooperation/offer-product').catch(() => []);
   const content = await getOfferProductSettings().catch(() => defaultOfferProductSettings);
   const categories = offerProductCategories(content);
   return <div className="cooperation-product-screen"><main className="site-container cooperation-product-page">
@@ -26,6 +29,7 @@ export default async function OfferProductPage() {
         </div>)}
       </section>)}
     </div>
+    {articles.length ? <div className="mt-6"><PageArticles articles={articles} /></div> : null}
     {content.showForm && categories.length ? <section className="cooperation-product-form"><CooperationOfferForm mode="product" productCategories={categories} storageKey="cooperation_offer_product_requests" submitButtonLabel="Сформувати лист" /></section> : null}
   </main></div>;
 }

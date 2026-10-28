@@ -1,9 +1,18 @@
 ﻿import type { ContentType } from '@/lib/content-types';
 
+export const contentPlacements = ['before-content', 'before-form', 'after-content'] as const;
+export type ContentPlacement = typeof contentPlacements[number];
+export const contentPlacementLabels: Record<ContentPlacement, string> = {
+  'before-content': 'На початку сторінки',
+  'before-form': 'Над формою',
+  'after-content': 'Наприкінці сторінки'
+};
+
 export type ContentEntry = {
   id: string;
   contentType: ContentType;
   pagePath?: string;
+  placement?: ContentPlacement;
   title: string;
   slug: string;
   excerpt: string;
@@ -46,6 +55,7 @@ export function normalizeContentEntry(raw: Partial<ContentEntry>): ContentEntry 
     id: String(raw.id ?? `content_${Date.now()}`),
     contentType: normalizedType,
     pagePath: String(raw.pagePath ?? '').trim() || undefined,
+    placement: contentPlacements.includes(raw.placement as ContentPlacement) ? raw.placement : 'after-content',
     title: String(raw.title ?? '').trim(),
     slug: normalizeSlug(String(raw.slug ?? '')),
     excerpt: String(raw.excerpt ?? '').trim(),

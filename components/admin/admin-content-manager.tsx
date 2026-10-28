@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import Link from 'next/link';
-import { contentPages, legacyContentPaths, entryPagePath } from '@/lib/menu-content';
+import { contentPages, legacyContentPaths, entryPagePath, formContentPages, dedicatedArticlePages } from '@/lib/menu-content';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import AdminBlogCategoriesManager from '@/components/admin/admin-blog-categories-manager';
@@ -10,6 +10,8 @@ import { contentTypeLabels, type ContentType } from '@/lib/content-types';
 import {
   normalizeContentEntry,
   normalizeSlug,
+  contentPlacementLabels,
+  type ContentPlacement,
   type ContentEntry
 } from '@/lib/content-entries';
 import { fetchBlogContentPayload, saveBlogContentPayload } from '@/lib/blog-content-client';
@@ -138,6 +140,7 @@ export default function AdminContentManager() {
 
   const [contentType, setContentType] = useState<ContentType>('blog');
   const [pagePath, setPagePath] = useState('');
+  const [placement, setPlacement] = useState<ContentPlacement>('after-content');
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
   const [isSlugManual, setIsSlugManual] = useState(false);
@@ -244,6 +247,7 @@ export default function AdminContentManager() {
     setEditingId(null);
     setContentType('blog');
     setPagePath('');
+    setPlacement('after-content');
     setTitle('');
     setSlug('');
     setIsSlugManual(false);
@@ -258,6 +262,8 @@ export default function AdminContentManager() {
   }
 
   async function persist(nextEntries: ContentEntry[]) {
+    setError('');
+    setIsSaved(false);
     setIsSyncing(true);
     try {
       const saved = await saveBlogContentPayload({
@@ -267,9 +273,11 @@ export default function AdminContentManager() {
       setEntries(saved.entries);
       setCategories(saved.categories);
       setIsSaved(true);
+      return true;
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : 'Не вдалося зберегти контент блогу.';
       setError(message);
+      return false;
     } finally {
       setIsSyncing(false);
     }
@@ -366,7 +374,7 @@ export default function AdminContentManager() {
       return;
     }
 
-    if (!normalizedExcerpt) {
+    if (!pagePath && !normalizedExcerpt) {
       setError('Вкажіть короткий опис статті.');
       return;
     }
@@ -376,7 +384,7 @@ export default function AdminContentManager() {
       return;
     }
 
-    if (!normalizedCoverImage || !isValidCoverImage(normalizedCoverImage)) {
+    if ((!pagePath && !normalizedCoverImage) || (normalizedCoverImage && !isValidCoverImage(normalizedCoverImage))) {
       setError('Вкажіть коректне cover image: /img/... або /media/... або https://...');
       return;
     }
@@ -394,11 +402,12 @@ export default function AdminContentManager() {
       id: editingId ?? `content_${Date.now()}`,
       contentType,
       pagePath: pagePath || undefined,
+      placement: pagePath ? placement : 'after-content',
       title: normalizedTitle,
       slug: normalizedSlug,
       excerpt: normalizedExcerpt,
       body: normalizedBody,
-      categoryIds,
+      categoryIds: pagePath ? [] : categoryIds,
       coverImage: normalizedCoverImage,
       status,
       updatedAt: new Date().toISOString()
@@ -408,14 +417,14 @@ export default function AdminContentManager() {
       ? entries.map((entry) => (entry.id === editingId ? draft : entry))
       : [draft, ...entries];
 
-    await persist(next);
-    resetForm();
+    if (await persist(next)) resetForm();
   }
 
   function handleEdit(entry: ContentEntry) {
     setEditingId(entry.id);
     setContentType(entry.contentType);
     setPagePath(entry.pagePath || '');
+    setPlacement(entry.placement || 'after-content');
     setTitle(entry.title);
     setSlug(entry.slug);
     setIsSlugManual(true);
@@ -434,8 +443,9 @@ export default function AdminContentManager() {
 
   async function handleDelete(entryId: string) {
     const next = entries.filter((entry) => entry.id !== entryId);
-    await persist(next);
-    if (editingId === entryId) resetForm();
+    if (await persist(next)) {
+      if (editingId === entryId) resetForm();
+    }
   }
 
   function getCategoryNames(entry: ContentEntry) {
@@ -446,9 +456,9 @@ export default function AdminContentManager() {
   return (
     <div>
       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Admin / Контент</p>
-      <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Контент: статті та категорії</h1>
+      <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Контент: тексти сторінок і статті</h1>
       <p className="mt-3 text-sm text-slate-700 sm:text-base">
-        В одному модулі ви керуєте матеріалами та категоріями. При створенні статті оберіть блок, категорії та налаштуйте текст у редакторі.
+        Оберіть місце публікації: окрему статтю в блозі, новинах чи благодійності або текст на сторінці сайту. Для сторінок співпраці текст можна розмістити над формою.
       </p>
       {isLoading ? <p className="mt-2 text-sm font-semibold text-slate-600">Завантаження контенту з БД...</p> : null}
 
@@ -460,7 +470,7 @@ export default function AdminContentManager() {
             activeTab === 'articles' ? 'border-brand bg-brand/10 text-brand' : 'border-slate-300 text-slate-700 hover:border-brand hover:text-brand'
           }`}
         >
-          Статті
+          Матеріали
         </button>
         <button
           type="button"
@@ -482,33 +492,48 @@ export default function AdminContentManager() {
       ) : (
         <>
           <form onSubmit={handleSubmit} className="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
-            <label className="block text-sm font-semibold text-slate-900">Сторінка для статті
-              <select value={pagePath} onChange={(event) => { setPagePath(event.target.value); setIsSaved(false); }} className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm">
-                <option value="">Стандартна сторінка вибраного блоку ({legacyContentPaths[contentType]})</option>
-                {contentPages.filter((page) => !Object.values(legacyContentPaths).includes(page.href)).map((page) => <option key={page.href} value={page.href}>{page.label} — {page.href}</option>)}
-              </select>
-              <span className="mt-2 block text-xs font-normal text-slate-600">Опублікована стаття з’явиться на обраній сторінці. Інформаційні сторінки без статей приховані в меню; чернетки не вмикають їх показ.</span>
-            </label>
             <div>
-              <label htmlFor="content-type" className="block text-sm font-semibold text-slate-900">Блок контенту</label>
+              <label htmlFor="content-destination" className="block text-sm font-semibold text-slate-900">Де опублікувати матеріал</label>
               <select
-                id="content-type"
-                value={contentType}
+                id="content-destination"
+                value={pagePath ? `page:${pagePath}` : `article:${contentType}`}
                 onChange={(event) => {
-                  const nextType = event.target.value as ContentType;
-                  setContentType(nextType);
-                  setCategoryIds((prev) => prev.filter((id) => categories.some((cat) => cat.id === id && categorySupportsContentType(cat, nextType))));
+                  const destination = event.target.value;
+                  if (destination.startsWith('page:')) {
+                    const nextPage = destination.slice(5);
+                    setPagePath(nextPage);
+                    setPlacement(dedicatedArticlePages.includes(nextPage) ? 'after-content' : formContentPages.includes(nextPage) ? 'before-form' : 'before-content');
+                  } else {
+                    const nextType = destination.slice(8) as ContentType;
+                    setPagePath('');
+                    setPlacement('after-content');
+                    setContentType(nextType);
+                    setCategoryIds((prev) => prev.filter((id) => categories.some((cat) => cat.id === id && categorySupportsContentType(cat, nextType))));
+                  }
                   setIsCategoryMenuOpen(false);
                   setCategorySearch('');
                   setIsSaved(false);
                 }}
                 className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
               >
-                <option value="blog">Блог</option>
-                <option value="news">Новини мережі</option>
-                <option value="charity">Благодійність</option>
+                <optgroup label="Окрема стаття">
+                  <option value="article:blog">Блог</option>
+                  <option value="article:news">Новини мережі</option>
+                  <option value="article:charity">Благодійність</option>
+                </optgroup>
+                <optgroup label="Текст на сторінці сайту">
+                  {contentPages.filter((page) => !Object.values(legacyContentPaths).includes(page.href)).map((page) => <option key={page.href} value={`page:${page.href}`}>{page.label} — {page.href}</option>)}
+                </optgroup>
               </select>
+              <p className="mt-2 text-xs text-slate-600">{pagePath ? 'Текст відображатиметься повністю на обраній сторінці. Обкладинка й короткий опис необов’язкові.' : 'Стаття матиме окрему адресу та картку в обраному розділі. Додайте короткий опис і обкладинку.'} Чернетки доступні лише в адмінпанелі.</p>
             </div>
+
+            {pagePath && !dedicatedArticlePages.includes(pagePath) ? <div>
+              <label htmlFor="content-placement" className="block text-sm font-semibold text-slate-900">Розміщення тексту</label>
+              <select id="content-placement" value={placement} onChange={(event) => { setPlacement(event.target.value as ContentPlacement); setIsSaved(false); }} className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm">
+                {Object.entries(contentPlacementLabels).filter(([value]) => value !== 'before-form' || formContentPages.includes(pagePath)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </div> : null}
 
             <div>
               <label htmlFor="content-title" className="block text-sm font-semibold text-slate-900">Заголовок статті</label>
@@ -566,7 +591,7 @@ export default function AdminContentManager() {
             </div>
 
             <div>
-              <label htmlFor="content-excerpt" className="block text-sm font-semibold text-slate-900">Короткий опис</label>
+              <label htmlFor="content-excerpt" className="block text-sm font-semibold text-slate-900">Короткий опис{pagePath ? ' (необов’язково)' : ''}</label>
               <textarea
                 id="content-excerpt"
                 rows={3}
@@ -579,7 +604,7 @@ export default function AdminContentManager() {
               />
             </div>
 
-            <div>
+            {!pagePath ? <div>
               <p className="block text-sm font-semibold text-slate-900">Категорії</p>
               <button
                 type="button"
@@ -638,10 +663,10 @@ export default function AdminContentManager() {
                   </div>
                 </div>
               ) : null}
-            </div>
+            </div> : null}
 
             <div>
-              <p className="block text-sm font-semibold text-slate-900">Текст статті (редактор)</p>
+              <label htmlFor="content-body" className="block text-sm font-semibold text-slate-900">Текст матеріалу (редактор)</label>
               <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
                 <p className="font-semibold text-slate-900">Як працює markdown:</p>
                 <ul className="mt-1 space-y-1">
@@ -669,6 +694,7 @@ export default function AdminContentManager() {
                 ))}
               </div>
               <textarea
+                id="content-body"
                 ref={bodyRef}
                 rows={12}
                 value={body}
@@ -683,7 +709,7 @@ export default function AdminContentManager() {
             </div>
 
             <div>
-              <label htmlFor="content-cover" className="block text-sm font-semibold text-slate-900">Cover image URL</label>
+              <label htmlFor="content-cover" className="block text-sm font-semibold text-slate-900">Обкладинка{pagePath ? ' (необов’язково)' : ''}</label>
               <input
                 id="content-cover"
                 value={coverImage}
@@ -748,17 +774,17 @@ export default function AdminContentManager() {
               ) : null}
               <button
                 type="submit"
-                disabled={isSyncing}
+                disabled={isSyncing || isLoading}
                 className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isEditing ? 'Зберегти зміни' : 'Додати статтю'}
+                {isSyncing ? 'Збереження…' : isEditing ? 'Зберегти зміни' : 'Додати матеріал'}
               </button>
             </div>
           </form>
 
           <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-slate-900">Список статей</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Тексти сторінок і статті</h2>
               <p className="text-xs font-semibold text-slate-600">Усього: {sortedEntries.length}</p>
             </div>
 
@@ -775,7 +801,7 @@ export default function AdminContentManager() {
                         <div>
                           <p className="font-semibold text-slate-900">{entry.title}</p>
                           {entry.pagePath ? <p className="text-xs text-slate-600">Сторінка: {contentPages.find((page) => page.href === entry.pagePath)?.label || entry.pagePath}</p> : null}
-                          <p className="text-xs text-slate-600">{contentTypeLabels[entry.contentType]} • {entry.status === 'published' ? 'Опубліковано' : 'Чернетка'}</p>
+                          <p className="text-xs text-slate-600">{entry.pagePath ? `Текст сторінки • ${dedicatedArticlePages.includes(entry.pagePath) ? 'Основний вміст' : contentPlacementLabels[entry.placement || 'after-content']}` : contentTypeLabels[entry.contentType]} • {entry.status === 'published' ? 'Опубліковано' : 'Чернетка'}</p>
                         </div>
                         <button
                           type="button"

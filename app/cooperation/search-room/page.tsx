@@ -4,6 +4,10 @@ import path from 'path';
 import type { ReactNode } from 'react';
 
 import CooperationSearchRoomForm from '@/components/cooperation-search-room-form';
+import PageArticles from '@/components/page-articles';
+import { listPublishedFormEntries } from '@/lib/public-content-repository';
+
+export const dynamic = 'force-dynamic';
 
 type SearchRoomContent = {
   lines: string[];
@@ -77,6 +81,7 @@ function contentLineToNode(line: string, index: number) {
 }
 
 export default async function SearchRoomPage() {
+  const articles = await listPublishedFormEntries('/cooperation/search-room').catch(() => []);
   const content = await readSearchRoomContent();
   const securityLine = content?.lines.find((line) => /Служби безпеки/i.test(line)) ?? null;
   const baseLines = content?.lines.filter((line) => !/Служби безпеки/i.test(line)) ?? [];
@@ -133,6 +138,7 @@ export default async function SearchRoomPage() {
           </p>
         )}
 
+        {articles.length ? <div className="mt-6"><PageArticles articles={articles} /></div> : null}
         <CooperationSearchRoomForm />
       </section>
     </main>

@@ -31,6 +31,7 @@ export default function RootLayout({
         <SeoRuntimeLoader />
         <SiteContentProvider>
         <SiteHeader />
+        <PageAssignedArticles placement="before-content" />
         {children}
         <PageAssignedArticles />
         <SiteFooter />
