@@ -70,6 +70,30 @@ async function main() {
   published = await (await publicApi.GET()).json();
   assert.ok(!flatten(filterContentMenu(headerMenu,new Set(published.populatedPaths))).includes('/loyalty/about'));
   assert.deepEqual(filterContentMenu([{label:'Empty',href:'#',children:[{label:'Empty child',href:'/loyalty/about'}]}],new Set()),[]);
+  const storyPage = require('../app/about/why-pchilka-not-bdzhilka/page.tsx');
+  const { renderToStaticMarkup } = require('react-dom/server');
+  const story = { ...article, id:'story', pagePath:'/about/why-pchilka-not-bdzhilka', title:'Історія бренду', body:'## Наша історія\n**Опублікований текст**', status:'published' };
+  stored.entries = [story, { ...story, id:'secret', slug:'secret', title:'Прихована чернетка', status:'draft' }];
+  const originalRead = fs.promises.readFile;
+  fs.promises.readFile = async (filename, ...args) => String(filename).endsWith('chomu-pchilka-ne-bdzhilka.txt') ? 'Стара історія\nСтарий текст' : originalRead(filename, ...args);
+  try {
+    const html = renderToStaticMarkup(await storyPage.default());
+    assert.ok(html.includes('Історія бренду'));
+    assert.ok(html.includes('<strong class="font-semibold text-slate-900">Опублікований текст</strong>'));
+    assert.ok(!html.includes('Стара історія') && !html.includes('Прихована чернетка') && !html.includes('public/info'));
+    assert.equal((html.match(/id="article-program"/g) || []).length, 1);
+    stored.entries = [{ ...story, status:'draft' }];
+    const fallbackHtml = renderToStaticMarkup(await storyPage.default());
+    assert.ok(fallbackHtml.includes('Стара історія') && !fallbackHtml.includes('Історія бренду'));
+    fs.promises.readFile = async (filename, ...args) => {
+      if (String(filename).endsWith('chomu-pchilka-ne-bdzhilka.txt')) throw new Error('Missing legacy file');
+      return originalRead(filename, ...args);
+    };
+    const emptyHtml = renderToStaticMarkup(await storyPage.default());
+    assert.ok(emptyHtml.includes('Чому Пчілка не Бджілка'));
+    assert.ok(!emptyHtml.includes('public/info') && !emptyHtml.includes('не знайдено'));
+  } finally { fs.promises.readFile = originalRead; }
+  console.log('PASS: story page renders published Admin articles in main content, preserves Markdown, excludes drafts and legacy notices, and retains legacy file fallback.');
   console.log('PASS: assignment round trip; drafts and deleted articles hide informational pages; publication shows them; functional pages remain; empty groups disappear; public API excludes drafts; legacy blog/news isolation; assignment and duplicate validation.');
 }
 main().catch(error => { console.error(error); process.exitCode=1; });

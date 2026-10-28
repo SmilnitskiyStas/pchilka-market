@@ -3,9 +3,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { headerMenu } from '@/content/menu';
-import { filterContentMenu } from '@/lib/menu-content';
+import { filterContentMenu, dedicatedArticlePages } from '@/lib/menu-content';
 import type { ContentEntry } from '@/lib/content-entries';
-import ArticleBody from '@/components/article-body';
+import PageArticles from '@/components/page-articles';
 
 const empty = { entries: [] as ContentEntry[], populatedPaths: [] as string[] };
 const ContentContext = createContext(empty);
@@ -41,11 +41,8 @@ export function PageAssignedArticles() {
   }, [entries, pathname]);
   const articles = entries.filter((entry) => entry.status === 'published' && entry.pagePath === pathname)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  if (!articles.length) return null;
+  if (!articles.length || dedicatedArticlePages.includes(pathname)) return null;
   return <section aria-label="Статті сторінки" className="site-container space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-    {articles.map((entry) => <article id={`article-${entry.slug}`} key={entry.id} className="scroll-mt-28 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <img src={entry.coverImage} alt={entry.title} className="max-h-96 w-full object-cover" />
-      <div className="p-6 sm:p-8"><h2 className="text-3xl font-bold text-slate-900">{entry.title}</h2><p className="mt-3 text-slate-600">{entry.excerpt}</p><ArticleBody body={entry.body} /></div>
-    </article>)}
+    <PageArticles articles={articles} />
   </section>;
 }

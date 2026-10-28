@@ -1,6 +1,10 @@
 import type { Metadata } from 'next';
 import { promises as fs } from 'fs';
 import path from 'path';
+import PageArticles from '@/components/page-articles';
+import { getBlogContentFromDb } from '@/lib/blog-content-repository';
+
+export const dynamic = 'force-dynamic';
 
 type StoryContent = {
   title: string;
@@ -35,11 +39,17 @@ async function readStoryContent(): Promise<StoryContent | null> {
 }
 
 export default async function WhyPchilkaNotBdzhilkaPage() {
-  const story = await readStoryContent();
+  const content = await getBlogContentFromDb().catch(() => ({ entries: [] }));
+  const articles = content.entries.filter((entry) => entry.pagePath === '/about/why-pchilka-not-bdzhilka' && entry.status === 'published')
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  const story = articles.length ? null : await readStoryContent();
 
   return (
     <main className="site-container min-h-screen px-4 py-10 sm:px-6 lg:px-8">
-      <section className="rounded-3xl border border-brand/25 bg-white/95 p-6 shadow-sm sm:p-8">
+      {articles.length ? <>
+        <h1 className="mb-6 text-3xl font-bold text-slate-900 sm:text-4xl">Чому Пчілка не Бджілка</h1>
+        <PageArticles articles={articles} />
+      </> : <section className="rounded-3xl border border-brand/25 bg-white/95 p-6 shadow-sm sm:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Про мережу</p>
 
         {story ? (
@@ -52,11 +62,9 @@ export default async function WhyPchilkaNotBdzhilkaPage() {
             </div>
           </>
         ) : (
-          <p className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-            Текст сторінки поки що не знайдено у файлі <span className="font-semibold">public/info/chomu-pchilka-ne-bdzhilka.txt</span>.
-          </p>
+          <h1 className="mt-2 text-3xl font-bold text-slate-900 sm:text-4xl">Чому Пчілка не Бджілка</h1>
         )}
-      </section>
+      </section>}
     </main>
   );
 }

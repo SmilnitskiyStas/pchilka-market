@@ -3,6 +3,7 @@ import type { ContentEntry } from '@/lib/content-entries';
 
 export const contentPages = mainMenu.flatMap((item) => [item, ...(item.children ?? [])]).filter((item) => item.href !== '#');
 export const legacyContentPaths = { blog: '/blog', news: '/news', charity: '/about/charity' };
+export const dedicatedArticlePages = ['/about/why-pchilka-not-bdzhilka'];
 export function entryPagePath(entry: ContentEntry): string {
   return entry.pagePath || legacyContentPaths[entry.contentType];
 }
