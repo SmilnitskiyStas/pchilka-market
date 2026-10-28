@@ -24,7 +24,7 @@ export function normalizeUploadFolder(folder: string | null | undefined, fallbac
     .filter(Boolean);
 
   if (segments.length === 0) {
-    return [fallback];
+    return fallback.split('/').filter(Boolean);
   }
 
   return segments;

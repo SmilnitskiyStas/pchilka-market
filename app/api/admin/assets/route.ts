@@ -12,6 +12,9 @@ import {
   upsertMediaMetadata
 } from '@/lib/media-asset-metadata';
 import { buildMediaUrl, getUploadsDir, normalizeUploadFolder, resolveUploadPath } from '@/lib/uploads';
+import { startVideoOptimization, isVideoOptimizationActive } from '@/lib/video-optimization';
+import { isOptimizableVideo } from '@/lib/video-optimization-types';
+import { randomUUID } from 'crypto';
 
 export const runtime = 'nodejs';
 
@@ -41,6 +44,7 @@ async function walkAssets(dirPath: string, rootPath: string): Promise<string[]> 
   const result: string[] = [];
 
   for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
     const absolutePath = path.join(dirPath, entry.name);
 
     if (entry.isDirectory()) {
@@ -109,6 +113,10 @@ export async function POST(request: Request) {
     }
 
     const ext = path.extname(file.name).toLowerCase();
+    const optimizeVideo = formData.get('optimizeVideo') === 'true' && isOptimizableVideo(file.name);
+    const keepOriginal = formData.get('keepOriginal') !== 'false';
+    if (optimizeVideo && !keepOriginal && !isAdminRequestAuthorized(new Request(request.url, { method: 'DELETE', headers: request.headers }))) return unauthorizedAdminResponse();
+    if (optimizeVideo && file.size > 512 * 1024 * 1024) return NextResponse.json({ ok: false, error: 'Для оптимізації оберіть відео до 512 МБ.' }, { status: 400 });
     if (!allowedExtensions.has(ext)) {
       return NextResponse.json({ ok: false, error: 'Непідтримуваний формат файлу.' }, { status: 400 });
     }
@@ -121,7 +129,7 @@ export async function POST(request: Request) {
     await fs.mkdir(uploadDir, { recursive: true });
 
     const safeBase = normalizeFileName(file.name) || 'asset';
-    const fileName = `${Date.now()}-${safeBase}${ext}`;
+    const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}-${safeBase}${ext}`;
     const absolutePath = path.join(uploadDir, fileName);
     const bytes = await file.arrayBuffer();
     await fs.writeFile(absolutePath, Buffer.from(bytes));
@@ -129,6 +137,10 @@ export async function POST(request: Request) {
     const mediaUrl = buildMediaUrl([...folderParts, year, month, fileName]);
     await upsertMediaMetadata(mediaUrl, {});
 
+    if (optimizeVideo) {
+      try { return NextResponse.json({ ok: true, path: mediaUrl, optimization: await startVideoOptimization(mediaUrl, keepOriginal) }); }
+      catch { return NextResponse.json({ ok: true, path: mediaUrl, warning: 'Відео завантажено, але оптимізацію не запущено. Оригінал збережено; запустіть обробку в медіафайлах.' }); }
+    }
     return NextResponse.json({
       ok: true,
       path: mediaUrl
@@ -147,6 +159,7 @@ export async function DELETE(request: Request) {
   try {
     const payload = (await request.json()) as { path?: string };
     const assetPath = typeof payload.path === 'string' ? payload.path.trim() : '';
+    if (isVideoOptimizationActive(assetPath)) return NextResponse.json({ ok: false, error: 'Відео зараз обробляється. Дочекайтеся завершення оптимізації.' }, { status: 409 });
 
     if (!assetPath.startsWith('/media/')) {
       return NextResponse.json({ ok: false, error: 'Некоректний шлях до файлу.' }, { status: 400 });

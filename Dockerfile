@@ -16,7 +16,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends poppler-utils \
+  && apt-get install -y --no-install-recommends poppler-utils ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /app/data/uploads

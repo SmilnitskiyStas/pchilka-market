@@ -4,6 +4,8 @@ import { Readable } from 'stream';
 
 import { resolveUploadPath, getContentType } from '../../../lib/uploads';
 import { parseByteRange } from '@/lib/http-byte-range';
+import { getVideoReplacement } from '@/lib/video-optimization';
+import { buildMediaUrl } from '@/lib/uploads';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,6 +19,9 @@ async function serveMedia(
 ) {
   try {
     const { path } = await params;
+    if (path.some((part) => decodeURIComponent(part).startsWith('.'))) return new Response('Not found', { status: 404 });
+    const replacement = await getVideoReplacement(buildMediaUrl(path.map((part) => decodeURIComponent(part))));
+    if (replacement) return new Response(null, { status: 307, headers: { Location: replacement, 'Cache-Control': 'no-store' } });
     const filePath = resolveUploadPath(path);
     const fileStat = await stat(filePath);
 

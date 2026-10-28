@@ -4,6 +4,9 @@ import { NextResponse } from 'next/server';
 
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import { buildMediaUrl, getUploadsDir, normalizeUploadFolder } from '@/lib/uploads';
+import { startVideoOptimization } from '@/lib/video-optimization';
+import { isOptimizableVideo } from '@/lib/video-optimization-types';
+import { randomUUID } from 'crypto';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +19,7 @@ async function walkImages(dirPath: string, rootPath: string): Promise<string[]> 
   const result: string[] = [];
 
   for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
     const absolutePath = path.join(dirPath, entry.name);
 
     if (entry.isDirectory()) {
@@ -89,6 +93,10 @@ export async function POST(request: Request) {
     }
 
     const ext = path.extname(file.name).toLowerCase();
+    const optimizeVideo = formData.get('optimizeVideo') === 'true' && isOptimizableVideo(file.name);
+    const keepOriginal = formData.get('keepOriginal') !== 'false';
+    if (optimizeVideo && !keepOriginal && !isAdminRequestAuthorized(new Request(request.url, { method: 'DELETE', headers: request.headers }))) return unauthorizedAdminResponse();
+    if (optimizeVideo && file.size > 512 * 1024 * 1024) return NextResponse.json({ ok: false, error: 'Для оптимізації оберіть відео до 512 МБ.' }, { status: 400 });
     if (!allowedExtensions.has(ext)) {
       return NextResponse.json({ ok: false, error: 'Непідтримуваний формат файлу.' }, { status: 400 });
     }
@@ -101,12 +109,17 @@ export async function POST(request: Request) {
     await fs.mkdir(uploadDir, { recursive: true });
 
     const safeBase = normalizeFileName(file.name) || 'image';
-    const fileName = `${Date.now()}-${safeBase}${ext}`;
+    const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}-${safeBase}${ext}`;
     const absolutePath = path.join(uploadDir, fileName);
     const bytes = await file.arrayBuffer();
     await fs.writeFile(absolutePath, Buffer.from(bytes));
 
-    return NextResponse.json({ ok: true, path: buildMediaUrl([...folderParts, year, month, fileName]) });
+    const mediaUrl = buildMediaUrl([...folderParts, year, month, fileName]);
+    if (optimizeVideo) {
+      try { return NextResponse.json({ ok: true, path: mediaUrl, optimization: await startVideoOptimization(mediaUrl, keepOriginal) }); }
+      catch { return NextResponse.json({ ok: true, path: mediaUrl, warning: 'Відео завантажено, але оптимізацію не запущено. Оригінал збережено; запустіть обробку в медіафайлах.' }); }
+    }
+    return NextResponse.json({ ok: true, path: mediaUrl });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown upload error';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

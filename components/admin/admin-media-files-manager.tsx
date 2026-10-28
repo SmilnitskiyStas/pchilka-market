@@ -1,6 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import VideoOptimizationOptions from '@/components/admin/video-optimization-options';
+import VideoOptimizationHistory from '@/components/admin/video-optimization-history';
+import { waitForVideoOptimization } from '@/lib/video-optimization-client';
+import { isOptimizableVideo, type VideoOptimizationJob } from '@/lib/video-optimization-types';
 
 type AssetCategory =
   | 'all'
@@ -161,21 +165,24 @@ async function fetchAssets(): Promise<AssetItem[]> {
   return Array.isArray(payload.assets) ? payload.assets : [];
 }
 
-async function uploadAsset(file: File, folder: string): Promise<string> {
+async function uploadAsset(file: File, folder: string, optimizeVideo: boolean, keepOriginal: boolean, onProgress: (message: string) => void, onStarted: () => void): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('folder', folder);
+  if (optimizeVideo && isOptimizableVideo(file.name)) { formData.append('optimizeVideo', 'true'); formData.append('keepOriginal', String(keepOriginal)); }
 
   const response = await fetch('/api/admin/assets', {
     method: 'POST',
     body: formData
   });
-  const payload = (await response.json()) as { ok?: boolean; path?: string; error?: string };
+  const payload = (await response.json()) as { ok?: boolean; path?: string; error?: string; warning?: string; optimization?: VideoOptimizationJob };
 
   if (!response.ok || !payload.ok || !payload.path) {
     throw new Error(payload.error || 'Не вдалося завантажити файл.');
   }
 
+  if (payload.warning) throw new Error(`${payload.warning} Файл: ${payload.path}`);
+  if (payload.optimization) { onStarted(); return (await waitForVideoOptimization(payload.optimization, onProgress)).outputUrl!; }
   return payload.path;
 }
 
@@ -215,6 +222,11 @@ export default function AdminMediaFilesManager() {
   const [assets, setAssets] = useState<AssetItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [optimizeVideo, setOptimizeVideo] = useState(false);
+  const [keepOriginalVideo, setKeepOriginalVideo] = useState(true);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [videoProgress, setVideoProgress] = useState('');
+  const [historyRefresh, setHistoryRefresh] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSavingMetadata, setIsSavingMetadata] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<AssetCategory>('all');
@@ -314,16 +326,33 @@ export default function AdminMediaFilesManager() {
     setError('');
     setSuccess('');
     try {
-      const uploadedPath = await uploadAsset(file, selectedFolder);
+      setVideoProgress('Завантаження файлу...');
+      const uploadedPath = await uploadAsset(file, selectedFolder, optimizeVideo, keepOriginalVideo, setVideoProgress, () => setHistoryRefresh((value) => value + 1));
       const refreshedAssets = await fetchAssets();
       setAssets(refreshedAssets);
       setSelectedAssetUrl(uploadedPath);
       setSuccess(`Файл завантажено: ${uploadedPath}`);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Не вдалося завантажити файл.');
+      setAssets(await fetchAssets().catch(() => assets));
     } finally {
       setIsUploading(false);
+      setHistoryRefresh((value) => value + 1);
     }
+  }
+
+  async function handleOptimize(assetUrl: string) {
+    setIsOptimizing(true); setError(''); setSuccess(''); setVideoProgress('Запуск оптимізації...');
+    try {
+      const response = await fetch('/api/admin/video-optimization', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: assetUrl, keepOriginal: keepOriginalVideo }) });
+      const payload = await response.json() as { ok?: boolean; job?: VideoOptimizationJob; error?: string };
+      if (!response.ok || !payload.ok || !payload.job) throw new Error(payload.error || 'Не вдалося запустити оптимізацію.');
+      setHistoryRefresh((value) => value + 1);
+      const result = await waitForVideoOptimization(payload.job, setVideoProgress);
+      setAssets(await fetchAssets()); setSelectedAssetUrl(result.outputUrl!);
+      setSuccess(`${result.message} ${result.originalBytes && result.outputBytes ? `${(result.originalBytes / 1048576).toFixed(2)} → ${(result.outputBytes / 1048576).toFixed(2)} МБ.` : ''}`);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Не вдалося оптимізувати відео.'); }
+    finally { setIsOptimizing(false); setHistoryRefresh((value) => value + 1); }
   }
 
   async function handleDelete(assetUrl: string) {
@@ -399,6 +428,7 @@ export default function AdminMediaFilesManager() {
             <label className="rounded-full border border-slate-300 px-3 py-2 text-center text-sm font-semibold text-slate-700 transition hover:border-brand hover:text-brand">
               <input
                 type="file"
+                disabled={isUploading || isOptimizing}
                 className="hidden"
                 accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.json,.svg"
                 onChange={(event) => {
@@ -408,10 +438,14 @@ export default function AdminMediaFilesManager() {
               />
               {isUploading ? 'Завантаження...' : 'Додати файл'}
             </label>
+            <VideoOptimizationOptions enabled={optimizeVideo} keepOriginal={keepOriginalVideo} onEnabledChange={setOptimizeVideo} onKeepOriginalChange={setKeepOriginalVideo} disabled={isUploading || isOptimizing} />
           </div>
         </div>
       </div>
 
+      {isUploading || isOptimizing ? <p role="status" className="mt-4 rounded-xl bg-brand/10 p-3 text-sm">{videoProgress}</p> : null}
+      <VideoOptimizationHistory refreshKey={historyRefresh} />
+      <button type="button" className="mt-3 rounded-full border border-slate-300 px-3 py-1 text-sm" onClick={() => { void fetchAssets().then(setAssets).catch(() => setError('Не вдалося оновити медіафайли.')); }}>Оновити список файлів</button>
       <div className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_320px]">
         <div>
           <label htmlFor="media-search" className="block text-xs font-semibold uppercase tracking-[0.08em] text-slate-600">
@@ -562,6 +596,11 @@ export default function AdminMediaFilesManager() {
                 </p>
               </div>
 
+              {selectedAssetDetails.isVideo ? <div className="space-y-3 rounded-xl border border-brand/30 bg-brand/5 p-4">
+                <label className="block text-sm font-semibold">Після оптимізації<select value={keepOriginalVideo ? 'keep' : 'delete'} onChange={(event) => setKeepOriginalVideo(event.target.value === 'keep')} disabled={isUploading || isOptimizing} className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm"><option value="keep">Залишити оригінал</option><option value="delete">Видалити оригінал після успішної оптимізації</option></select></label>
+                <button type="button" disabled={isOptimizing || isUploading || isDeleting} onClick={() => void handleOptimize(selectedAssetDetails.url)} className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{isOptimizing ? 'Оптимізація...' : 'Оптимізувати це відео'}</button>
+                <p className="text-xs text-slate-600">Нова версія з’явиться в медіафайлах. Якщо видалити оригінал, його старі посилання автоматично відкриватимуть нове відео.</p>
+              </div> : null}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold text-slate-900">SEO-дані файлу</h3>
@@ -641,7 +680,7 @@ export default function AdminMediaFilesManager() {
                 <button
                   type="button"
                   onClick={() => void handleDelete(selectedAssetDetails.url)}
-                  disabled={isDeleting}
+                  disabled={isDeleting || isOptimizing || isUploading}
                   className="inline-flex rounded-full border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isDeleting ? 'Видалення...' : 'Видалити файл'}

@@ -1,6 +1,9 @@
 ﻿'use client';
 
 import Image from 'next/image';
+import VideoOptimizationOptions from '@/components/admin/video-optimization-options';
+import { waitForVideoOptimization } from '@/lib/video-optimization-client';
+import { isOptimizableVideo, type VideoOptimizationJob } from '@/lib/video-optimization-types';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import type { HomeBanner } from '@/content/home-banners';
@@ -132,18 +135,21 @@ function buildBannerLinkOptions(): BannerLinkOption[] {
   return Array.from(unique.values());
 }
 
-async function uploadBannerImage(file: File): Promise<string> {
+async function uploadBannerImage(file: File, options?: { optimizeVideo: boolean; keepOriginal: boolean; onProgress: (message: string) => void }): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('folder', 'admin/banners');
+  if (options?.optimizeVideo && isOptimizableVideo(file.name)) { formData.append('optimizeVideo', 'true'); formData.append('keepOriginal', String(options.keepOriginal)); }
 
   const response = await fetch('/api/admin/images', { method: 'POST', body: formData });
-  const payload = (await response.json()) as { ok?: boolean; path?: string; error?: string };
+  const payload = (await response.json()) as { ok?: boolean; path?: string; error?: string; warning?: string; optimization?: VideoOptimizationJob };
 
   if (!response.ok || !payload.ok || !payload.path) {
     throw new Error(payload.error || 'Не вдалося завантажити файл банера на сервер.');
   }
 
+  if (payload.warning) throw new Error(`${payload.warning} Файл: ${payload.path}`);
+  if (payload.optimization) return (await waitForVideoOptimization(payload.optimization, options?.onProgress)).outputUrl!;
   return payload.path;
 }
 
@@ -278,6 +284,10 @@ export default function AdminBannersManager() {
   const [src, setSrc] = useState('');
   const [selectedPageHref, setSelectedPageHref] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [optimizeVideo, setOptimizeVideo] = useState(false);
+  const [keepOriginalVideo, setKeepOriginalVideo] = useState(true);
+  const [isVideoProcessing, setIsVideoProcessing] = useState(false);
+  const [videoProgress, setVideoProgress] = useState('');
   const [publishFrom, setPublishFrom] = useState('');
   const [publishTo, setPublishTo] = useState('');
   const [isActive, setIsActive] = useState(true);
@@ -393,6 +403,7 @@ export default function AdminBannersManager() {
   }
 
   function resetForm() {
+    setOptimizeVideo(false); setKeepOriginalVideo(true); setVideoProgress('');
     setImageSourceMode('path');
     setEditingBannerId(null);
     setAlt('');
@@ -490,6 +501,7 @@ export default function AdminBannersManager() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isVideoProcessing || isSyncing) return;
     setFormError('');
 
     const normalizedAlt = alt.trim();
@@ -519,12 +531,13 @@ export default function AdminBannersManager() {
     } else {
       if (imageFile) {
         try {
-          finalSrc = await uploadBannerImage(imageFile);
+          setIsVideoProcessing(true); setVideoProgress('Завантаження файлу на сервер...');
+          finalSrc = await uploadBannerImage(imageFile, { optimizeVideo, keepOriginal: keepOriginalVideo, onProgress: setVideoProgress });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Не вдалося завантажити файл зображення.';
           setFormError(message);
           return;
-        }
+        } finally { setIsVideoProcessing(false); }
       } else if (isEditing) {
         const existing = banners.find((banner) => banner.id === editingBannerId);
         if (!existing?.src || existing.src.startsWith('data:image/')) {
@@ -822,9 +835,9 @@ export default function AdminBannersManager() {
       ) : null}
 
       {isModalOpen ? (
-        <div className="fixed inset-0 z-[220] bg-slate-900/45 p-4" onClick={() => setIsModalOpen(false)}>
+        <div className="fixed inset-0 z-[220] bg-slate-900/45 p-4" onClick={() => { if (!isVideoProcessing && !isSyncing) setIsModalOpen(false); }}>
           <div
-            className="mx-auto mt-6 w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:mt-10 sm:p-6"
+            className="mx-auto mt-6 max-h-[calc(100dvh-80px)] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:mt-10 sm:p-6"
             onClick={(event) => event.stopPropagation()}
           >
             <h2 className="text-xl font-bold text-slate-900">{isEditing ? 'Редагувати банер' : 'Додати новий банер'}</h2>
@@ -833,7 +846,7 @@ export default function AdminBannersManager() {
               <span className="font-semibold">/img/baners/file.jpg</span> або <span className="font-semibold">/media/admin/banners/video.mp4</span>.
             </p>
 
-            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+            <form onSubmit={handleSubmit} className="mt-4"><fieldset disabled={isVideoProcessing || isSyncing} className="min-w-0 space-y-4">
               <div>
                 <label htmlFor="banner-alt" className="block text-sm font-semibold text-slate-900">
                   ALT текст
@@ -915,6 +928,8 @@ export default function AdminBannersManager() {
               )}
 
               <div>
+                {imageSourceMode === 'upload' && imageFile && isOptimizableVideo(imageFile.name) ? <VideoOptimizationOptions enabled={optimizeVideo} keepOriginal={keepOriginalVideo} onEnabledChange={setOptimizeVideo} onKeepOriginalChange={setKeepOriginalVideo} disabled={isVideoProcessing || isSyncing} /> : null}
+                {isVideoProcessing ? <p role="status" className="my-3 rounded-xl bg-brand/10 p-3 text-sm">{videoProgress}</p> : null}
                 <label htmlFor="banner-page" className="block text-sm font-semibold text-slate-900">
                   Сторінка для переходу
                 </label>
@@ -1009,19 +1024,20 @@ export default function AdminBannersManager() {
                     setIsModalOpen(false);
                     resetForm();
                   }}
+                  disabled={isVideoProcessing || isSyncing}
                   className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
                 >
                   Скасувати
                 </button>
                 <button
                   type="submit"
-                  disabled={isSyncing}
+                  disabled={isSyncing || isVideoProcessing}
                   className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isEditing ? 'Зберегти зміни' : 'Додати'}
                 </button>
               </div>
-            </form>
+            </fieldset></form>
           </div>
         </div>
       ) : null}
