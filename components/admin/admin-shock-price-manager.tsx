@@ -50,6 +50,7 @@ export default function AdminShockPriceManager() {
   const [success, setSuccess] = useState('');
 
   const [sourceMode, setSourceMode] = useState<SourceMode>('path');
+  const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [isActive, setIsActive] = useState(true);
@@ -58,6 +59,9 @@ export default function AdminShockPriceManager() {
   const [libraryImages, setLibraryImages] = useState<string[]>([]);
   const [librarySearch, setLibrarySearch] = useState('');
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
+  const [libraryTargetId, setLibraryTargetId] = useState<string | null>(null);
+  const [isLibraryLoading, setIsLibraryLoading] = useState(false);
+  const [libraryError, setLibraryError] = useState('');
 
   const visibleLibraryImages = useMemo(() => {
     const query = librarySearch.trim().toLowerCase();
@@ -71,18 +75,11 @@ export default function AdminShockPriceManager() {
     async function load() {
       setIsLoading(true);
       try {
-        const [gallery, imagesResponse] = await Promise.all([
-          fetchGallery(),
-          fetch('/api/admin/images', { cache: 'no-store' })
-        ]);
+        const gallery = await fetchGallery();
 
         if (cancelled) return;
         setItems(gallery);
 
-        const imagesPayload = (await imagesResponse.json()) as ImagesPayload;
-        if (Array.isArray(imagesPayload.images)) {
-          setLibraryImages(imagesPayload.images);
-        }
       } catch (loadError) {
         if (cancelled) return;
         const message = loadError instanceof Error ? loadError.message : 'Не вдалося завантажити блок «Шок ціна».';
@@ -106,8 +103,20 @@ export default function AdminShockPriceManager() {
     setSourceMode('path');
   }
 
-  async function handleUpload(file: File | null) {
+  async function openLibrary(targetId: string | null = null) {
+    setLibraryTargetId(targetId); setIsLibraryModalOpen(true); setLibrarySearch(''); setLibraryError(''); setIsLibraryLoading(true);
+    try {
+      const response = await fetch('/api/admin/images', { cache: 'no-store' });
+      if (!response.ok) throw new Error('Не вдалося завантажити медіафайли.');
+      const payload = await response.json() as ImagesPayload;
+      setLibraryImages((payload.images ?? []).filter((url) => /\.(png|jpe?g|webp|gif|avif)(\?.*)?$/i.test(url)));
+    } catch (e) { setLibraryError(e instanceof Error ? e.message : 'Не вдалося завантажити медіафайли.'); }
+    finally { setIsLibraryLoading(false); }
+  }
+
+  async function handleUpload(file: File | null, targetId?: string) {
     if (!file) return;
+    if (!/\.(png|jpe?g|webp|gif|avif)$/i.test(file.name)) { setError('Оберіть зображення PNG, JPG, WebP, GIF або AVIF.'); return; }
 
     setUploading(true);
     setError('');
@@ -124,9 +133,11 @@ export default function AdminShockPriceManager() {
         throw new Error(payload.error || 'Не вдалося завантажити файл.');
       }
 
-      setImageUrl(payload.path);
+      if (targetId) {
+        updateItem(targetId, { imageUrl: payload.path });
+        setSuccess('Зображення замінено. Натисніть «Зберегти порядок і картки», щоб зберегти зміни.');
+      } else { setImageUrl(payload.path); setSourceMode('path'); }
       setLibraryImages((prev) => Array.from(new Set([payload.path!, ...prev])));
-      setSourceMode('path');
     } catch (uploadError) {
       const message = uploadError instanceof Error ? uploadError.message : 'Не вдалося завантажити файл.';
       setError(message);
@@ -160,6 +171,8 @@ export default function AdminShockPriceManager() {
 
     setItems(next);
     resetForm();
+    setIsAddFormOpen(false);
+    setSuccess('Картку додано до списку. Натисніть «Зберегти порядок і картки», щоб зберегти зміни.');
   }
 
   function moveItem(itemId: string, direction: 'up' | 'down') {
@@ -176,6 +189,7 @@ export default function AdminShockPriceManager() {
   }
 
   function updateItem(itemId: string, patch: Partial<ShockPriceGalleryItem>) {
+    setSuccess('');
     setItems((prev) =>
       prev.map((item) =>
         item.id === itemId
@@ -214,8 +228,11 @@ export default function AdminShockPriceManager() {
       </p>
 
       {isLoading ? <p className="mt-3 text-sm text-slate-600">Завантаження...</p> : null}
+      {uploading ? <p role="status" className="mt-3 text-sm text-slate-600">Завантаження зображення...</p> : null}
 
-      <form onSubmit={handleAddCard} className="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+      {!isAddFormOpen ? <button type="button" aria-expanded={false} aria-controls="shock-card-editor" onClick={() => { resetForm(); setIsAddFormOpen(true); }} className="mt-4 rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">Додати картку</button> : null}
+      {isAddFormOpen ? <form id="shock-card-editor" onSubmit={handleAddCard} className="mt-4 space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <h3 className="font-semibold">Додати картку</h3>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -230,13 +247,13 @@ export default function AdminShockPriceManager() {
             type="button"
             onClick={() => {
               setSourceMode('library');
-              setIsLibraryModalOpen(true);
+              void openLibrary();
             }}
             className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
               sourceMode === 'library' ? 'border-brand bg-brand/10 text-brand' : 'border-slate-300 text-slate-700'
             }`}
           >
-            Обрати з сервера
+            Обрати з медіафайлів
           </button>
           <button
             type="button"
@@ -267,8 +284,10 @@ export default function AdminShockPriceManager() {
               id="shock-card-upload"
               type="file"
               accept="image/*"
+              disabled={uploading || isSaving}
               onChange={(event) => {
                 void handleUpload(event.target.files?.[0] ?? null);
+                event.target.value = '';
               }}
               className="mt-1.5 block w-full text-sm text-slate-700 file:mr-3 file:rounded-full file:border-0 file:bg-brand/10 file:px-3 file:py-2 file:font-semibold file:text-brand hover:file:bg-brand/20"
             />
@@ -298,18 +317,20 @@ export default function AdminShockPriceManager() {
 
         <button
           type="submit"
+          disabled={uploading || isSaving || isLoading}
           className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
         >
-          Додати картку
+          Додати до списку
         </button>
-      </form>
+        <button type="button" disabled={uploading} onClick={() => { resetForm(); setIsAddFormOpen(false); }} className="ml-2 rounded-full border border-slate-300 px-4 py-2 text-sm">Скасувати</button>
+      </form> : null}
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <h3 className="text-base font-semibold text-slate-900">Порядок карток</h3>
         <button
           type="button"
           onClick={() => void handleSaveAll()}
-          disabled={isSaving}
+          disabled={isSaving || uploading || isLoading}
           className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition enabled:hover:opacity-90 disabled:opacity-60"
         >
           {isSaving ? 'Збереження...' : 'Зберегти порядок і картки'}
@@ -332,10 +353,17 @@ export default function AdminShockPriceManager() {
                   className="w-full rounded-lg border border-slate-300 p-2 text-sm outline-none transition focus:border-brand"
                 />
                 <input
+                  aria-label={`Зображення картки ${index + 1}`}
                   value={item.imageUrl}
                   onChange={(event) => updateItem(item.id, { imageUrl: event.target.value })}
                   className="w-full rounded-lg border border-slate-300 p-2 text-xs outline-none transition focus:border-brand"
                 />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" disabled={uploading || isSaving} onClick={() => void openLibrary(item.id)} className="rounded-full border border-brand px-3 py-1.5 text-xs font-semibold text-brand">Обрати з медіафайлів</button>
+                  <label className="cursor-pointer rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold">Завантажити нове зображення
+                    <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" disabled={uploading || isSaving} className="sr-only" onChange={(event) => { const file = event.target.files?.[0] ?? null; event.target.value = ''; void handleUpload(file, item.id); }} />
+                  </label>
+                </div>
                 <label className="inline-flex items-center gap-2 text-xs">
                   <input
                     type="checkbox"
@@ -364,6 +392,7 @@ export default function AdminShockPriceManager() {
                   </button>
                   <button
                     type="button"
+                    disabled={uploading || isSaving}
                     onClick={() => removeItem(item.id)}
                     className="rounded-full border border-red-300 px-3 py-1 text-xs font-semibold text-red-700"
                   >
@@ -386,11 +415,14 @@ export default function AdminShockPriceManager() {
       {isLibraryModalOpen ? (
         <div className="fixed inset-0 z-[220] bg-slate-900/45 p-4" onClick={() => setIsLibraryModalOpen(false)}>
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shock-image-library-title"
             className="mx-auto mt-4 w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:mt-8 sm:p-6"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-lg font-bold text-slate-900">Оберіть зображення з сервера</h3>
+              <h3 id="shock-image-library-title" className="text-lg font-bold text-slate-900">Оберіть зображення з медіафайлів</h3>
               <button
                 type="button"
                 onClick={() => setIsLibraryModalOpen(false)}
@@ -408,15 +440,22 @@ export default function AdminShockPriceManager() {
             />
 
             <div className="mt-3 max-h-[60vh] overflow-y-auto">
+              {isLibraryLoading ? <p role="status" className="mb-3 text-sm">Завантаження медіафайлів...</p> : null}
+              {libraryError ? <p role="alert" className="mb-3 text-sm text-red-700">{libraryError}</p> : null}
               <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {visibleLibraryImages.map((path) => (
                   <li key={path} className="rounded-xl border border-slate-200 bg-slate-50 p-2">
                     <button
                       type="button"
                       onClick={() => {
-                        setImageUrl(path);
-                        if (!title.trim()) setTitle(imageNameFromPath(path));
-                        setSourceMode('path');
+                        if (libraryTargetId) {
+                          updateItem(libraryTargetId, { imageUrl: path });
+                          setSuccess('Зображення замінено. Натисніть «Зберегти порядок і картки», щоб зберегти зміни.');
+                        } else {
+                          setImageUrl(path);
+                          if (!title.trim()) setTitle(imageNameFromPath(path));
+                          setSourceMode('path');
+                        }
                         setIsLibraryModalOpen(false);
                       }}
                       className="block w-full text-left"
@@ -429,7 +468,7 @@ export default function AdminShockPriceManager() {
                   </li>
                 ))}
               </ul>
-              {visibleLibraryImages.length === 0 ? (
+              {visibleLibraryImages.length === 0 && !isLibraryLoading && !libraryError ? (
                 <p className="text-sm text-slate-600">Зображення не знайдено.</p>
               ) : null}
             </div>

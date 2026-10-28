@@ -83,6 +83,7 @@ export default function AdminPromotionsManager() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isPromotionFormOpen, setIsPromotionFormOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
   const [shortDescription, setShortDescription] = useState('');
@@ -171,9 +172,11 @@ export default function AdminPromotionsManager() {
       const saved = await savePromotions(next);
       setPromotions(saved);
       setIsSaved(true);
+      return true;
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : 'Не вдалося зберегти акції.';
       setError(message);
+      return false;
     } finally {
       setIsSyncing(false);
     }
@@ -214,11 +217,14 @@ export default function AdminPromotionsManager() {
       ? promotions.map((item) => (item.id === editingId ? draft : item))
       : [draft, ...promotions];
 
-    await persist(next);
-    resetForm();
+    if (await persist(next)) {
+      resetForm();
+      setIsPromotionFormOpen(false);
+    }
   }
 
   function handleEdit(item: PromotionRecord) {
+    setIsPromotionFormOpen(true);
     setEditingId(item.id);
     setTitle(item.title);
     setSlug(item.slug);
@@ -235,8 +241,9 @@ export default function AdminPromotionsManager() {
 
   async function handleDelete(id: string) {
     const next = promotions.filter((item) => item.id !== id);
-    await persist(next);
-    if (editingId === id) resetForm();
+    if (await persist(next)) {
+      if (editingId === id) { resetForm(); setIsPromotionFormOpen(false); }
+    }
   }
 
   function updateShockSettings<K extends keyof ShockPriceSettings>(key: K, value: ShockPriceSettings[K]) {
@@ -280,7 +287,11 @@ export default function AdminPromotionsManager() {
 
       {activeTab === 'catalog' ? <AdminPromotionCatalogManager /> : <>
 
-      <form onSubmit={handleSubmit} className="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+      {error ? <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p> : null}
+      {isSaved ? <p role="status" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">Акцію збережено.</p> : null}
+      {!isPromotionFormOpen ? <button type="button" aria-expanded={false} aria-controls="promotion-editor" onClick={() => { resetForm(); setIsSaved(false); setIsPromotionFormOpen(true); }} className="mt-5 rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white">Створити акцію</button> : null}
+      {isPromotionFormOpen ? <form id="promotion-editor" onSubmit={handleSubmit} className="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+        <h2 className="text-lg font-semibold">{isEditing ? 'Редагувати акцію' : 'Створити акцію'}</h2>
         <div>
           <label className="block text-sm font-semibold text-slate-900" htmlFor="promo-title">Назва акції</label>
           <input id="promo-title" value={title} onChange={(event) => { setTitle(event.target.value); setIsSaved(false); }} className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand" />
@@ -340,20 +351,16 @@ export default function AdminPromotionsManager() {
           Акція тижня
         </label>
 
-        {error ? <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{error}</p> : null}
-        {isSaved ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">Акцію збережено.</p> : null}
 
         <div className="flex items-center justify-end gap-2">
-          {isEditing ? (
-            <button type="button" onClick={resetForm} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
-              Скасувати редагування
+            <button type="button" disabled={isSyncing} onClick={() => { resetForm(); setIsPromotionFormOpen(false); }} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500">
+              Скасувати
             </button>
-          ) : null}
           <button type="submit" disabled={isSyncing} className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
             {isSyncing ? 'Збереження...' : isEditing ? 'Зберегти зміни' : 'Додати акцію'}
           </button>
         </div>
-      </form>
+      </form> : null}
 
       <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
         <div className="flex items-center justify-between gap-3">
