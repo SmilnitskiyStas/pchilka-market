@@ -33,7 +33,7 @@ export default async function ProductInfoPage({ params }: ProductInfoPageProps) 
   ];
 
   return (
-    <main className="mx-auto min-h-screen max-w-4xl px-3 py-6 sm:px-6 sm:py-10">
+    <main className="site-container min-h-screen px-3 py-6 sm:px-6 sm:py-10">
       <article className="overflow-hidden rounded-3xl border border-brand/25 bg-white shadow-sm">
         <header className="bg-gradient-to-br from-brand to-[#4c8617] px-5 py-7 text-white sm:px-9 sm:py-10">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/80">Інформація про товар</p>

@@ -25,7 +25,7 @@ export default async function LoyaltyDownloadPage() {
   const logoUrl = getSiteLogoUrl(profile);
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center px-4 py-8 sm:px-6 sm:py-10">
+    <main className="site-container flex min-h-screen w-full items-center px-4 py-8 sm:px-6 sm:py-10">
       <section className="w-full rounded-3xl border border-brand/25 bg-white/95 p-5 shadow-sm sm:p-8">
         <div className="mx-auto flex max-w-lg flex-col items-center text-center">
           <Image src={logoUrl} alt="Pchilka Market" width={190} height={62} priority className="h-12 w-auto sm:h-14" />

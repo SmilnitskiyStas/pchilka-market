@@ -7,12 +7,14 @@
   --color-bg: #f9fdf4;
   --color-text: #17210f;
   --site-container-max-width: 72rem;
+  --public-container-max-width: 1290px;
+  --public-container-gutter: 40px;
 }
 
 @layer components {
   .site-container {
     width: 100%;
-    max-width: var(--site-container-max-width);
+    max-width: var(--public-container-max-width);
     margin-right: auto;
     margin-left: auto;
   }

@@ -38,7 +38,7 @@ export default async function WhyPchilkaNotBdzhilkaPage() {
   const story = await readStoryContent();
 
   return (
-    <main className="mx-auto min-h-screen max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+    <main className="site-container min-h-screen px-4 py-10 sm:px-6 lg:px-8">
       <section className="rounded-3xl border border-brand/25 bg-white/95 p-6 shadow-sm sm:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Про мережу</p>
 

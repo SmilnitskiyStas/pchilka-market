@@ -99,7 +99,7 @@ export default async function PromotionPage({ params }: PromotionPageProps) {
   const periodTo = formatPeriodValue(promotion.endsAt);
 
   return (
-    <main className="mx-auto min-h-screen max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+    <main className="site-container min-h-screen px-4 py-8 sm:px-6 lg:px-8">
       <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         {promotion.imageUrl ? (
           <div className="relative h-64 w-full bg-slate-100 sm:h-80 lg:h-[26rem]">

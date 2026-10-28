@@ -95,10 +95,6 @@ export default function CatalogFlipbook({ images, totalPages }: Props) {
       const action = ({ ArrowRight: next, ArrowLeft: prev, Home: goFirst, End: goLast } as Record<string, () => void>)[event.key];
       if (action) { event.preventDefault(); action(); }
     }}>
-      <div className="catalog-book-toolbar">
-        <p aria-live="polite">{leafCount ? <>{spread.first === spread.last ? 'Сторінка' : 'Сторінки'} {range} з {leafCount}</> : 'Підготовка сторінок...'}</p>
-      </div>
-      <p className="catalog-book-hint">Потягніть за кут сторінки або скористайтеся стрілками</p>
       <div ref={host} className="catalog-book-host">
         {dimensions && prepared?.images === images ? <div className="catalog-book-position" style={{ transform: singleSide ? `translateX(${spread.first === 1 ? -dimensions.width / 2 : dimensions.width / 2}px)` : undefined }}>
           <HTMLFlipBook
@@ -118,7 +114,7 @@ export default function CatalogFlipbook({ images, totalPages }: Props) {
       <div className="catalog-book-navigation">
         <button type="button" onClick={goFirst} disabled={!canPrev} aria-label="Перша сторінка">«</button>
         <button type="button" onClick={prev} disabled={!canPrev} aria-label="Попередня сторінка">‹</button>
-        <span>{leafCount ? `${range} / ${leafCount}` : '…'}</span>
+        <span aria-live="polite">{leafCount ? `${range} / ${leafCount}` : '…'}</span>
         <button type="button" onClick={next} disabled={!canNext} aria-label="Наступна сторінка">›</button>
         <button type="button" onClick={goLast} disabled={!canNext} aria-label="Остання сторінка">»</button>
       </div>
