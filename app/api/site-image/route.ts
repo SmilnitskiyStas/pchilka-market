@@ -29,9 +29,13 @@ function resolvePublicPath(src: string): string {
 }
 
 async function readLocalAsset(src: string): Promise<Response> {
+  // Stored media references may already contain URL-encoded Cyrillic or spaces.
+  const decodedSrc = src.split('/').map((part) => {
+    try { return decodeURIComponent(part); } catch { return part; }
+  }).join('/');
   const absolutePath = src.startsWith('/media/')
     ? resolveUploadPath(src.replace(/^\/media\//, '').split('/').filter(Boolean))
-    : resolvePublicPath(src);
+    : resolvePublicPath(decodedSrc);
 
   console.info('[site-image] Reading local asset', { src, absolutePath });
   const buffer = await fs.readFile(absolutePath);

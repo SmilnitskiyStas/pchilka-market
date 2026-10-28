@@ -56,7 +56,7 @@ export default function AdminContentPostPage({ slug, contentType, listHref, enga
   if (!entry) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-700">
-        <p>Статтю не знайдено у статичних даних або в адмінці.</p>
+        <p>Публікацію не знайдено.</p>
         <Link href={listHref} className="mt-3 inline-block font-semibold text-brand hover:underline">
           Повернутися до списку
         </Link>

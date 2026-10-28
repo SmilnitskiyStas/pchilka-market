@@ -117,12 +117,7 @@ export default async function OfferEquipmentPage() {
               </div>
             ) : null}
           </>
-        ) : (
-          <p className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-            Текст сторінки поки що не знайдено у файлі{' '}
-            <span className="font-semibold">public/img/cooperation/offer_equipment.txt</span>.
-          </p>
-        )}
+        ) : null}
 
         {articles.length ? <div className="mt-6"><PageArticles articles={articles} /></div> : null}
         <CooperationOfferForm />

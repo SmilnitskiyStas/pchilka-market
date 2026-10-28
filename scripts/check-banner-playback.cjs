@@ -40,11 +40,11 @@ async function main(){
  class Observer{constructor(callback){intersectionCallback=callback;observers.push(this);}observe(){}disconnect(){}}
  const mod={};
  const output=ts.transpileModule(fs.readFileSync(path.join(root,'components/banner-carousel.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
- vm.runInNewContext(output,{exports:mod,require:name=>name==='react'?react:name==='next/image'||name==='next/link'?{default:()=>null}:require(name),document,IntersectionObserver:Observer,TextEncoder,btoa,setTimeout(){timerCount++;return timerCount;},clearTimeout(){clearCount++;}});
+ vm.runInNewContext(output,{exports:mod,require:name=>name==='react'?react:name==='next/image'?{default:'optimized-image'}:name==='next/link'?{default:()=>null}:require(name),document,IntersectionObserver:Observer,TextEncoder,btoa,setTimeout(){timerCount++;return timerCount;},clearTimeout(){clearCount++;}});
  function nodes(n,type){if(Array.isArray(n))return n.flatMap(x=>nodes(x,type));if(!n||typeof n!=='object')return[];return[...(n.type===type?[n]:[]),...nodes(n.props?.children,type)];}
  const slides=[{src:'/img/banners/week-1-alk-web.mp4',alt:'Video'},{src:'/img/cooperation/supply.png',alt:'Image'},{src:'/second.mp4',alt:'Hidden video'}];
  function render(list=slides){cursor=0;effects=[];const tree=mod.default({slides:list});effects.forEach(fn=>fn());return tree;}
- let tree=render();assert.equal(nodes(tree,'video').length,1);assert.equal(timerCount,0);assert.equal(nodes(tree,'video')[0].props.loop,false);
+ let tree=render();const optimizedImages=nodes(tree,'optimized-image');assert.equal(optimizedImages.length,1);assert.equal(optimizedImages[0].props.quality,75);assert.ok(optimizedImages[0].props.sizes.includes('100vw'));assert.equal(nodes(tree,'img').length,0);assert.equal(nodes(tree,'video').length,1);assert.equal(timerCount,0);assert.equal(nodes(tree,'video')[0].props.loop,false);
  let plays=0,pauses=0;nodes(tree,'video')[0].props.ref({play(){plays++;return Promise.resolve();},pause(){pauses++;}});
  document.hidden=true;visibilityCallback();tree=render();assert.ok(pauses>0);assert.equal(nodes(tree,'video')[0].props.preload,'none');
  document.hidden=false;visibilityCallback();tree=render();assert.ok(plays>0);

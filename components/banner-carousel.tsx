@@ -16,16 +16,6 @@ type BannerCarouselProps = {
   intervalMs?: number;
 };
 
-function shouldUseNativeImage(src: string): boolean {
-  return (
-    src.startsWith('/api/site-image') ||
-    src.startsWith('/img/') ||
-    src.startsWith('/media/') ||
-    src.startsWith('http://') ||
-    src.startsWith('https://')
-  );
-}
-
 function encodeImageRef(src: string): string {
   const bytes = new TextEncoder().encode(src);
   let binary = '';
@@ -42,11 +32,11 @@ function getBannerImageSrc(src: string, cacheKey?: string): string {
     return src;
   }
 
-  if (!cacheKey || (!src.startsWith('/media/') && !src.startsWith('/img/') && !src.startsWith('http'))) {
+  if (!src.startsWith('/media/') && !src.startsWith('/img/') && !src.startsWith('http')) {
     return src;
   }
 
-  return `/api/site-image?ref=${encodeURIComponent(encodeImageRef(src))}&v=${encodeURIComponent(cacheKey)}`;
+  return `/api/site-image?ref=${encodeURIComponent(encodeImageRef(src))}${cacheKey ? `&v=${encodeURIComponent(cacheKey)}` : ''}`;
 }
 
 function isVideoSource(src: string): boolean {
@@ -109,7 +99,6 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
         {slides.map((slide, index) => {
           const isActive = index === activeIndex;
           const isVideo = isVideoSource(slide.src);
-          const useNativeImage = shouldUseNativeImage(slide.src);
           const imageSrc = getBannerImageSrc(slide.src, slide.id);
           const imageClassName = 'h-full w-full object-contain';
           const media = isVideo ? (isActive ? (
@@ -129,26 +118,15 @@ export default function BannerCarousel({ slides, intervalMs = 4000 }: BannerCaro
               onEnded={() => { if (slides.length > 1) setActiveIndex((previous) => (previous + 1) % slides.length); }}
               onError={() => setFailedVideo(slide.src)}
             />
-          ) : null) : useNativeImage ? (
-            <img
-              src={imageSrc}
-              alt={slide.alt}
-              loading={index === 0 ? 'eager' : 'lazy'}
-              className={imageClassName}
-              onError={() => {
-                console.error('[banner-carousel] Banner image failed to load', {
-                  slideId: slide.id,
-                  originalSrc: slide.src,
-                  imageSrc
-                });
-              }}
-            />
-          ) : (
+          ) : null) : (
             <Image
               src={imageSrc}
               alt={slide.alt}
               fill
               priority={index === 0}
+              fetchPriority={index === 0 ? 'high' : 'auto'}
+              sizes="(max-width: 1280px) 100vw, 1280px"
+              quality={75}
               className="object-contain"
             />
           );

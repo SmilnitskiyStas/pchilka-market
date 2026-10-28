@@ -112,17 +112,15 @@ async function readNetworkStats(): Promise<NetworkStats> {
 }
 
 export default async function HomePage() {
-  let activeBanners: HomeBanner[] = [];
-  try {
-    activeBanners = await listBannersFromDb();
-  } catch {
-    // Show the mobile-app preview when configured banners are unavailable.
-  }
+  const [activeBanners, networkStats] = await Promise.all([
+    listBannersFromDb().catch((): HomeBanner[] => []),
+    readNetworkStats()
+  ]);
 
   const bannerSlides = activeBanners
     .filter((banner) => banner.isActive && isBannerInPublishRange(banner.publishFrom, banner.publishTo))
     .map(({ id, src, alt, href }) => ({ id, src, alt, href }));
-  const networkStats = await readNetworkStats();
+
   const statCards = [
     { label: 'Магазинів мережі', value: networkStats.totalStores > 0 ? String(networkStats.totalStores) : '—' },
     { label: 'Міст і населених пунктів', value: networkStats.totalCities > 0 ? String(networkStats.totalCities) : '—' },
