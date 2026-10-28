@@ -50,7 +50,7 @@ export default function AdminContentPostsList({
   const publishedEntries = useMemo(
     () =>
       entries
-        .filter((entry) => entry.contentType === contentType && entry.status === 'published' && !staticSlugSet.has(entry.slug))
+        .filter((entry) => !entry.pagePath && entry.contentType === contentType && entry.status === 'published' && !staticSlugSet.has(entry.slug))
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     [contentType, entries, staticSlugSet]
   );

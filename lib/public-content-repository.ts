@@ -11,7 +11,7 @@ function toTimestamp(value: string): number {
 export async function listPublishedEntriesByType(contentType: ContentType): Promise<ContentEntry[]> {
   const payload = await getBlogContentFromDb();
   return payload.entries
-    .filter((entry) => entry.contentType === contentType && entry.status === 'published')
+    .filter((entry) => !entry.pagePath && entry.contentType === contentType && entry.status === 'published')
     .sort((a, b) => toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt));
 }
 

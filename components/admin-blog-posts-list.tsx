@@ -43,7 +43,7 @@ export default function AdminBlogPostsList({ staticSlugs }: AdminBlogPostsListPr
   const adminBlogEntries = useMemo(
     () =>
       entries
-        .filter((entry) => entry.contentType === 'blog' && entry.status === 'published' && !staticSlugSet.has(entry.slug))
+        .filter((entry) => !entry.pagePath && entry.contentType === 'blog' && entry.status === 'published' && !staticSlugSet.has(entry.slug))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [entries, staticSlugSet]
   );

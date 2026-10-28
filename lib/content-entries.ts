@@ -3,6 +3,7 @@
 export type ContentEntry = {
   id: string;
   contentType: ContentType;
+  pagePath?: string;
   title: string;
   slug: string;
   excerpt: string;
@@ -44,6 +45,7 @@ export function normalizeContentEntry(raw: Partial<ContentEntry>): ContentEntry 
   return {
     id: String(raw.id ?? `content_${Date.now()}`),
     contentType: normalizedType,
+    pagePath: String(raw.pagePath ?? '').trim() || undefined,
     title: String(raw.title ?? '').trim(),
     slug: normalizeSlug(String(raw.slug ?? '')),
     excerpt: String(raw.excerpt ?? '').trim(),

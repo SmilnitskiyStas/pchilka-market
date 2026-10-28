@@ -5,7 +5,8 @@ import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { headerMenu, type MenuItem } from '@/content/menu';
+import type { MenuItem } from '@/content/menu';
+import { useContentMenu } from '@/components/site-content-provider';
 import SiteSearch from '@/components/site-search';
 import { trackAnalyticsEvent } from '@/lib/analytics-events';
 import { getSiteLogoUrl } from '@/lib/site-branding';
@@ -52,6 +53,7 @@ export default function SiteHeader() {
 }
 
 function SiteHeaderContent() {
+  const visibleMenu = useContentMenu();
   const pathname = usePathname();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -240,14 +242,14 @@ function SiteHeaderContent() {
             type="button"
             onClick={() => setOpenMenuLabel((prev) => (prev === item.label ? null : item.label))}
             aria-expanded={openMenuLabel === item.label}
-            aria-controls={`nav-${headerMenu.indexOf(item)}`}
+            aria-controls={`nav-${encodeURIComponent(item.label)}`}
             className="site-nav-link"
           >
             {item.label}
           </button>
 
           <div
-            id={`nav-${headerMenu.indexOf(item)}`}
+            id={`nav-${encodeURIComponent(item.label)}`}
             className="site-nav-dropdown"
             hidden={openMenuLabel !== item.label}
           >
@@ -485,7 +487,7 @@ function SiteHeaderContent() {
         <Link href="/" className="public-logo" aria-label="Пчілка маркет — головна">
           <Image src={logoUrl} alt="Пчілка маркет" width={224} height={74} priority />
         </Link>
-        <nav className="site-desktop-nav" aria-label="Головне меню">{headerMenu.map(renderDesktopMenuItem)}</nav>
+        <nav className="site-desktop-nav" aria-label="Головне меню">{visibleMenu.map(renderDesktopMenuItem)}</nav>
         <div className="public-header-actions">
           <SiteSearch />
           <div className="site-phone-menu" ref={phonesMenuRef}>
@@ -501,7 +503,7 @@ function SiteHeaderContent() {
           </button>
         </div>
       </div>
-      {isMobileMenuOpen ? <nav id="site-mobile-nav" className="site-mobile-nav" aria-label="Мобільне меню">{headerMenu.map(renderMobileMenuItem)}</nav> : null}
+      {isMobileMenuOpen ? <nav id="site-mobile-nav" className="site-mobile-nav" aria-label="Мобільне меню">{visibleMenu.map(renderMobileMenuItem)}</nav> : null}
     </header>
     {isMounted ? createPortal(feedbackModal, document.body) : null}
     </>

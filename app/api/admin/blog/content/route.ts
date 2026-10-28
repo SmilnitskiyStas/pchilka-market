@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import { getCategoryContentTypes, type BlogCategory } from '@/lib/blog-categories';
 import { normalizeSlug } from '@/lib/content-entries';
+import { contentPages, entryPagePath } from '@/lib/menu-content';
 import type { ContentEntry } from '@/lib/content-entries';
 import { getBlogContentFromDb, saveBlogContentToDb } from '@/lib/blog-content-repository';
 
@@ -12,6 +13,7 @@ function validateEntries(entries: ContentEntry[]): string | null {
   const slugByType = new Set<string>();
 
   for (const entry of entries) {
+    if (entry.pagePath && !contentPages.some((page) => page.href === entry.pagePath)) return 'Оберіть сторінку з меню сайту.';
     const title = String(entry.title ?? '').trim();
     const excerpt = String(entry.excerpt ?? '').trim();
     const body = String(entry.body ?? '').trim();
@@ -24,7 +26,7 @@ function validateEntries(entries: ContentEntry[]): string | null {
     if (!body) return 'У статті відсутній основний текст.';
     if (!coverImage) return "У статті відсутнє cover image.";
 
-    const key = `${entry.contentType}:${slug}`;
+    const key = `${entryPagePath(entry)}:${slug}`;
     if (slugByType.has(key)) {
       return `Дублікат slug "${slug}" у блоці ${entry.contentType}.`;
     }
@@ -59,10 +61,10 @@ function validateCategories(categories: BlogCategory[]): string | null {
   return null;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const content = await getBlogContentFromDb();
-    return NextResponse.json({ ok: true, ...content });
+    return NextResponse.json({ ok: true, ...content, entries: isAdminRequestAuthorized(request) ? content.entries : content.entries.filter((entry) => entry.status === 'published') });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown DB error';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

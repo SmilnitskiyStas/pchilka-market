@@ -47,7 +47,7 @@ export default function AdminContentPostPage({ slug, contentType, listHref, enga
   }, []);
 
   const entry = useMemo(
-    () => entries.find((item) => item.contentType === contentType && item.status === 'published' && item.slug === slug),
+    () => entries.find((item) => !item.pagePath && item.contentType === contentType && item.status === 'published' && item.slug === slug),
     [contentType, entries, slug]
   );
 

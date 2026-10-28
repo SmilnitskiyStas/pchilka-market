@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import Link from 'next/link';
+import { contentPages, legacyContentPaths, entryPagePath } from '@/lib/menu-content';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
 import AdminBlogCategoriesManager from '@/components/admin/admin-blog-categories-manager';
@@ -136,6 +137,7 @@ export default function AdminContentManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [contentType, setContentType] = useState<ContentType>('blog');
+  const [pagePath, setPagePath] = useState('');
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
   const [isSlugManual, setIsSlugManual] = useState(false);
@@ -162,7 +164,7 @@ export default function AdminContentManager() {
 
   const autoSlug = normalizeSlug(title);
   const isEditing = editingId !== null;
-  const currentPreviewHref = autoSlug || slug ? getContentPreviewHref(contentType, slug || title) : '';
+  const currentPreviewHref = autoSlug || slug ? (pagePath ? `${pagePath}#article-${normalizeSlug(slug || title)}` : getContentPreviewHref(contentType, slug || title)) : '';
 
   const availableCategories = useMemo(
     () => categories.filter((category) => categorySupportsContentType(category, contentType) && category.isActive).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
@@ -241,6 +243,7 @@ export default function AdminContentManager() {
   function resetForm() {
     setEditingId(null);
     setContentType('blog');
+    setPagePath('');
     setTitle('');
     setSlug('');
     setIsSlugManual(false);
@@ -379,7 +382,7 @@ export default function AdminContentManager() {
     }
 
     const duplicate = entries.find(
-      (entry) => entry.contentType === contentType && entry.slug === normalizedSlug && entry.id !== editingId
+      (entry) => entryPagePath(entry) === (pagePath || legacyContentPaths[contentType]) && entry.slug === normalizedSlug && entry.id !== editingId
     );
 
     if (duplicate) {
@@ -390,6 +393,7 @@ export default function AdminContentManager() {
     const draft = normalizeContentEntry({
       id: editingId ?? `content_${Date.now()}`,
       contentType,
+      pagePath: pagePath || undefined,
       title: normalizedTitle,
       slug: normalizedSlug,
       excerpt: normalizedExcerpt,
@@ -411,6 +415,7 @@ export default function AdminContentManager() {
   function handleEdit(entry: ContentEntry) {
     setEditingId(entry.id);
     setContentType(entry.contentType);
+    setPagePath(entry.pagePath || '');
     setTitle(entry.title);
     setSlug(entry.slug);
     setIsSlugManual(true);
@@ -477,6 +482,13 @@ export default function AdminContentManager() {
       ) : (
         <>
           <form onSubmit={handleSubmit} className="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+            <label className="block text-sm font-semibold text-slate-900">Сторінка для статті
+              <select value={pagePath} onChange={(event) => { setPagePath(event.target.value); setIsSaved(false); }} className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm">
+                <option value="">Стандартна сторінка вибраного блоку ({legacyContentPaths[contentType]})</option>
+                {contentPages.filter((page) => !Object.values(legacyContentPaths).includes(page.href)).map((page) => <option key={page.href} value={page.href}>{page.label} — {page.href}</option>)}
+              </select>
+              <span className="mt-2 block text-xs font-normal text-slate-600">Опублікована стаття з’явиться на обраній сторінці. Інформаційні сторінки без статей приховані в меню; чернетки не вмикають їх показ.</span>
+            </label>
             <div>
               <label htmlFor="content-type" className="block text-sm font-semibold text-slate-900">Блок контенту</label>
               <select
@@ -756,12 +768,13 @@ export default function AdminContentManager() {
               <ul className="mt-4 space-y-3">
                 {sortedEntries.map((entry) => {
                   const coverLocation = getCoverLocation(entry.coverImage);
-                  const previewHref = getContentPreviewHref(entry.contentType, entry.slug);
+                  const previewHref = entry.pagePath ? `${entry.pagePath}#article-${entry.slug}` : getContentPreviewHref(entry.contentType, entry.slug);
                   return (
                     <li key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="font-semibold text-slate-900">{entry.title}</p>
+                          {entry.pagePath ? <p className="text-xs text-slate-600">Сторінка: {contentPages.find((page) => page.href === entry.pagePath)?.label || entry.pagePath}</p> : null}
                           <p className="text-xs text-slate-600">{contentTypeLabels[entry.contentType]} • {entry.status === 'published' ? 'Опубліковано' : 'Чернетка'}</p>
                         </div>
                         <button

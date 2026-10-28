@@ -5,6 +5,7 @@ import AnalyticsLoader from '@/components/analytics-loader';
 import SeoRuntimeLoader from '@/components/seo-runtime-loader';
 import SiteFooter from '@/components/site-footer';
 import SiteHeader from '@/components/site-header';
+import SiteContentProvider, { PageAssignedArticles } from '@/components/site-content-provider';
 import './globals.css';
 import './public-site.css';
 
@@ -28,9 +29,12 @@ export default function RootLayout({
       <body>
         <AnalyticsLoader />
         <SeoRuntimeLoader />
+        <SiteContentProvider>
         <SiteHeader />
         {children}
+        <PageAssignedArticles />
         <SiteFooter />
+        </SiteContentProvider>
         <AnalyticsConsentBanner />
       </body>
     </html>
