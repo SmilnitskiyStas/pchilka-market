@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   incomingRequestStatuses,
   incomingRequestTypes,
+  incomingRequestSourceLabel,
   type IncomingRequestRecord,
   type IncomingRequestStatus,
   type IncomingRequestType
@@ -92,6 +93,7 @@ function pickAttachment(metadata: IncomingRequestRecord['metadata']): Attachment
 }
 
 function getTelegramChatId(request: IncomingRequestRecord | null): string | null {
+  if (request?.sourcePage !== 'telegram://career-bot') return null;
   const value = request?.metadata?.telegramChatId;
   return typeof value === 'string' && /^-?\d{5,20}$/.test(value) ? value : null;
 }
@@ -310,6 +312,7 @@ export default function AdminMessagesManager() {
                       #{item.id} • {item.fullName || item.contactPerson || item.companyName || item.email || 'без імені'}
                     </p>
                     <p className={`mt-0.5 text-xs ${item.status === 'new' ? 'text-amber-800' : item.status === 'in_progress' ? 'text-sky-800' : 'text-slate-500'}`}>{formatDateTime(item.createdAt)}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-700">Джерело: <span className="rounded-full bg-white px-2 py-0.5">{incomingRequestSourceLabel(item)}</span>{item.vacancy ? ` · ${item.vacancy}` : ''}</p>
                   </div>
 
                   <div className="w-full sm:w-52">
@@ -370,6 +373,7 @@ export default function AdminMessagesManager() {
               {selectedRequest.targetStore ? <p>Локація: {selectedRequest.targetStore}</p> : null}
               {selectedRequest.subject ? <p>Тема: {selectedRequest.subject}</p> : null}
               {selectedRequest.sourcePage ? <p>Сторінка: {selectedRequest.sourcePage}</p> : null}
+              <p>Джерело: {incomingRequestSourceLabel(selectedRequest)}</p>
             </div>
 
             {selectedRequest.message ? (

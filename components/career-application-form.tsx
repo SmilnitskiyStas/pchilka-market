@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { FormEvent, useRef, useState } from 'react';
 import { trackAnalyticsEvent } from '@/lib/analytics-events';
@@ -59,6 +59,8 @@ type StoredCareerApplication = {
 
 export default function CareerApplicationForm({ vacancies }: CareerApplicationFormProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const submittingRef = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [fullName, setFullName] = useState('');
   const [age, setAge] = useState('');
@@ -79,15 +81,16 @@ export default function CareerApplicationForm({ vacancies }: CareerApplicationFo
   const canSubmit =
     fullName.trim().length > 0 &&
     isAgeValid &&
-    !phoneInvalid &&
-    !emailInvalid &&
+    isValidPhone(phone) &&
+    isValidEmail(email) &&
     city.trim().length > 0 &&
-    selectedVacancy.trim().length > 0 &&
+    vacancies.includes(selectedVacancy) &&
     isValidAttachment(attachment) &&
     message.trim().length >= MIN_MESSAGE_LENGTH;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submittingRef.current) return;
     setSubmitMessage('');
 
     if (!canSubmit) {
@@ -106,35 +109,37 @@ export default function CareerApplicationForm({ vacancies }: CareerApplicationFo
       return;
     }
 
-    let uploadedAttachment: StoredCareerApplication['attachment'] = null;
-    if (attachment) {
-      const uploaded = await uploadRequestAttachment(attachment, {
-        folder: 'forms/career/application'
-      });
-      uploadedAttachment = {
-        fileName: uploaded.fileName,
-        fileSize: uploaded.fileSize,
-        fileType: uploaded.fileType,
-        lastModified: uploaded.lastModified,
-        url: uploaded.url
-      };
-    }
-
-    const payload: StoredCareerApplication = {
-      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      fullName: fullName.trim().slice(0, 120),
-      age: numericAge,
-      phone: phone.trim().slice(0, 40),
-      email: email.trim().slice(0, 160),
-      city: city.trim().slice(0, 80),
-      selectedVacancy,
-      resumeLink: resumeLink.trim().slice(0, 300),
-      attachment: uploadedAttachment,
-      message: message.trim().slice(0, 2000),
-      createdAt: new Date().toISOString()
-    };
-
+    submittingRef.current = true;
+    setIsSubmitting(true);
     try {
+      let uploadedAttachment: StoredCareerApplication['attachment'] = null;
+      if (attachment) {
+        const uploaded = await uploadRequestAttachment(attachment, {
+          folder: 'forms/career/application'
+        });
+        uploadedAttachment = {
+          fileName: uploaded.fileName,
+          fileSize: uploaded.fileSize,
+          fileType: uploaded.fileType,
+          lastModified: uploaded.lastModified,
+          url: uploaded.url
+        };
+      }
+
+      const payload: StoredCareerApplication = {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        fullName: fullName.trim().slice(0, 120),
+        age: numericAge,
+        phone: phone.trim().slice(0, 40),
+        email: email.trim().slice(0, 160),
+        city: city.trim().slice(0, 80),
+        selectedVacancy,
+        resumeLink: resumeLink.trim().slice(0, 300),
+        attachment: uploadedAttachment,
+        message: message.trim().slice(0, 2000),
+        createdAt: new Date().toISOString()
+      };
+
       const response = await fetch('/api/requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -179,6 +184,9 @@ export default function CareerApplicationForm({ vacancies }: CareerApplicationFo
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не вдалося надіслати заявку. Спробуйте ще раз.';
       setSubmitMessage(message);
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -351,10 +359,10 @@ export default function CareerApplicationForm({ vacancies }: CareerApplicationFo
           {submitMessage ? <p className="mr-auto text-sm font-semibold text-brand">{submitMessage}</p> : null}
           <button
             type="submit"
-            disabled={!canSubmit}
+            disabled={!canSubmit || isSubmitting}
             className="ml-auto rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Надіслати заявку
+            {isSubmitting ? 'Надсилання...' : 'Надіслати заявку'}
           </button>
         </div>
       </form>

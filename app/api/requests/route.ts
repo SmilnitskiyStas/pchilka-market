@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { createIncomingRequestInDb } from '@/lib/incoming-requests-repository';
 import { isIncomingRequestType, normalizeIncomingRequestInput, type IncomingRequestCreateInput } from '@/lib/incoming-requests';
+import { getCareerTelegramSettings } from '@/lib/career-telegram-settings-repository';
 
 export const runtime = 'nodejs';
 
@@ -56,7 +57,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: validationError }, { status: 400 });
     }
 
-    const created = await createIncomingRequestInDb(body);
+    let input = body;
+    if (body.requestType === 'career_application') {
+      const normalized = normalizeIncomingRequestInput(body);
+      const age = Number(normalized.metadata?.age);
+      if (!normalized.fullName || !normalized.city || !isValidPhone(normalized.phone || '') || !isValidEmail(normalized.email || '') || !Number.isInteger(age) || age < 14 || age > 100) {
+        return NextResponse.json({ ok: false, error: 'Укажіть ПІБ, місто, коректний телефон, email і вік від 14 до 100 років.' }, { status: 400 });
+      }
+      const { vacancies } = await getCareerTelegramSettings();
+      if (!vacancies.includes(normalized.vacancy || '')) {
+        return NextResponse.json({ ok: false, error: 'Ця вакансія вже недоступна. Оновіть сторінку й оберіть актуальну посаду.' }, { status: 409 });
+      }
+      // Website clients cannot mark applications as Telegram or attach a bot chat.
+      input = {
+        ...normalized,
+        sourcePage: '/career',
+        metadata: {
+          channel: 'website',
+          age,
+          resumeLink: typeof normalized.metadata?.resumeLink === 'string' ? normalized.metadata.resumeLink.slice(0, 300) : '',
+          attachment: normalized.metadata?.attachment ?? null
+        }
+      };
+    }
+    const created = await createIncomingRequestInDb(input);
     return NextResponse.json({ ok: true, request: created });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown DB error';

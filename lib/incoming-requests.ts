@@ -49,6 +49,10 @@ export type IncomingRequestCreateInput = {
   sourcePage?: string;
 };
 
+export function incomingRequestSourceLabel(request: Pick<IncomingRequestRecord, 'sourcePage'>): 'Telegram' | 'Сайт' {
+  return request.sourcePage === 'telegram://career-bot' ? 'Telegram' : 'Сайт';
+}
+
 export function isIncomingRequestType(value: unknown): value is IncomingRequestType {
   return typeof value === 'string' && (incomingRequestTypes as readonly string[]).includes(value);
 }
