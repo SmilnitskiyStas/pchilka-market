@@ -20,6 +20,8 @@
     "@types/pg": "^8.20.0",
     "@zxing/browser": "^0.1.5",
     "@zxing/library": "^0.21.3",
+    "imapflow": "^2.9.1",
+    "mailparser": "^3.13.0",
     "mysql2": "^3.17.2",
     "next": "^15.5.12",
     "pdfjs-dist": "^5.4.624",
@@ -32,6 +34,7 @@
     "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
+    "@types/mailparser": "^3.9.0",
     "@types/node": "22.10.5",
     "@types/react": "19.0.2",
     "@types/react-dom": "19.0.2",

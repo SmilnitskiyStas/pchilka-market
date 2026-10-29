@@ -6,6 +6,8 @@ out
 .github
 .claude
 .env
+.env.*
+data
 .env.local
 .env.production.local
 .env.development.local

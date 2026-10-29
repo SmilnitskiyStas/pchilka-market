@@ -32,6 +32,7 @@ export const adminNavigation: AdminNavItem[] = [
     link('/admin/marketing/megogo-codes', 'Коди MEGOGO', 'Керування партнерськими кодами.')
   ] },
   { id: 'network', label: 'Мережа та звернення', description: 'Інформація про магазини й отримані заявки.', children: [
+    link('/admin/engineering', 'Інженерний Help Desk', 'Інженерна пошта, Telegram, працівники та відповідальні за запити.'),
     link('/admin/network', 'Магазини та контакти', 'Адреси, карта магазинів і контакти мережі.'),
     link('/admin/messages', 'Заявки та повідомлення', 'Звернення з форм співпраці, кар’єри та зворотного зв’язку.')
   ] },

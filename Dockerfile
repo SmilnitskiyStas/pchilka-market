@@ -28,6 +28,7 @@ COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/package-lock.json ./package-lock.json
 COPY --from=builder /app/next.config.mjs ./next.config.mjs
 COPY --from=builder /app/start-next.cjs ./start-next.cjs
+COPY --from=builder /app/scripts/engineering-scheduler.cjs ./scripts/engineering-scheduler.cjs
 
 EXPOSE 3000
 

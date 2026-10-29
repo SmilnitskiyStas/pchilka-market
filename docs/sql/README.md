@@ -23,3 +23,6 @@ Inventory / Telegram workflow sequence for existing databases:
 - `032_add_product_fefo_tracking_flag.sql`
 - `036_create_pos_transaction_archive.sql`
 - `037_add_admin_user_permissions.sql`
+
+Engineering Help Desk (independent of other Telegram bots):
+- `043_create_engineering_help_desk.sql` — engineering staff, tasks, original mail, delivery outbox, audit trail and IMAP cursors.

@@ -39,8 +39,10 @@ services:
       DB_HOST: db
       DB_PORT: 3306
       UPLOADS_DIR: /app/data/uploads
+      ENGINEERING_ENV_FILE: /app/data/engineering/.env
     volumes:
       - /srv/pchilka-app/data/app/uploads:/app/data/uploads
+      - /srv/pchilka-app/data/app/engineering:/app/data/engineering
     ports:
       - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
     healthcheck:

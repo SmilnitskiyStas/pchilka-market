@@ -63,6 +63,7 @@ export function hasAdminPermission(
 }
 
 export function resourceForAdminPath(pathname: string): AdminResource {
+  if (pathname.includes('/engineering')) return 'system';
   if (pathname === '/admin' || pathname === '/api/admin/auth/me') return 'dashboard';
   if (pathname.includes('/users')) return 'users';
   if (pathname.includes('/utility-meters') || pathname.includes('/utility_meters')) return 'utility_meters';

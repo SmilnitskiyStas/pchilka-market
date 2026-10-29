@@ -1,5 +1,6 @@
 const { spawn } = require('node:child_process');
 const { loadEnvConfig } = require('@next/env');
+const { startEngineeringScheduler } = require('./scripts/engineering-scheduler.cjs');
 
 loadEnvConfig(process.cwd(), process.env.NODE_ENV !== 'production');
 
@@ -226,8 +227,10 @@ const child = spawn(process.execPath, [nextBin, ...nextArgs], {
 });
 const stopInventoryScheduler = startInventoryNotificationsScheduler();
 const stopUtilityMeterRemindersScheduler = startUtilityMeterRemindersScheduler();
+const stopEngineeringScheduler = startEngineeringScheduler();
 
 child.on('exit', (code, signal) => {
+  stopEngineeringScheduler();
   stopInventoryScheduler();
   stopUtilityMeterRemindersScheduler();
   if (signal) {
@@ -239,6 +242,7 @@ child.on('exit', (code, signal) => {
 });
 
 child.on('error', (error) => {
+  stopEngineeringScheduler();
   stopInventoryScheduler();
   stopUtilityMeterRemindersScheduler();
   console.error('Failed to start Next.js:', error);
