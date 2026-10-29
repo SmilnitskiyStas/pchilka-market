@@ -59,5 +59,5 @@ export async function saveEngineeringSettings(input: Record<string, unknown>) {
 }
 export function publicEngineeringSettings(settings: EngineeringSettings) {
   const { mailPassword, botToken, webhookSecret, runSecret, ...visible } = settings;
-  return { ...visible, passwordConfigured: Boolean(mailPassword), tokenConfigured: Boolean(botToken), webhookConfigured: Boolean(webhookSecret && runSecret), botUsername: 'engineering_dep_pchilka_bot' };
+  return { ...visible, passwordConfigured: Boolean(mailPassword), tokenConfigured: Boolean(botToken), botUsername: 'engineering_dep_pchilka_bot' };
 }

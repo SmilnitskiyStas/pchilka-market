@@ -245,3 +245,73 @@ test('personal start link activates access and opens task list; group cannot red
     assert.ok(messages.some(message => message.reply_markup?.inline_keyboard));
   } finally { global.fetch = originalFetch; }
 });
+test('paused mail collection still replies to plain /start and activates invited staff', async () => {
+  const messages = [];
+  let active = false, accepted = 0;
+  const originalFetch = global.fetch;
+  global.fetch = async (_url, request) => { messages.push(JSON.parse(request.body)); return { ok: true, json: async () => ({ ok: true, result: {} }) }; };
+  try {
+    const bot = await load('lib/engineering-telegram.ts', {
+      '@/lib/engineering-invitations': { acceptEngineeringInvite: async () => { active = true; accepted++; return { ok: true }; } },
+      '@/lib/engineering-settings': { readEngineeringSettings: async () => ({ enabled: false, botToken: 'test' }) },
+      '@/lib/db': { getDbPool: () => ({ query: async () => [{}] }) },
+      '@/lib/engineering-repository': { engineeringUsers: async () => active ? [{ telegram_id: '101', active: 1 }] : [], engineeringTasks: async () => [] }
+    });
+    const message = { chat: { id: 101, type: 'private' }, from: { id: 101 }, text: '/start' };
+    await bot.processEngineeringUpdate({ message });
+    assert.match(messages[0].text, /персональне посилання/);
+    await bot.processEngineeringUpdate({ message: { ...message, text: '/start eng_' + 'a'.repeat(43) } });
+    assert.equal(accepted, 1);
+    assert.ok(messages.some(message => message.text.includes('Доступ активовано') && message.text.includes('вимкнена')));
+    const before = messages.length;
+    await bot.processEngineeringUpdate({ message });
+    assert.equal(messages.length, before + 1);
+    assert.ok(messages.at(-1).reply_markup.inline_keyboard);
+  } finally { global.fetch = originalFetch; }
+});
+test('webhook setup validates bot, refreshes secret and reports delivery errors without dropping updates', async () => {
+  const calls = [];
+  let username = 'another_bot', webhook = '';
+  const settings = { botToken: 'private-token', publicBaseUrl: 'https://example.org', webhookSecret: 'secret' };
+  const helper = await load('lib/engineering-webhook.ts', {
+    '@/lib/engineering-telegram': { engineeringTelegram: async (_token, method, body) => {
+      calls.push({ method, body });
+      if (method === 'getMe') return { username };
+      if (method === 'setWebhook') { webhook = body.url; return {}; }
+      return { url: webhook, pending_update_count: 2, last_error_message: 'Wrong response: 401', last_error_date: 1700000000 };
+    } }
+  });
+  await assert.rejects(helper.registerEngineeringWebhook(settings), /іншому боту/);
+  assert.equal(calls.some(call => call.method === 'setWebhook'), false);
+  username = 'engineering_dep_pchilka_bot';
+  const status = await helper.registerEngineeringWebhook(settings);
+  assert.equal(status.connected, true);
+  assert.equal(status.pendingUpdates, 2);
+  assert.match(status.lastError, /401/);
+  const registration = calls.find(call => call.method === 'setWebhook');
+  assert.equal(registration.body.secret_token, 'secret');
+  assert.equal(registration.body.drop_pending_updates, undefined);
+  assert.deepEqual(Array.from(registration.body.allowed_updates), ['message', 'callback_query']);
+  const missing = await helper.engineeringWebhookStatus({ ...settings, webhookSecret: '' }).catch(error => error);
+  assert.match(missing.message, /Збережіть токен/);
+});
+test('admin does not issue invitation when webhook registration fails', async () => {
+  const timeline = [];
+  let connected = false;
+  class SetupError extends Error {}
+  const api = await load('app/api/admin/engineering/route.ts', {
+    '@/lib/admin-auth': { isAdminRequestAuthorized: () => true, getAdminSessionFromRequest: () => ({ role: 'admin' }) },
+    '@/lib/db': {}, '@/lib/engineering-repository': {}, '@/lib/engineering-telegram': {}, '@/lib/engineering-mail': {},
+    '@/lib/engineering-settings': { readEngineeringSettings: async () => ({}) },
+    '@/lib/engineering-invitations': { createEngineeringInvite: async () => { timeline.push('invite'); return { url: 'https://t.me/example' }; } },
+    '@/lib/engineering-webhook': { EngineeringTelegramSetupError: SetupError, registerEngineeringWebhook: async () => {
+      timeline.push('webhook'); if (!connected) throw new SetupError('Спочатку підключіть Telegram.'); return { connected: true };
+    } }
+  });
+  const request = () => new Request('https://example.org/api/admin/engineering', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'invite', name: 'Працівник' }) });
+  assert.equal((await api.POST(request())).status, 400);
+  assert.deepEqual(timeline, ['webhook']);
+  connected = true;
+  assert.equal((await api.POST(request())).status, 200);
+  assert.deepEqual(timeline, ['webhook', 'webhook', 'invite']);
+});

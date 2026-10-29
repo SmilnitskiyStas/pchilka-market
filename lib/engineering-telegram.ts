@@ -39,7 +39,8 @@ type Message = { chat: { id: number; type?: string; username?: string }; from?: 
 export type EngineeringUpdate = { message?: Message; callback_query?: { id: string; from: Actor; message?: Message; data?: string } };
 export async function processEngineeringUpdate(update: EngineeringUpdate) {
   const settings = await readEngineeringSettings();
-  if (!settings.enabled || !settings.botToken) return;
+  // enabled controls the mail scheduler; enrollment and /start must work while it is paused.
+  if (!settings.botToken) return;
   const callback = update.callback_query;
   const incoming = callback?.message || update.message;
   const actor = callback?.from || update.message?.from;
@@ -53,7 +54,7 @@ export async function processEngineeringUpdate(update: EngineeringUpdate) {
     if (incoming.chat.type !== 'private') { await send('Відкрийте посилання запрошення в особистому чаті з ботом.'); return; }
     const accepted = await acceptEngineeringInvite(invitation[1], actorId);
     if (!accepted.ok) { await send(accepted.error || 'Не вдалося активувати запрошення.'); return; }
-    await send('Доступ активовано. Ви отримуватимете нові запити та зможете брати завдання в роботу.');
+    await send(settings.enabled ? 'Доступ активовано. Ви отримуватимете нові запити та зможете брати завдання в роботу.' : 'Доступ активовано. Ви можете переглядати й брати завдання в роботу. Автоматична розсилка нових запитів поки вимкнена адміністратором.');
   }
   const user = (await engineeringUsers()).find(item => item.telegram_id === actorId && item.active);
   const isConfiguredChat = chatId === settings.chatId || (Boolean(incoming.chat.username) && `@${incoming.chat.username}`.toLowerCase() === settings.chatId?.toLowerCase());

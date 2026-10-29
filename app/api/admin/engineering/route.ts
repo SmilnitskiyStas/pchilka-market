@@ -4,9 +4,10 @@ import { getAdminSessionFromRequest, isAdminRequestAuthorized, unauthorizedAdmin
 import { getDbPool } from '@/lib/db';
 import { engineeringTasks, engineeringUsers, ensureEngineeringSchema, resetEngineeringTask } from '@/lib/engineering-repository';
 import { publicEngineeringSettings, readEngineeringSettings, saveEngineeringSettings } from '@/lib/engineering-settings';
-import { engineeringTelegram, refreshEngineeringCards } from '@/lib/engineering-telegram';
+import { refreshEngineeringCards } from '@/lib/engineering-telegram';
 import { runEngineeringMail } from '@/lib/engineering-mail';
 import { createEngineeringInvite, listEngineeringInvites, removeEngineeringUser, revokeEngineeringInvite } from '@/lib/engineering-invitations';
+import { EngineeringTelegramSetupError, engineeringWebhookStatus, registerEngineeringWebhook } from '@/lib/engineering-webhook';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,20 +46,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
     const settings = await readEngineeringSettings();
-    if (body.action === 'webhook') {
-      if (!settings.publicBaseUrl || !settings.webhookSecret || !settings.botToken) return NextResponse.json({ ok: false, error: 'Спочатку збережіть HTTPS-адресу й токен бота.' }, { status: 400 });
-      const bot = await engineeringTelegram(settings.botToken, 'getMe', {});
-      if (bot.username !== 'engineering_dep_pchilka_bot') return NextResponse.json({ ok: false, error: 'Токен належить іншому боту.' }, { status: 400 });
-      await engineeringTelegram(settings.botToken, 'setWebhook', { url: `${settings.publicBaseUrl}/api/engineering/webhook`, secret_token: settings.webhookSecret, allowed_updates: ['message', 'callback_query'] });
-      return NextResponse.json({ ok: true });
-    }
+    if (body.action === 'webhook') return NextResponse.json({ ok: true, telegramStatus: await registerEngineeringWebhook(settings) });
+    if (body.action === 'check-webhook') return NextResponse.json({ ok: true, telegramStatus: await engineeringWebhookStatus(settings) });
     if (body.action === 'invite') {
       const name = typeof body.name === 'string' ? body.name.trim() : '';
       if (!name || name.length > 160) return NextResponse.json({ ok: false, error: 'Вкажіть ім’я працівника до 160 символів.' }, { status: 400 });
+      // An invitation must lead to a bot that actually receives /start updates.
+      const status = await registerEngineeringWebhook(settings);
+      if (!status.connected) throw new EngineeringTelegramSetupError('Webhook Telegram не підключений до цього сайту. Перевірте публічну HTTPS-адресу.');
       return NextResponse.json({ ok: true, invitation: await createEngineeringInvite(name) }, { headers: { 'Cache-Control': 'no-store' } });
     }
     return NextResponse.json({ ok: false, error: 'Невідома дія.' }, { status: 400 });
-  } catch { return failure(); }
+  } catch (error) {
+    if (error instanceof EngineeringTelegramSetupError) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+    if (error instanceof Error && error.message.startsWith('Telegram:')) return NextResponse.json({ ok: false, error: error.message }, { status: 502 });
+    return failure();
+  }
 }
 export async function DELETE(request: Request) {
   if (!authorized(request)) return unauthorizedAdminResponse();

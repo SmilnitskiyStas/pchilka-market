@@ -7,6 +7,7 @@ type Task = { id: number; tracking_id: string; subject: string; body: string; st
 type Event = { id: number; task_id: number; actor_name: string; action: string; created_at: string };
 type Invite = { id: number; name: string; used_by: string | null; revoked: number; expired: number };
 type InvitationLink = { id: number; name: string; url: string };
+type TelegramStatus = { connected: boolean; expectedUrl: string; pendingUpdates: number; lastError: string; lastErrorAt: string | null };
 const statusLabels: Record<string, string> = { new: 'Нове', in_progress: 'У роботі', done: 'Завершено' };
 const actionLabels: Record<string, string> = { claim: 'взяв у роботу', release: 'повернув у чергу', done: 'завершив' };
 const inputClass = 'mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm';
@@ -18,6 +19,7 @@ export default function EngineeringManager() {
   const [name, setName] = useState('');
   const [invites, setInvites] = useState<Invite[]>([]), [invitation, setInvitation] = useState<InvitationLink | null>(null);
   const [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [page, setPage] = useState(0);
+  const [telegramStatus, setTelegramStatus] = useState<TelegramStatus | null>(null);
   const load = useCallback(async () => {
     const response = await fetch(`/api/admin/engineering?page=${page}`, { cache: 'no-store' });
     const data = await response.json();
@@ -35,8 +37,9 @@ export default function EngineeringManager() {
       const response = await fetch('/api/admin/engineering', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || 'Не вдалося виконати дію.');
-      if (method === 'PUT') { setMailPassword(''); setBotToken(''); }
+      if (method === 'PUT') { setMailPassword(''); setBotToken(''); setTelegramStatus(null); }
       if (data.invitation) setInvitation(data.invitation);
+      if (data.telegramStatus) setTelegramStatus(data.telegramStatus);
       if (method === 'DELETE' && (body as { inviteId?: number }).inviteId === invitation?.id) setInvitation(null);
       await load();
       setNotice(data.result ? (data.result.skipped ? 'Перевірку пропущено: модуль вимкнений або вже перевіряє пошту.' : `${data.result.mailFailed ? 'Не вдалося перевірити пошту — перевірте IMAP-сервер, логін і пароль. ' : ''}Опрацьовано листів: ${data.result.imported}. Надіслано повідомлень: ${data.result.sent}. Невдалих доставок: ${data.result.failed || 0} (будуть повторені).`) : message);
@@ -44,12 +47,19 @@ export default function EngineeringManager() {
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Помилка.'); return false; }
     finally { setBusy(false); }
   }
+  async function saveSystem() {
+    if (!settings) return false;
+    return execute('PUT', { ...settings, mailPassword, botToken }, 'Налаштування збережено в .env.');
+  }
+  async function telegramAction(action: 'webhook' | 'check-webhook') {
+    if (await saveSystem()) await execute('POST', { action }, action === 'webhook' ? 'Webhook зареєстровано. Відкрийте своє посилання запрошення ще раз і натисніть «Почати».' : 'Перевірку Telegram завершено.');
+  }
   const field = (key: 'mailHost' | 'mailUser' | 'mailFolder' | 'chatId' | 'publicBaseUrl', label: string, placeholder = '') => <label className="block text-sm">{label}<input className={inputClass} value={settings?.[key] || ''} placeholder={placeholder} onChange={event => setSettings(current => current && ({ ...current, [key]: event.target.value }))} /></label>;
   return <div className="space-y-6">
     <div><h1 className="text-2xl font-bold">Інженерний Help Desk</h1><p className="mt-2 text-sm text-gray-600">Листи від legion_admin@legion2015.com → <a className="text-brand underline" href="https://t.me/engineering_dep_pchilka_bot" target="_blank" rel="noreferrer">@engineering_dep_pchilka_bot</a>. Тема, ідентифікатор відстеження та текст запиту.</p></div>
     {notice && <p role="status" className="rounded-xl bg-gray-100 p-3 text-sm">{notice}</p>}
     {!settings ? <p>Налаштування ще не завантажено.</p> : <>
-      <form className="space-y-4 rounded-2xl border p-4" onSubmit={event => { event.preventDefault(); void execute('PUT', { ...settings, mailPassword, botToken }, 'Налаштування збережено в .env.'); }}>
+      <form className="space-y-4 rounded-2xl border p-4" onSubmit={event => { event.preventDefault(); void saveSystem(); }}>
         <h2 className="text-lg font-semibold">Пошта та Telegram</h2>
         <div className="grid gap-4 md:grid-cols-2">
           {field('mailUser', 'Логін пошти')}{field('mailHost', 'IMAP-сервер', 'Адреса сервера від поштового адміністратора')}
@@ -61,12 +71,14 @@ export default function EngineeringManager() {
         </div>
         <p className="text-sm text-gray-600">Без каналу сповіщення надходять особисто працівникам, які активували персональне запрошення. Для каналу додайте бота адміністратором. Команда /id потрібна лише для визначення ID спільного чату.</p>
         <p className="text-sm text-gray-600">Початкова перевірка імпортує листи за останні 7 днів, наступні — нові листи. Налаштування набувають чинності без перезапуску.</p>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={settings.enabled} onChange={event => setSettings({ ...settings, enabled: event.target.checked })} />Увімкнути отримання листів і Telegram-бота</label>
-        <div className="flex flex-wrap gap-2"><button disabled={busy} className={`${buttonClass} bg-brand text-white`}>Зберегти</button><button type="button" disabled={busy} className={buttonClass} onClick={() => void execute('POST', { action: 'webhook' }, 'Telegram підключено. Працівники можуть відкрити бота.')}>Підключити Telegram</button><button type="button" disabled={busy} className={buttonClass} onClick={() => void execute('POST', { action: 'sync' }, '')}>Перевірити пошту зараз</button></div>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={settings.enabled} onChange={event => setSettings({ ...settings, enabled: event.target.checked })} />Автоматично перевіряти пошту й надсилати нові запити</label>
+        <p className="text-sm text-gray-600">Приєднання працівників і команди бота працюють також із вимкненою перевіркою пошти. Перед підключенням Telegram або створенням запрошення поточні налаштування зберігаються автоматично.</p>
+        <div className="flex flex-wrap gap-2"><button disabled={busy} className={`${buttonClass} bg-brand text-white`}>Зберегти</button><button type="button" disabled={busy} className={buttonClass} onClick={() => void telegramAction('webhook')}>Підключити Telegram</button><button type="button" disabled={busy} className={buttonClass} onClick={() => void telegramAction('check-webhook')}>Перевірити Telegram</button><button type="button" disabled={busy} className={buttonClass} onClick={() => void execute('POST', { action: 'sync' }, '')}>Перевірити пошту зараз</button></div>
+        {telegramStatus && <div className="space-y-1 rounded-xl bg-gray-50 p-3 text-sm" role="status"><p>{telegramStatus.connected ? 'Webhook зареєстровано на цей сайт.' : 'Webhook не зареєстровано на цей сайт. Натисніть «Підключити Telegram».'}</p><p>Повідомлень у черзі Telegram: {telegramStatus.pendingUpdates}.</p>{telegramStatus.lastError && <p className="text-red-700">Остання помилка доставки{telegramStatus.lastErrorAt ? ` (${new Date(telegramStatus.lastErrorAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kiev' })})` : ''}: {telegramStatus.lastError}</p>}</div>}
       </form>
       <section className="space-y-3 rounded-2xl border p-4"><h2 className="text-lg font-semibold">Працівники з доступом</h2>
         <p className="text-sm text-gray-600">Вкажіть ім’я та створіть персональне посилання. Надішліть його працівнику: після натискання «Почати» в Telegram доступ активується автоматично. Telegram ID вводити не потрібно.</p>
-        <form className="grid items-end gap-3 md:grid-cols-[1fr_auto]" onSubmit={async event => { event.preventDefault(); if (await execute('POST', { action: 'invite', name }, 'Запрошення створено. Скопіюйте посилання та надішліть працівнику.')) setName(''); }}>
+        <form className="grid items-end gap-3 md:grid-cols-[1fr_auto]" onSubmit={async event => { event.preventDefault(); if (!(await saveSystem())) return; if (await execute('POST', { action: 'invite', name }, 'Запрошення створено. Telegram підключено. Скопіюйте посилання та надішліть працівнику.')) setName(''); }}>
           <label className="text-sm">Ім’я працівника<input required maxLength={160} className={inputClass} value={name} onChange={event => setName(event.target.value)} /></label>
           <button className={buttonClass} disabled={busy}>Створити запрошення</button>
         </form>
