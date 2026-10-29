@@ -26,3 +26,4 @@ Inventory / Telegram workflow sequence for existing databases:
 
 Engineering Help Desk (independent of other Telegram bots):
 - `043_create_engineering_help_desk.sql` — engineering staff, tasks, original mail, delivery outbox, audit trail and IMAP cursors.
+- `044_create_engineering_invites.sql` — personal, expiring, single-use Telegram invitation links.

@@ -6,6 +6,7 @@ import { engineeringTasks, engineeringUsers, ensureEngineeringSchema, resetEngin
 import { publicEngineeringSettings, readEngineeringSettings, saveEngineeringSettings } from '@/lib/engineering-settings';
 import { engineeringTelegram, refreshEngineeringCards } from '@/lib/engineering-telegram';
 import { runEngineeringMail } from '@/lib/engineering-mail';
+import { createEngineeringInvite, listEngineeringInvites, removeEngineeringUser, revokeEngineeringInvite } from '@/lib/engineering-invitations';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,9 +17,9 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const page = Math.floor(Math.max(0, Math.min(100000, Number(url.searchParams.get('page')) || 0)));
-    const [settings, users, tasks] = await Promise.all([readEngineeringSettings(), engineeringUsers(), engineeringTasks('all', '', page)]);
+    const [settings, users, tasks, invites] = await Promise.all([readEngineeringSettings(), engineeringUsers(), engineeringTasks('all', '', page), listEngineeringInvites()]);
     const [events] = await getDbPool().query<RowDataPacket[]>('SELECT * FROM engineering_events ORDER BY id DESC LIMIT 50');
-    return NextResponse.json({ ok: true, settings: publicEngineeringSettings(settings), users, tasks, events }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ ok: true, settings: publicEngineeringSettings(settings), users, tasks, events, invites }, { headers: { 'Cache-Control': 'no-store' } });
   } catch { return failure(); }
 }
 export async function PUT(request: Request) {
@@ -51,12 +52,10 @@ export async function POST(request: Request) {
       await engineeringTelegram(settings.botToken, 'setWebhook', { url: `${settings.publicBaseUrl}/api/engineering/webhook`, secret_token: settings.webhookSecret, allowed_updates: ['message', 'callback_query'] });
       return NextResponse.json({ ok: true });
     }
-    if (body.action === 'user') {
-      const id = String(body.telegramId || ''), name = String(body.name || '').trim();
-      if (!/^\d{1,20}$/.test(id) || !name || name.length > 160) return NextResponse.json({ ok: false, error: 'Вкажіть числовий Telegram ID та ім’я до 160 символів.' }, { status: 400 });
-      await ensureEngineeringSchema();
-      await getDbPool().query('INSERT INTO engineering_users (telegram_id, name) VALUES (?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name), active = TRUE', [id, name]);
-      return NextResponse.json({ ok: true });
+    if (body.action === 'invite') {
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!name || name.length > 160) return NextResponse.json({ ok: false, error: 'Вкажіть ім’я працівника до 160 символів.' }, { status: 400 });
+      return NextResponse.json({ ok: true, invitation: await createEngineeringInvite(name) }, { headers: { 'Cache-Control': 'no-store' } });
     }
     return NextResponse.json({ ok: false, error: 'Невідома дія.' }, { status: 400 });
   } catch { return failure(); }
@@ -64,10 +63,15 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   if (!authorized(request)) return unauthorizedAdminResponse();
   try {
-    const { telegramId } = await request.json();
-    await ensureEngineeringSchema();
-    // Keep the record for attribution; all bot actions and future deliveries check active.
-    await getDbPool().query('UPDATE engineering_users SET active = FALSE, started = FALSE WHERE telegram_id = ?', [String(telegramId)]);
+    const { telegramId, inviteId } = await request.json();
+    if (inviteId !== undefined) {
+      if (!Number.isSafeInteger(inviteId) || inviteId < 1) return NextResponse.json({ ok: false }, { status: 400 });
+      await revokeEngineeringInvite(inviteId);
+      return NextResponse.json({ ok: true });
+    }
+    if (!/^\d{1,20}$/.test(String(telegramId))) return NextResponse.json({ ok: false }, { status: 400 });
+    // Keep attribution; old invitations must not restore removed access.
+    await removeEngineeringUser(String(telegramId));
     return NextResponse.json({ ok: true });
   } catch { return failure(); }
 }

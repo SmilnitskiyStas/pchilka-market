@@ -81,6 +81,7 @@ test('removed user cannot read task list or claim through Telegram', async () =>
   global.fetch = async (url, request) => { calls.push({ url, body: JSON.parse(request.body) }); return { ok: true, json: async () => ({ ok: true, result: {} }) }; };
   try {
     const bot = await load('lib/engineering-telegram.ts', {
+      '@/lib/engineering-invitations': {},
       '@/lib/db': {},
       '@/lib/engineering-settings': { readEngineeringSettings: async () => ({ enabled: true, botToken: 'mock-token' }) },
       '@/lib/engineering-repository': { engineeringUsers: async () => [{ telegram_id: '101', active: 0 }], engineeringTasks: async () => { taskRead = true; return []; } }
@@ -147,4 +148,100 @@ test('duplicate email does not create another task or enqueue duplicate deliveri
   await repository.storeEngineeringMail(connection, 'same-source-key', 'ABC-123', 'Тема', 'Текст', ['101']);
   assert.equal(statements.length, 1);
   assert.ok(statements[0].startsWith('SELECT id FROM engineering_mail'));
+});
+test('invitation creation returns a short Telegram link and stores only its hash', async () => {
+  const queries = [];
+  const invitations = await load('lib/engineering-invitations.ts', {
+    '@/lib/engineering-repository': { ensureEngineeringSchema: async () => {} },
+    '@/lib/db': { getDbPool: () => ({ query: async (sql, args) => { queries.push({ sql, args }); return [{ insertId: 12 }]; } }) }
+  });
+  const invitation = await invitations.createEngineeringInvite('Олена Тестова');
+  const url = new URL(invitation.url);
+  assert.equal(url.hostname, 't.me');
+  assert.equal(url.pathname, '/engineering_dep_pchilka_bot');
+  assert.match(url.searchParams.get('start'), /^eng_[A-Za-z0-9_-]{43}$/);
+  const token = url.searchParams.get('start').slice(4);
+  assert.equal(queries[0].args[0], require('node:crypto').createHash('sha256').update(token).digest('hex'));
+  assert.equal(JSON.stringify(queries).includes(token), false);
+  assert.equal(invitation.id, 12);
+});
+test('invitation binds to Telegram sender atomically; another account cannot reuse it or rename an active user', async () => {
+  const invite = { id: 7, name: 'Олена Тестова', used_by: null, expired: 0, revoked: 0 };
+  const users = new Map();
+  const statements = [];
+  let commits = 0;
+  const connection = {
+    async beginTransaction() {}, async commit() { commits++; }, async rollback() {}, release() {},
+    async query(sql, args) {
+      statements.push(sql);
+      if (sql.startsWith('SELECT *, expires_at')) return [[{ ...invite }]];
+      if (sql.startsWith('SELECT * FROM engineering_users')) return [users.has(args[0]) ? [users.get(args[0])] : []];
+      if (sql.startsWith('INSERT INTO engineering_users')) users.set(args[0], { telegram_id: args[0], name: args[1], active: 1, started: 1 });
+      if (sql.startsWith('UPDATE engineering_invites SET used_by')) invite.used_by = args[0];
+      return [{}];
+    }
+  };
+  const invitations = await load('lib/engineering-invitations.ts', {
+    '@/lib/engineering-repository': { ensureEngineeringSchema: async () => {} },
+    '@/lib/db': { getDbPool: () => ({ getConnection: async () => connection }) }
+  });
+  const token = 'a'.repeat(43);
+  assert.equal((await invitations.acceptEngineeringInvite(token, '101')).ok, true);
+  assert.equal(users.get('101').name, 'Олена Тестова');
+  assert.equal(users.get('101').started, 1);
+  assert.equal(invite.used_by, '101');
+  assert.ok(statements.some(sql => sql.includes('engineering_invites') && sql.includes('FOR UPDATE')));
+  assert.equal((await invitations.acceptEngineeringInvite(token, '202')).ok, false);
+  assert.equal(users.has('202'), false);
+  assert.equal((await invitations.acceptEngineeringInvite(token, '101')).ok, true); // webhook retry
+  assert.equal(commits, 2);
+  users.get('101').active = 0;
+  assert.equal((await invitations.acceptEngineeringInvite(token, '101')).ok, false); // removed user
+  invite.used_by = null;
+  invite.name = 'Інший працівник';
+  users.get('101').active = 1;
+  assert.equal((await invitations.acceptEngineeringInvite(token, '101')).ok, false);
+  assert.equal(invite.used_by, null);
+  assert.equal(users.get('101').name, 'Олена Тестова');
+});
+test('invalid, expired and revoked invitations never grant access', async () => {
+  const invite = { id: 1, name: 'Працівник', used_by: null, expired: 1, revoked: 0 };
+  let writes = 0;
+  const invitations = await load('lib/engineering-invitations.ts', {
+    '@/lib/engineering-repository': { ensureEngineeringSchema: async () => {} },
+    '@/lib/db': { getDbPool: () => ({ getConnection: async () => ({
+      async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
+      async query(sql) {
+        if (sql.startsWith('SELECT *, expires_at')) return [[{ ...invite }]];
+        if (sql.startsWith('SELECT * FROM engineering_users')) return [[]];
+        writes++; return [{}];
+      }
+    }) }) }
+  });
+  assert.equal((await invitations.acceptEngineeringInvite('bad', '101')).ok, false);
+  assert.equal((await invitations.acceptEngineeringInvite('a'.repeat(43), '101')).ok, false);
+  invite.expired = 0; invite.revoked = 1;
+  assert.equal((await invitations.acceptEngineeringInvite('a'.repeat(43), '101')).ok, false);
+  assert.equal(writes, 0);
+});
+test('personal start link activates access and opens task list; group cannot redeem an invitation', async () => {
+  const messages = [];
+  let accepted = 0, active = false;
+  const originalFetch = global.fetch;
+  global.fetch = async (_url, request) => { messages.push(JSON.parse(request.body)); return { ok: true, json: async () => ({ ok: true, result: {} }) }; };
+  try {
+    const bot = await load('lib/engineering-telegram.ts', {
+      '@/lib/engineering-invitations': { acceptEngineeringInvite: async (_token, id) => { assert.equal(id, '101'); accepted++; active = true; return { ok: true }; } },
+      '@/lib/engineering-settings': { readEngineeringSettings: async () => ({ enabled: true, botToken: 'test' }) },
+      '@/lib/db': { getDbPool: () => ({ query: async () => [{}] }) },
+      '@/lib/engineering-repository': { engineeringUsers: async () => active ? [{ telegram_id: '101', active: 1 }] : [], engineeringTasks: async () => [] }
+    });
+    const text = '/start eng_' + 'a'.repeat(43);
+    await bot.processEngineeringUpdate({ message: { chat: { id: -100, type: 'group' }, from: { id: 101 }, text } });
+    assert.equal(accepted, 0);
+    await bot.processEngineeringUpdate({ message: { chat: { id: 101, type: 'private' }, from: { id: 101 }, text } });
+    assert.equal(accepted, 1);
+    assert.ok(messages.some(message => message.text.includes('Доступ активовано')));
+    assert.ok(messages.some(message => message.reply_markup?.inline_keyboard));
+  } finally { global.fetch = originalFetch; }
 });

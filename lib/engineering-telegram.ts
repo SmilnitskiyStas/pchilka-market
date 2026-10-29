@@ -2,6 +2,7 @@ import { getDbPool } from '@/lib/db';
 import { changeEngineeringTask, engineeringTask, engineeringTasks, engineeringUsers, type EngineeringTask } from '@/lib/engineering-repository';
 import { readEngineeringSettings } from '@/lib/engineering-settings';
 import type { RowDataPacket } from 'mysql2/promise';
+import { acceptEngineeringInvite } from '@/lib/engineering-invitations';
 
 export async function engineeringTelegram(token: string, method: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
   const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
@@ -45,13 +46,20 @@ export async function processEngineeringUpdate(update: EngineeringUpdate) {
   if (!incoming || !actor) return;
   const chatId = String(incoming.chat.id), actorId = String(actor.id);
   const send = (text: string, replyMarkup?: unknown) => engineeringTelegram(settings.botToken, 'sendMessage', { chat_id: chatId, text, reply_markup: replyMarkup });
-  // /id reveals no ticket data and lets a user supply their numeric Telegram ID to an administrator.
+  // /id remains a diagnostic command; staff enroll through personal invitations.
   if (!callback && incoming.text === '/id') { await send(`Ваш Telegram ID: ${actorId}\nID чату: ${chatId}`); return; }
+  const invitation = !callback ? incoming.text?.match(/^\/start(?:@engineering_dep_pchilka_bot)?\s+eng_([^\s]+)\s*$/i) : null;
+  if (invitation) {
+    if (incoming.chat.type !== 'private') { await send('Відкрийте посилання запрошення в особистому чаті з ботом.'); return; }
+    const accepted = await acceptEngineeringInvite(invitation[1], actorId);
+    if (!accepted.ok) { await send(accepted.error || 'Не вдалося активувати запрошення.'); return; }
+    await send('Доступ активовано. Ви отримуватимете нові запити та зможете брати завдання в роботу.');
+  }
   const user = (await engineeringUsers()).find(item => item.telegram_id === actorId && item.active);
   const isConfiguredChat = chatId === settings.chatId || (Boolean(incoming.chat.username) && `@${incoming.chat.username}`.toLowerCase() === settings.chatId?.toLowerCase());
   if (!user || (incoming.chat.type !== 'private' && !isConfiguredChat)) {
     if (callback) await engineeringTelegram(settings.botToken, 'answerCallbackQuery', { callback_query_id: callback.id, text: 'Доступ відсутній. Зверніться до адміністратора.', show_alert: true });
-    else await send('Для доступу попросіть адміністратора додати ваш Telegram ID. Команда /id покаже його.');
+    else await send('Для доступу попросіть адміністратора надіслати вам персональне посилання запрошення. Відкрийте його та натисніть «Почати».');
     return;
   }
   if (incoming.chat.type === 'private') await getDbPool().query('UPDATE engineering_users SET started = TRUE WHERE telegram_id = ? AND active = TRUE', [actorId]);
