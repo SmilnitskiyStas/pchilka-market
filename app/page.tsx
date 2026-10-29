@@ -1,4 +1,4 @@
-﻿import { promises as fs } from 'fs';
+import { promises as fs } from 'fs';
 import path from 'path';
 import Link from 'next/link';
 import BannerCarousel from '@/components/banner-carousel';
@@ -25,7 +25,7 @@ const promoCards = [
   {
     title: 'Програма лояльності',
     description: 'Кешбек, правила програми та швидкий перехід до мобільного застосунку.',
-    href: '/loyalty/about'
+    href: '/loyalty/mobile-app'
   }
 ];
 
@@ -147,7 +147,7 @@ export default async function HomePage() {
             {statCards.map((card) => <article key={card.label} className="home-stat"><p>{card.value}</p><h3>{card.label}</h3></article>)}
           </div>
           <div className="home-network-gallery" aria-label="Переваги мережі">
-            {([{ kind: 'store', href: '/about/stores', label: 'Магазини поруч' }, { kind: 'map', href: '/about/stores', label: 'Зручні локації' }, { kind: 'shopping', href: '/promotions/catalog', label: 'Вигідні покупки' }, { kind: 'rewards', href: '/loyalty/about', label: 'Лояльність і кешбек' }] as const).map((item) => <Link key={item.kind} href={item.href} className={`home-network-picture home-network-picture-${item.kind}`}><HomeArtwork kind={item.kind} /><span>{item.label}</span></Link>)}
+            {([{ kind: 'store', href: '/about/stores', label: 'Магазини поруч' }, { kind: 'map', href: '/about/stores', label: 'Зручні локації' }, { kind: 'shopping', href: '/promotions/catalog', label: 'Вигідні покупки' }, { kind: 'rewards', href: '/loyalty/mobile-app', label: 'Лояльність і кешбек' }] as const).map((item) => <Link key={item.kind} href={item.href} className={`home-network-picture home-network-picture-${item.kind}`}><HomeArtwork kind={item.kind} /><span>{item.label}</span></Link>)}
           </div>
         </div>
       </section>
@@ -158,7 +158,7 @@ export default async function HomePage() {
           <div className="home-app-copy"><p>Мобільний<br /><span>застосунок</span></p><strong>картка у твоєму смартфоні</strong><ul><li>Кешбек</li><li>Акції</li><li>Відгуки</li></ul></div>
           <HomeArtwork kind="phone" />
         </Link>
-        <Link href="/loyalty/about" className="home-primary-button">Детальніше про програму</Link>
+        <Link href="/loyalty/mobile-app" className="home-primary-button">Детальніше про програму</Link>
       </section>
       <section className="home-frame home-faq" aria-labelledby="home-faq-title">
         <h2 id="home-faq-title" className="home-section-title">Питання та <span>відповіді</span></h2>

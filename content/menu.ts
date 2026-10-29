@@ -40,7 +40,6 @@ export const mainMenu: MenuItem[] = [
     label: 'Програма лояльності',
     href: '#',
     children: [
-      { label: 'Про програму', href: '/loyalty/about' },
       { label: 'Правила програми', href: '/loyalty/rules' },
       { label: 'Мобільний застосунок', href: '/loyalty/mobile-app' },
       { label: 'Знижка пенсіонерам', href: '/loyalty/senior-discount' }
