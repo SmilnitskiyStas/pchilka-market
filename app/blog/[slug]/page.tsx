@@ -3,17 +3,13 @@
 import AdminBlogPostPage from '@/components/admin-blog-post-page';
 import BlogEngagement from '@/components/blog-engagement';
 import BlogPostCategories from '@/components/blog-post-categories';
-import { blogPosts, getBlogPostBySlug } from '@/content/blog';
+import { getBlogPostBySlug } from '@/content/blog';
+
+export const dynamic = 'force-dynamic';
 
 type BlogPostPageProps = {
   params: Promise<{ slug: string }>;
 };
-
-export async function generateStaticParams() {
-  return blogPosts.map((post) => ({
-    slug: post.slug
-  }));
-}
 
 export default async function BlogPostPage({ params }: BlogPostPageProps) {
   const { slug } = await params;

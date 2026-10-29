@@ -1,18 +1,14 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import AdminContentPostPage from '@/components/admin-content-post-page';
-import { getNewsPostBySlug, newsPosts } from '@/content/news';
+import { getNewsPostBySlug } from '@/content/news';
 import BlogEngagement from '@/components/blog-engagement';
+
+export const dynamic = 'force-dynamic';
 
 type NewsPostPageProps = {
   params: Promise<{ slug: string }>;
 };
-
-export async function generateStaticParams() {
-  return newsPosts.map((post) => ({
-    slug: post.slug
-  }));
-}
 
 export async function generateMetadata({ params }: NewsPostPageProps): Promise<Metadata> {
   const { slug } = await params;

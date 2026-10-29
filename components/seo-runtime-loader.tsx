@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
+import { fetchPublicSiteData } from '@/lib/public-site-data-client';
 
 import {
   getEffectiveSeo,
@@ -54,15 +55,8 @@ function toAbsoluteCanonical(value: string, currentPath: string) {
   return `${window.location.origin}${currentPath}`;
 }
 
-async function fetchSeoRule(path: string, signal?: AbortSignal): Promise<SeoRule | null> {
-  const response = await fetch('/api/admin/seo/rules', {
-    cache: 'no-store',
-    signal
-  });
-
-  if (!response.ok) return null;
-
-  const payload = (await response.json()) as { ok?: boolean; rules?: unknown };
+async function fetchSeoRule(path: string, force = false): Promise<SeoRule | null> {
+  const payload = await fetchPublicSiteData<{ ok?: boolean; rules?: unknown }>('/api/admin/seo/rules', force);
   if (!payload.ok) return null;
 
   const rules = parseSeoRulesFromUnknown(payload.rules);
@@ -76,12 +70,12 @@ export default function SeoRuntimeLoader() {
     const controller = new AbortController();
     const normalizedPath = normalizePath(pathname ?? '/');
 
-    async function applySeo() {
+    async function applySeo(force = false) {
       removeManagedTags();
-      if (normalizedPath.startsWith('/pages/') || (normalizedPath === '/cooperation/rental' && (new URLSearchParams(window.location.search).has('preview') || document.querySelector('meta[name="pchilka-visual-seo"]')))) return;
+      if (normalizedPath.startsWith('/admin') || normalizedPath === '/login' || normalizedPath.startsWith('/pages/') || (normalizedPath === '/cooperation/rental' && (new URLSearchParams(window.location.search).has('preview') || document.querySelector('meta[name="pchilka-visual-seo"]')))) return;
 
-      const rule = await fetchSeoRule(normalizedPath, controller.signal);
-      if (!rule) return;
+      const rule = await fetchSeoRule(normalizedPath, force);
+      if (controller.signal.aborted || !rule) return;
 
       const effective = getEffectiveSeo(rule);
 
@@ -100,10 +94,13 @@ export default function SeoRuntimeLoader() {
       upsertCanonical(toAbsoluteCanonical(effective.canonical, normalizedPath));
     }
 
-    void applySeo();
+    const refresh = () => { void applySeo(true).catch(() => {}); };
+    void applySeo().catch(() => {});
+    window.addEventListener('focus', refresh);
 
     return () => {
       controller.abort();
+      window.removeEventListener('focus', refresh);
       removeManagedTags();
     };
   }, [pathname]);
