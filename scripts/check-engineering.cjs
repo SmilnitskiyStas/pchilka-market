@@ -394,3 +394,53 @@ test('rewriting legacy assignments removes duplicate keys and confirms checkbox 
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
+test('Unauthorized identifies rejected bot token and never attempts webhook registration', async () => {
+  const calls = [];
+  const helper = await load('lib/engineering-webhook.ts', {
+    '@/lib/engineering-telegram': { engineeringTelegram: async (_token, method) => {
+      calls.push(method); throw { telegramErrorCode: 401, message: 'Telegram: Unauthorized' };
+    } }
+  });
+  const settings = { botToken: 'test-token', publicBaseUrl: 'https://example.org', webhookSecret: 'secret' };
+  const error = await helper.registerEngineeringWebhook(settings).catch(error => error);
+  assert.equal(error.code, 'telegram_token_unauthorized');
+  assert.equal(error.status, 400);
+  assert.equal(error.stage, 'getMe');
+  assert.match(error.message, /BotFather/);
+  assert.equal(error.message.includes(settings.botToken), false);
+  assert.deepEqual(calls, ['getMe']);
+  const network = await load('lib/engineering-webhook.ts', { '@/lib/engineering-telegram': { engineeringTelegram: async () => { throw new Error('network failure'); } } });
+  const unavailable = await network.registerEngineeringWebhook(settings).catch(error => error);
+  assert.equal(unavailable.status, 502);
+  assert.equal(unavailable.code, 'telegram_api_error');
+});
+test('Telegram API retains upstream error code without exposing token', async () => {
+  const originalFetch = global.fetch;
+  const token = '123456:test-private-token';
+  global.fetch = async () => ({ ok: false, status: 401, json: async () => ({ ok: false, error_code: 401, description: 'Unauthorized ' + token }) });
+  try {
+    const bot = await load('lib/engineering-telegram.ts', { '@/lib/db': {}, '@/lib/engineering-settings': {}, '@/lib/engineering-repository': {}, '@/lib/engineering-invitations': {} });
+    const error = await bot.engineeringTelegram(token, 'getMe', {}).catch(error => error);
+    assert.equal(error.telegramErrorCode, 401);
+    assert.equal(error.method, 'getMe');
+    assert.equal(error.message.includes(token), false);
+    assert.equal(error.description.includes(token), false);
+  } finally { global.fetch = originalFetch; }
+});
+test('pasted token whitespace is removed while password whitespace is preserved', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'pchilka-token-'));
+  const original = process.env.ENGINEERING_ENV_FILE;
+  process.env.ENGINEERING_ENV_FILE = path.join(directory, '.env');
+  try {
+    const settings = await load('lib/engineering-settings.ts');
+    const token = '123456789:' + 'a'.repeat(30);
+    const password = ' password with spaces ';
+    await settings.saveEngineeringSettings({ botToken: '\n ' + token + ' \r\n', mailPassword: password });
+    const saved = await settings.readEngineeringSettings();
+    assert.equal(saved.botToken, token);
+    assert.equal(saved.mailPassword, password);
+  } finally {
+    if (original === undefined) delete process.env.ENGINEERING_ENV_FILE; else process.env.ENGINEERING_ENV_FILE = original;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});

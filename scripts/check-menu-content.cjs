@@ -78,7 +78,9 @@ async function main() {
   fs.promises.readFile = async (filename, ...args) => String(filename).endsWith('chomu-pchilka-ne-bdzhilka.txt') ? 'Стара історія\nСтарий текст' : originalRead(filename, ...args);
   try {
     const html = renderToStaticMarkup(await storyPage.default());
-    assert.ok(html.includes('Історія бренду'));
+    assert.ok(!html.includes('Історія бренду'), 'The internal block name must not render as a page heading');
+    assert.equal((html.match(/Чому Пчілка не Бджілка/g) || []).length, 1, 'Keep the page heading exactly once');
+    assert.ok(html.includes('Наша історія'), 'Keep headings intentionally added to the body');
     assert.ok(html.includes('<strong class="font-semibold text-slate-900">Опублікований текст</strong>'));
     assert.ok(!html.includes('Стара історія') && !html.includes('Прихована чернетка') && !html.includes('public/info'));
     assert.equal((html.match(/id="article-program"/g) || []).length, 1);

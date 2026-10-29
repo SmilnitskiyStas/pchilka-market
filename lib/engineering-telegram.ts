@@ -4,10 +4,15 @@ import { readEngineeringSettings } from '@/lib/engineering-settings';
 import type { RowDataPacket } from 'mysql2/promise';
 import { acceptEngineeringInvite } from '@/lib/engineering-invitations';
 
+export class EngineeringTelegramApiError extends Error {
+  constructor(public readonly method: string, public readonly telegramErrorCode: number, public readonly description: string) {
+    super(`Telegram: ${description}`);
+  }
+}
 export async function engineeringTelegram(token: string, method: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
   const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
-  const result = await response.json() as { ok?: boolean; result?: Record<string, unknown>; description?: string };
-  if (!response.ok || !result.ok) throw new Error(`Telegram: ${String(result.description || response.status).replaceAll(token, '[token]')}`);
+  const result = await response.json().catch(() => null) as { ok?: boolean; result?: Record<string, unknown>; description?: string; error_code?: number } | null;
+  if (!response.ok || !result?.ok) throw new EngineeringTelegramApiError(method, Number(result?.error_code || response.status), String(result?.description || response.status).replaceAll(token, '[token]'));
   return result.result || {};
 }
 export function engineeringCard(task: EngineeringTask) {

@@ -1,11 +1,18 @@
 import { engineeringTelegram } from '@/lib/engineering-telegram';
 import { type EngineeringSettings } from '@/lib/engineering-settings';
 
-export class EngineeringTelegramSetupError extends Error {}
+export class EngineeringTelegramSetupError extends Error {
+  constructor(message: string, public readonly code = 'telegram_settings_invalid', public readonly status = 400, public readonly stage?: string) { super(message); }
+}
 async function callTelegram(settings: EngineeringSettings, method: string, body: Record<string, unknown>) {
   try { return await engineeringTelegram(settings.botToken, method, body); }
   catch (error) {
-    throw new EngineeringTelegramSetupError(error instanceof Error && error.message.startsWith('Telegram:') ? error.message : 'Не вдалося з’єднатися з Telegram. Перевірте токен і доступ сервера до api.telegram.org.');
+    const provider = error as { telegramErrorCode?: number; description?: string; message?: string };
+    const message = String(provider?.message || '');
+    if (provider?.telegramErrorCode === 401 || /Telegram:\s*Unauthorized/i.test(message) || (method === 'getMe' && (provider?.telegramErrorCode === 404 || /Telegram:\s*Not Found/i.test(message)))) {
+      throw new EngineeringTelegramSetupError('Telegram не приймає збережений токен бота (Unauthorized). Введіть чинний токен @engineering_dep_pchilka_bot із BotFather у поле «Токен», збережіть і повторіть підключення. Пароль пошти змінювати не потрібно.', 'telegram_token_unauthorized', 400, method);
+    }
+    throw new EngineeringTelegramSetupError(message.startsWith('Telegram:') ? message : 'Не вдалося з’єднатися з Telegram. Перевірте доступ сервера до api.telegram.org і повторіть спробу.', 'telegram_api_error', 502, method);
   }
 }
 function webhookUrl(settings: EngineeringSettings) {
@@ -14,7 +21,7 @@ function webhookUrl(settings: EngineeringSettings) {
 }
 async function verifyBot(settings: EngineeringSettings) {
   const bot = await callTelegram(settings, 'getMe', {});
-  if (String(bot.username).toLowerCase() !== 'engineering_dep_pchilka_bot') throw new EngineeringTelegramSetupError('Токен належить іншому боту. Потрібен токен @engineering_dep_pchilka_bot.');
+  if (String(bot.username).toLowerCase() !== 'engineering_dep_pchilka_bot') throw new EngineeringTelegramSetupError('Токен належить іншому боту. Потрібен токен @engineering_dep_pchilka_bot.', 'telegram_wrong_bot', 400, 'getMe');
 }
 export async function engineeringWebhookStatus(settings: EngineeringSettings) {
   const expectedUrl = webhookUrl(settings);

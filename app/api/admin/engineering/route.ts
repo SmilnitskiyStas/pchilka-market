@@ -64,7 +64,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ ok: false, error: 'Невідома дія.' }, { status: 400 });
   } catch (error) {
-    if (error instanceof EngineeringTelegramSetupError) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+    if (error instanceof EngineeringTelegramSetupError) return NextResponse.json({ ok: false, error: error.message, code: error.code, stage: error.stage }, { status: error.status || 400, headers: { 'Cache-Control': 'no-store' } });
     if (error instanceof Error && error.message.startsWith('Telegram:')) return NextResponse.json({ ok: false, error: error.message }, { status: 502 });
     return failure();
   }

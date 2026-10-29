@@ -23,6 +23,7 @@ export default function EngineeringManager() {
   const [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [page, setPage] = useState(0);
   const [telegramStatus, setTelegramStatus] = useState<TelegramStatus | null>(null);
   const [dataNotice, setDataNotice] = useState('');
+  const [telegramError, setTelegramError] = useState('');
   const load = useCallback(async () => {
     const response = await fetch(`/api/admin/engineering?page=${page}`, { cache: 'no-store' });
     const data = await response.json();
@@ -49,10 +50,15 @@ export default function EngineeringManager() {
   useEffect(() => { load().catch(error => setDataNotice(error.message)); }, [load]);
   async function execute(method: string, body: unknown, message: string) {
     setBusy(true); setNotice('');
+    const telegramRequest = method === 'POST' && ['webhook', 'check-webhook', 'invite'].includes(String((body as { action?: string }).action));
+    if (telegramRequest) setTelegramError('');
     try {
       const response = await fetch('/api/admin/engineering', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.error || 'Не вдалося виконати дію.');
+      if (!response.ok || !data.ok) {
+        if (telegramRequest) setTelegramError(data.error || `Не вдалося підключити Telegram (HTTP ${response.status}).`);
+        throw new Error(data.error || 'Не вдалося виконати дію.');
+      }
       if (method === 'PUT') {
         if (!data.settings) throw new Error('Сервер не підтвердив збереження налаштувань.');
         setSettings(data.settings); setStorage(data.storage); setDirty(false);
@@ -64,7 +70,7 @@ export default function EngineeringManager() {
       if (method !== 'PUT') await load().catch(error => setDataNotice(error instanceof Error ? error.message : 'Не вдалося оновити дані.'));
       setNotice(data.result ? (data.result.skipped ? 'Перевірку пропущено: модуль вимкнений або вже перевіряє пошту.' : `${data.result.mailFailed ? 'Не вдалося перевірити пошту — перевірте IMAP-сервер, логін і пароль. ' : ''}Опрацьовано листів: ${data.result.imported}. Надіслано повідомлень: ${data.result.sent}. Невдалих доставок: ${data.result.failed || 0} (будуть повторені).`) : message);
       return true;
-    } catch (error) { setNotice(error instanceof Error ? error.message : 'Помилка.'); return false; }
+    } catch (error) { const message = error instanceof Error ? error.message : 'Помилка.'; setNotice(message); if (telegramRequest) setTelegramError(message); return false; }
     finally { setBusy(false); }
   }
   async function saveSystem() {
@@ -98,6 +104,7 @@ export default function EngineeringManager() {
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={settings.enabled} onChange={event => { setDirty(true); setSettings({ ...settings, enabled: event.target.checked }); }} />Автоматично перевіряти пошту й надсилати нові запити</label>
         <p className="text-sm text-gray-600">Приєднання працівників і команди бота працюють також із вимкненою перевіркою пошти. Перед підключенням Telegram або створенням запрошення поточні налаштування зберігаються автоматично.</p>
         <div className="flex flex-wrap gap-2"><button disabled={busy} className={`${buttonClass} bg-brand text-white`}>Зберегти</button><button type="button" disabled={busy} className={buttonClass} onClick={() => void telegramAction('webhook')}>Підключити Telegram</button><button type="button" disabled={busy} className={buttonClass} onClick={() => void telegramAction('check-webhook')}>Перевірити Telegram</button><button type="button" disabled={busy} className={buttonClass} onClick={() => void execute('POST', { action: 'sync' }, '')}>Перевірити пошту зараз</button></div>
+        {telegramError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{telegramError}</p>}
         {telegramStatus && <div className="space-y-1 rounded-xl bg-gray-50 p-3 text-sm" role="status"><p>{telegramStatus.connected ? 'Webhook зареєстровано на цей сайт.' : 'Webhook не зареєстровано на цей сайт. Натисніть «Підключити Telegram».'}</p><p>Повідомлень у черзі Telegram: {telegramStatus.pendingUpdates}.</p>{telegramStatus.lastError && <p className="text-red-700">Остання помилка доставки{telegramStatus.lastErrorAt ? ` (${new Date(telegramStatus.lastErrorAt).toLocaleString('uk-UA', { timeZone: 'Europe/Kiev' })})` : ''}: {telegramStatus.lastError}</p>}</div>}
         </fieldset>
       </form>

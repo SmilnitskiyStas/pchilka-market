@@ -16,7 +16,7 @@ export class EngineeringSettingsStorageError extends Error {}
 export async function readEngineeringSettings(): Promise<EngineeringSettings> {
   const { values } = await readEngineeringEnv();
   const get = (key: keyof EngineeringSettings, fallback = '') => String(values[keys[key]] ?? process.env[`ENGINEERING_${keys[key]}`] ?? fallback);
-  return { enabled: isEngineeringEnabled(get('enabled')), mailHost: get('mailHost'), mailPort: Number(get('mailPort', '993')), mailUser: get('mailUser', 'engineer@legion2015.com'), mailPassword: get('mailPassword'), mailFolder: get('mailFolder', 'INBOX'), botToken: get('botToken'), chatId: get('chatId'), publicBaseUrl: get('publicBaseUrl'), webhookSecret: get('webhookSecret'), runSecret: get('runSecret') };
+  return { enabled: isEngineeringEnabled(get('enabled')), mailHost: get('mailHost'), mailPort: Number(get('mailPort', '993')), mailUser: get('mailUser', 'engineer@legion2015.com'), mailPassword: get('mailPassword'), mailFolder: get('mailFolder', 'INBOX'), botToken: get('botToken').trim(), chatId: get('chatId'), publicBaseUrl: get('publicBaseUrl'), webhookSecret: get('webhookSecret'), runSecret: get('runSecret') };
 }
 let saving = Promise.resolve();
 export async function saveEngineeringSettings(input: Record<string, unknown>) {
@@ -26,9 +26,8 @@ export async function saveEngineeringSettings(input: Record<string, unknown>) {
     for (const key of ['mailHost', 'mailUser', 'mailFolder', 'chatId', 'publicBaseUrl'] as const) {
       if (typeof input[key] === 'string') next[key] = input[key].trim();
     }
-    for (const key of ['mailPassword', 'botToken'] as const) {
-      if (typeof input[key] === 'string' && input[key]) next[key] = input[key];
-    }
+    if (typeof input.mailPassword === 'string' && input.mailPassword) next.mailPassword = input.mailPassword;
+    if (typeof input.botToken === 'string' && input.botToken.trim()) next.botToken = input.botToken.trim();
     if (typeof input.enabled === 'boolean') next.enabled = input.enabled;
     if (input.mailPort !== undefined) next.mailPort = Number(input.mailPort);
     next.publicBaseUrl = next.publicBaseUrl.replace(/\/+$/, '');

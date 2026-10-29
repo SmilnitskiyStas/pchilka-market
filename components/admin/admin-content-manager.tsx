@@ -365,7 +365,7 @@ export default function AdminContentManager() {
     const normalizedCoverImage = coverImage.trim();
 
     if (!normalizedTitle) {
-      setError('Вкажіть заголовок статті.');
+      setError(pagePath ? 'Вкажіть назву текстового блоку для адмінпанелі.' : 'Вкажіть заголовок статті.');
       return;
     }
 
@@ -536,7 +536,7 @@ export default function AdminContentManager() {
             </div> : null}
 
             <div>
-              <label htmlFor="content-title" className="block text-sm font-semibold text-slate-900">Заголовок статті</label>
+              <label htmlFor="content-title" className="block text-sm font-semibold text-slate-900">{pagePath ? 'Назва текстового блоку (для адмінпанелі)' : 'Заголовок статті'}</label>
               <input
                 id="content-title"
                 value={title}
@@ -548,9 +548,11 @@ export default function AdminContentManager() {
                   }
                   setIsSaved(false);
                 }}
-                placeholder="Наприклад: Відкриття нового магазину"
+                placeholder={pagePath ? 'Наприклад: Основний текст сторінки' : 'Наприклад: Відкриття нового магазину'}
                 className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
+                aria-describedby={pagePath ? 'content-title-help' : undefined}
               />
+              {pagePath ? <p id="content-title-help" className="mt-2 text-xs text-slate-600">Назва потрібна для пошуку й редагування в адмінпанелі та не додається як заголовок на сторінку. За потреби підзаголовок можна додати в самому тексті через H2 або H3.</p> : null}
             </div>
 
             <div>
