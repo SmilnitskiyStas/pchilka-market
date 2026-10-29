@@ -11,7 +11,7 @@ async function load(relativePath, mocks = {}) {
   const source = await fs.readFile(filename, 'utf8');
   const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const exports = {};
-  vm.runInNewContext(`(function(require, exports) { ${js}\n})`, { process, Buffer, AbortSignal, fetch, console, URL, setTimeout })(name => name in mocks ? mocks[name] : require(name), exports);
+  vm.runInNewContext(`(function(require, exports) { ${js}\n})`, { process, Buffer, AbortSignal, fetch, console, URL, setTimeout })(name => name in mocks ? mocks[name] : require(name.startsWith('@/') ? path.resolve(__dirname, '..', name.slice(2)) : name), exports);
   return exports;
 }
 test('credentials round-trip privately, preserve unrelated env, blank password keeps existing secret', async () => {
@@ -314,4 +314,83 @@ test('admin does not issue invitation when webhook registration fails', async ()
   connected = true;
   assert.equal((await api.POST(request())).status, 200);
   assert.deepEqual(timeline, ['webhook', 'webhook', 'invite']);
+});
+test('checkbox, IMAP host and public URL survive fresh reads; API masks secrets and works without DB', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'pchilka-settings-api-'));
+  const original = process.env.ENGINEERING_ENV_FILE;
+  process.env.ENGINEERING_ENV_FILE = path.join(directory, '.env');
+  try {
+    const settingsModule = await load('lib/engineering-settings.ts');
+    const api = await load('app/api/admin/engineering/route.ts', {
+      '@/lib/admin-auth': { isAdminRequestAuthorized: () => true, getAdminSessionFromRequest: () => ({ role: 'admin' }) },
+      '@/lib/db': { getDbPool: () => { throw new Error('Database offline'); } },
+      '@/lib/engineering-repository': { engineeringUsers: async () => { throw new Error('Database offline'); } },
+      '@/lib/engineering-telegram': {}, '@/lib/engineering-mail': {}, '@/lib/engineering-invitations': {}, '@/lib/engineering-webhook': {},
+      '@/lib/engineering-settings': settingsModule
+    });
+    const password = 'private-mail-password-WXYZ', token = '123456789:' + 'a'.repeat(30) + '1234';
+    const body = { enabled: true, mailUser: 'engineer@legion2015.com', mailHost: 'imap.example.org', mailPassword: password, botToken: token, publicBaseUrl: 'https://example.org/' };
+    const put = data => api.PUT(new Request('https://example.org/api/admin/engineering', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }));
+    const response = await put(body);
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.settings.enabled, true);
+    assert.equal(result.settings.mailHost, 'imap.example.org');
+    assert.equal(result.settings.publicBaseUrl, 'https://example.org');
+    assert.equal(result.settings.passwordLast4, 'WXYZ');
+    assert.equal(result.settings.tokenLast4, '1234');
+    assert.equal(JSON.stringify(result).includes(password), false);
+    assert.equal(JSON.stringify(result).includes(token), false);
+    assert.equal(result.storage.filePath, process.env.ENGINEERING_ENV_FILE);
+    assert.equal(result.storage.exists, true);
+    const freshModule = await load('lib/engineering-settings.ts');
+    assert.equal((await freshModule.readEngineeringSettings()).enabled, true);
+    const reread = await api.GET(new Request('https://example.org/api/admin/engineering?section=settings'));
+    assert.equal(reread.status, 200);
+    assert.equal((await reread.json()).settings.mailHost, 'imap.example.org');
+    const disabled = await put({ enabled: false, mailPassword: '', botToken: '' });
+    assert.equal(disabled.status, 200);
+    assert.equal((await disabled.json()).settings.enabled, false);
+    const final = await freshModule.readEngineeringSettings();
+    assert.equal(final.enabled, false);
+    assert.equal(final.mailPassword, password);
+    assert.equal(final.botToken, token);
+    assert.equal(final.mailHost, body.mailHost);
+    assert.equal(final.publicBaseUrl, 'https://example.org');
+  } finally {
+    if (original === undefined) delete process.env.ENGINEERING_ENV_FILE; else process.env.ENGINEERING_ENV_FILE = original;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+test('env parser accepts legacy spacing, quotes and enabled flags consistently', () => {
+  const { parseEngineeringEnv, isEngineeringEnabled } = require('./engineering-env.cjs');
+  const values = parseEngineeringEnv('\uFEFF export ENGINEERING_ENABLED = \'1\' # old format\r\n ENGINEERING_MAIL_HOST = "imap.example.org" # host\r\nENGINEERING_MAIL_PASSWORD="abc # \\\"quoted\\\" WXYZ"\r\nUNRELATED_SECRET=ignore\r\n');
+  assert.equal(values.ENABLED, '1');
+  assert.equal(values.MAIL_HOST, 'imap.example.org');
+  assert.equal(values.MAIL_PASSWORD, 'abc # "quoted" WXYZ');
+  assert.equal('UNRELATED_SECRET' in values, false);
+  assert.equal(isEngineeringEnabled(values.ENABLED), true);
+  assert.equal(isEngineeringEnabled(' TRUE '), true);
+  assert.equal(isEngineeringEnabled('false'), false);
+  assert.equal(isEngineeringEnabled('0'), false);
+});
+test('rewriting legacy assignments removes duplicate keys and confirms checkbox persists', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'pchilka-settings-legacy-'));
+  const original = process.env.ENGINEERING_ENV_FILE;
+  process.env.ENGINEERING_ENV_FILE = path.join(directory, '.env');
+  try {
+    await fs.writeFile(process.env.ENGINEERING_ENV_FILE, 'OTHER=keep\n export ENGINEERING_ENABLED = 1\n ENGINEERING_MAIL_HOST = \'imap.example.org\'\nENGINEERING_MAIL_USER=engineer@legion2015.com\nENGINEERING_MAIL_PASSWORD=old-password\nENGINEERING_BOT_TOKEN=123456789:' + 'a'.repeat(30) + '\nENGINEERING_PUBLIC_BASE_URL=https://example.org\n');
+    const settings = await load('lib/engineering-settings.ts');
+    assert.equal((await settings.readEngineeringSettings()).enabled, true);
+    await settings.saveEngineeringSettings({ enabled: false });
+    const file = await fs.readFile(process.env.ENGINEERING_ENV_FILE, 'utf8');
+    assert.equal((file.match(/ENGINEERING_ENABLED\s*=/g) || []).length, 1);
+    assert.equal((await settings.readEngineeringSettings()).enabled, false);
+    await settings.saveEngineeringSettings({ enabled: true });
+    assert.equal((await settings.readEngineeringSettings()).enabled, true);
+    assert.ok(file.startsWith('OTHER=keep\n'));
+  } finally {
+    if (original === undefined) delete process.env.ENGINEERING_ENV_FILE; else process.env.ENGINEERING_ENV_FILE = original;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
 });

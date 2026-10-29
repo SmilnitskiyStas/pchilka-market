@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto';
 import { mkdir, readFile, rename, writeFile } from 'fs/promises';
 import path from 'path';
+import { isEngineeringEnabled, readEngineeringEnv, resolveEngineeringEnvPath } from '@/scripts/engineering-env.cjs';
 
 export type EngineeringSettings = {
   enabled: boolean; mailHost: string; mailPort: number; mailUser: string; mailPassword: string;
@@ -10,16 +11,12 @@ const keys: Record<keyof EngineeringSettings, string> = {
   enabled: 'ENABLED', mailHost: 'MAIL_HOST', mailPort: 'MAIL_PORT', mailUser: 'MAIL_USER', mailPassword: 'MAIL_PASSWORD',
   mailFolder: 'MAIL_FOLDER', botToken: 'BOT_TOKEN', chatId: 'CHAT_ID', publicBaseUrl: 'PUBLIC_BASE_URL', webhookSecret: 'WEBHOOK_SECRET', runSecret: 'RUN_SECRET'
 };
-export const engineeringEnvPath = () => path.resolve(process.env.ENGINEERING_ENV_FILE || path.join(process.cwd(), '.env'));
+export const engineeringEnvPath = resolveEngineeringEnvPath;
+export class EngineeringSettingsStorageError extends Error {}
 export async function readEngineeringSettings(): Promise<EngineeringSettings> {
-  const source = await readFile(engineeringEnvPath(), 'utf8').catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return ''; throw error; });
-  const values: Record<string, string> = {};
-  for (const line of source.split(/\r?\n/)) {
-    const match = line.match(/^ENGINEERING_([A-Z_]+)=(.*)$/);
-    if (match) { try { values[match[1]] = JSON.parse(match[2]); } catch { values[match[1]] = match[2]; } }
-  }
+  const { values } = await readEngineeringEnv();
   const get = (key: keyof EngineeringSettings, fallback = '') => String(values[keys[key]] ?? process.env[`ENGINEERING_${keys[key]}`] ?? fallback);
-  return { enabled: get('enabled') === 'true', mailHost: get('mailHost'), mailPort: Number(get('mailPort', '993')), mailUser: get('mailUser', 'engineer@legion2015.com'), mailPassword: get('mailPassword'), mailFolder: get('mailFolder', 'INBOX'), botToken: get('botToken'), chatId: get('chatId'), publicBaseUrl: get('publicBaseUrl'), webhookSecret: get('webhookSecret'), runSecret: get('runSecret') };
+  return { enabled: isEngineeringEnabled(get('enabled')), mailHost: get('mailHost'), mailPort: Number(get('mailPort', '993')), mailUser: get('mailUser', 'engineer@legion2015.com'), mailPassword: get('mailPassword'), mailFolder: get('mailFolder', 'INBOX'), botToken: get('botToken'), chatId: get('chatId'), publicBaseUrl: get('publicBaseUrl'), webhookSecret: get('webhookSecret'), runSecret: get('runSecret') };
 }
 let saving = Promise.resolve();
 export async function saveEngineeringSettings(input: Record<string, unknown>) {
@@ -47,17 +44,26 @@ export async function saveEngineeringSettings(input: Record<string, unknown>) {
     await mkdir(path.dirname(target), { recursive: true });
     const original = await readFile(target, 'utf8').catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return ''; throw error; });
     const names = new Set(Object.values(keys).map(key => `ENGINEERING_${key}`));
-    const retained = original.split(/\r?\n/).filter(line => !names.has(line.split('=')[0])).join('\n').trimEnd();
+    const retained = original.split(/\r?\n/).filter(line => {
+      const assignment = line.match(/^\s*(?:export\s+)?([A-Z_]+)\s*=/);
+      return !assignment || !names.has(assignment[1]);
+    }).join('\n').trimEnd();
     const block = (Object.keys(keys) as Array<keyof EngineeringSettings>).map(key => `ENGINEERING_${keys[key]}=${JSON.stringify(String(next[key]))}`).join('\n');
     const temporary = `${target}.${randomBytes(8).toString('hex')}.tmp`;
     await writeFile(temporary, `${retained}${retained ? '\n' : ''}${block}\n`, { mode: 0o600 });
     await rename(temporary, target);
-    return next;
+    const verified = await readEngineeringSettings();
+    if ((Object.keys(keys) as Array<keyof EngineeringSettings>).some(key => verified[key] !== next[key])) throw new EngineeringSettingsStorageError('Після запису .env прочитані значення відрізняються. Перевірте шлях до файлу та спільне сховище застосунку.');
+    return verified;
   });
   saving = operation.then(() => {}, () => {});
   return operation;
 }
 export function publicEngineeringSettings(settings: EngineeringSettings) {
   const { mailPassword, botToken, webhookSecret, runSecret, ...visible } = settings;
-  return { ...visible, passwordConfigured: Boolean(mailPassword), tokenConfigured: Boolean(botToken), botUsername: 'engineering_dep_pchilka_bot' };
+  return { ...visible, passwordConfigured: Boolean(mailPassword), tokenConfigured: Boolean(botToken), passwordLast4: Array.from(mailPassword).slice(-4).join(''), tokenLast4: Array.from(botToken).slice(-4).join(''), botUsername: 'engineering_dep_pchilka_bot' };
+}
+export async function engineeringSettingsStorage() {
+  const { filePath, sourcePath, exists } = await readEngineeringEnv();
+  return { filePath, sourcePath, exists };
 }

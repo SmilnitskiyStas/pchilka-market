@@ -3,7 +3,7 @@ import type { RowDataPacket } from 'mysql2/promise';
 import { getAdminSessionFromRequest, isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import { getDbPool } from '@/lib/db';
 import { engineeringTasks, engineeringUsers, ensureEngineeringSchema, resetEngineeringTask } from '@/lib/engineering-repository';
-import { publicEngineeringSettings, readEngineeringSettings, saveEngineeringSettings } from '@/lib/engineering-settings';
+import { engineeringSettingsStorage, EngineeringSettingsStorageError, publicEngineeringSettings, readEngineeringSettings, saveEngineeringSettings } from '@/lib/engineering-settings';
 import { refreshEngineeringCards } from '@/lib/engineering-telegram';
 import { runEngineeringMail } from '@/lib/engineering-mail';
 import { createEngineeringInvite, listEngineeringInvites, removeEngineeringUser, revokeEngineeringInvite } from '@/lib/engineering-invitations';
@@ -18,17 +18,23 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const page = Math.floor(Math.max(0, Math.min(100000, Number(url.searchParams.get('page')) || 0)));
-    const [settings, users, tasks, invites] = await Promise.all([readEngineeringSettings(), engineeringUsers(), engineeringTasks('all', '', page), listEngineeringInvites()]);
+    const settings = publicEngineeringSettings(await readEngineeringSettings());
+    const storage = await engineeringSettingsStorage();
+    if (url.searchParams.get('section') === 'settings') return NextResponse.json({ ok: true, settings, storage }, { headers: { 'Cache-Control': 'no-store' } });
+    const [users, tasks, invites] = await Promise.all([engineeringUsers(), engineeringTasks('all', '', page), listEngineeringInvites()]);
     const [events] = await getDbPool().query<RowDataPacket[]>('SELECT * FROM engineering_events ORDER BY id DESC LIMIT 50');
-    return NextResponse.json({ ok: true, settings: publicEngineeringSettings(settings), users, tasks, events, invites }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json({ ok: true, settings, storage, users, tasks, events, invites }, { headers: { 'Cache-Control': 'no-store' } });
   } catch { return failure(); }
 }
 export async function PUT(request: Request) {
   if (!authorized(request)) return unauthorizedAdminResponse();
   let body;
   try { body = await request.json(); } catch { return NextResponse.json({ ok: false, error: 'Некоректні дані.' }, { status: 400 }); }
-  try { return NextResponse.json({ ok: true, settings: publicEngineeringSettings(await saveEngineeringSettings(body)) }); }
+  try { return NextResponse.json({ ok: true, settings: publicEngineeringSettings(await saveEngineeringSettings(body)), storage: await engineeringSettingsStorage() }, { headers: { 'Cache-Control': 'no-store' } }); }
   catch (error) {
+    if (error instanceof EngineeringSettingsStorageError) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (['EACCES', 'EPERM', 'EROFS', 'ENOSPC', 'EBUSY', 'EXDEV', 'ENOENT'].includes(code || '')) return NextResponse.json({ ok: false, error: 'Налаштування не збережено: не вдалося записати файл .env. Перевірте права запису, вільне місце та каталог ENGINEERING_ENV_FILE на сервері.' }, { status: 500 });
     if (error instanceof Error && !('code' in error)) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
     return failure();
   }
