@@ -9,6 +9,9 @@ import PizzaMenuGrid, { type PizzaItem } from '@/components/pizza-menu-grid';
 import { getOwnBrandItemBySlug, ownBrandItems } from '@/content/own-brand';
 import { listOwnBrandPizzas } from '@/lib/own-brand-pizzas';
 
+// Pizzas are edited at runtime in the admin panel, after the site is built.
+export const dynamic = 'force-dynamic';
+
 type OwnBrandItemPageProps = {
   params: Promise<{
     slug: string;

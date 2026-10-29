@@ -37,8 +37,8 @@
 .home-frame, main.site-container, section.site-container { width: 100%; max-width: var(--public-container-max-width); padding-left: var(--public-container-gutter); padding-right: var(--public-container-gutter); margin-left: auto; margin-right: auto; }
 .home-intro { padding-bottom: 38px; }
 .home-banner-media { position: relative; aspect-ratio: 1200 / 500; width: 100%; overflow: hidden; border-radius: 30px; background: #f5f6f3; }
-.home-banner-controls { display: flex; gap: 18px; justify-content: center; padding: 17px 0 22px; }
-.home-banner-controls button { width: 80px; height: 24px; border: 0; position: relative; background: none; cursor: pointer; }
+.home-banner-controls { display: flex; width: calc(100% - 24px); max-width: 360px; margin-inline: auto; gap: 8px; justify-content: center; padding: 17px 0 22px; }
+.home-banner-controls button { flex: 1 1 0; min-width: 0; max-width: 48px; height: 24px; border: 0; position: relative; background: none; cursor: pointer; }
 .home-banner-controls button::after { content: ''; position: absolute; left: 0; right: 0; top: 7px; height: 10px; border-radius: 20px; background: #d9d9d9; }
 .home-banner-controls button.is-active::after { background: var(--color-brand); }
 .home-hero-banner { width: 100%; min-width: 0; position: relative; isolation: isolate; display: flex; align-items: center; justify-content: space-between; min-height: 500px; aspect-ratio: 1200 / 500; padding: 46px 7%; overflow: hidden; border-radius: 30px; background: radial-gradient(ellipse at 35% 55%, #2a673c, #123b2c 75%); color: white; }
@@ -177,8 +177,7 @@
 @media (max-width: 767px) {
   :root { --public-container-gutter: 20px; }
   .home-banner-media { border-radius: 20px; }
-  .home-banner-controls { gap: 10px; padding: 10px 0 18px; }
-  .home-banner-controls button { width: 45px; }
+  .home-banner-controls { gap: 6px; padding: 10px 0 18px; }
   .home-promo-grid { grid-template-columns: 1fr; gap: 12px; }
   .home-promo-card { min-height: 180px; padding: 24px; grid-template-columns: minmax(0, 1fr) 100px; grid-template-rows: auto; align-items: center; }
   .home-promo-card h2 { font-size: 30px; max-width: 260px; margin-bottom: 12px; }

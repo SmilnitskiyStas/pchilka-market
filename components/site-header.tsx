@@ -10,7 +10,7 @@ import { useContentMenu } from '@/components/site-content-provider';
 import SiteSearch from '@/components/site-search';
 import { trackAnalyticsEvent } from '@/lib/analytics-events';
 import { getSiteLogoUrl } from '@/lib/site-branding';
-import { defaultSiteProfileSettings } from '@/lib/site-profile-settings';
+import { defaultSiteProfileSettings, type SiteProfileSettings } from '@/lib/site-profile-settings';
 import { uploadRequestAttachment } from '@/lib/request-attachment-client';
 
 const MIN_MESSAGE_LENGTH = 10;
@@ -46,13 +46,15 @@ function isValidAttachment(file: File | null) {
   return ALLOWED_FILE_EXTENSIONS.includes(extension);
 }
 
-export default function SiteHeader() {
+type SiteHeaderProps = { profile: Pick<SiteProfileSettings, 'contactPhones' | 'logoUrl'> };
+
+export default function SiteHeader({ profile }: SiteHeaderProps) {
   const pathname = usePathname();
   if (pathname?.replace(/\/+$/, '') === '/qr-code' || pathname === '/loyalty/mobile-app/download') return null;
-  return <SiteHeaderContent />;
+  return <SiteHeaderContent profile={profile} />;
 }
 
-function SiteHeaderContent() {
+function SiteHeaderContent({ profile }: SiteHeaderProps) {
   const visibleMenu = useContentMenu();
   const pathname = usePathname();
 
@@ -65,8 +67,8 @@ function SiteHeaderContent() {
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
-  const [contactPhones, setContactPhones] = useState<string[]>(defaultSiteProfileSettings.contactPhones);
-  const [logoUrl, setLogoUrl] = useState<string>(defaultSiteProfileSettings.logoUrl);
+  const contactPhones = profile.contactPhones;
+  const logoUrl = getSiteLogoUrl(profile);
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
 
   const [feedbackName, setFeedbackName] = useState('');
@@ -94,31 +96,6 @@ function SiteHeaderContent() {
     };
     window.addEventListener('pchilka:open-feedback', openFeedback);
     return () => window.removeEventListener('pchilka:open-feedback', openFeedback);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadContacts() {
-      try {
-        const response = await fetch('/api/admin/site-profile', { cache: 'no-store' });
-        const payload = (await response.json()) as { ok?: boolean; settings?: { contactPhones?: string[]; logoUrl?: string } };
-        if (!response.ok || !payload.ok || cancelled) return;
-
-        if (Array.isArray(payload.settings?.contactPhones) && payload.settings.contactPhones.length > 0) {
-          setContactPhones(payload.settings.contactPhones);
-        }
-        setLogoUrl(getSiteLogoUrl(payload.settings));
-      } catch {
-        // Keep default contacts when API is unavailable.
-      }
-    }
-
-    void loadContacts();
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   useEffect(() => {

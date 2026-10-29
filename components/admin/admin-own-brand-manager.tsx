@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import OwnBrandImageCatalog from '@/components/admin/own-brand-image-catalog';
 
 type OwnBrandPizzaRecord = {
   id: string;
@@ -45,6 +46,7 @@ export default function AdminOwnBrandManager() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [imagePizzaId, setImagePizzaId] = useState<string | null>(null);
 
   async function loadPizzas() {
     setIsLoading(true);
@@ -70,6 +72,7 @@ export default function AdminOwnBrandManager() {
   }, []);
 
   function updatePizza(id: string, field: keyof OwnBrandPizzaRecord, value: string | number | boolean) {
+    setSuccess('');
     setPizzas((prev) =>
       prev.map((pizza) =>
         pizza.id === id
@@ -93,6 +96,11 @@ export default function AdminOwnBrandManager() {
   }
 
   async function savePizzas() {
+    if (pizzas.some((pizza) => !pizza.name.trim())) {
+      setError('Укажіть назву для кожної піци перед збереженням.');
+      setSuccess('');
+      return;
+    }
     setIsSaving(true);
     setError('');
     setSuccess('');
@@ -128,21 +136,22 @@ export default function AdminOwnBrandManager() {
       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Admin / Власне класне</p>
       <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Керування піцами для Піца та кав&apos;ярня</h1>
       <p className="mt-3 text-sm text-slate-700 sm:text-base">
-        Тут можна додавати нові піци, редагувати назву, вагу, опис, посилання на зображення і порядок показу на сторінці.
+        Тут можна додавати нові піци, редагувати назву, вагу, опис, зображення і порядок показу на сторінці. На сайті показуються активні піци після збереження змін.
       </p>
 
       <div className="mt-5 flex flex-wrap gap-3">
         <button
           type="button"
           onClick={() => addPizza()}
-          className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+          disabled={isLoading || isSaving}
+          className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
         >
           Додати піцу
         </button>
         <button
           type="button"
           onClick={() => void savePizzas()}
-          disabled={isSaving}
+          disabled={isLoading || isSaving}
           className="rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand transition hover:bg-brand/5 disabled:opacity-60"
         >
           {isSaving ? 'Збереження...' : 'Зберегти зміни'}
@@ -191,15 +200,29 @@ export default function AdminOwnBrandManager() {
                       className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand"
                     />
                   </label>
-                  <label className="text-sm font-semibold text-slate-900 md:col-span-2">
-                    Посилання на зображення
+                  <div className="text-sm font-semibold text-slate-900 md:col-span-2">
+                    <label htmlFor={`pizza-image-${pizza.id}`}>
+                      Посилання на зображення
+                    </label>
                     <input
+                      id={`pizza-image-${pizza.id}`}
                       value={pizza.imageUrl}
                       onChange={(event) => updatePizza(pizza.id, 'imageUrl', event.target.value)}
                       placeholder="https://..."
                       className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand"
                     />
-                  </label>
+                    <button
+                      type="button"
+                      onClick={() => setImagePizzaId(pizza.id)}
+                      className="mt-2 rounded-full border border-brand px-4 py-2 text-sm font-semibold text-brand hover:bg-brand/5"
+                    >
+                      Обрати з каталогу
+                    </button>
+                    {pizza.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={pizza.imageUrl} alt={pizza.name || 'Зображення піци'} className="mt-3 h-28 w-40 rounded-xl border border-slate-200 bg-white object-contain" />
+                    ) : null}
+                  </div>
                   <label className="text-sm font-semibold text-slate-900 md:col-span-2">
                     Склад / опис
                     <textarea
@@ -247,6 +270,15 @@ export default function AdminOwnBrandManager() {
             ))
           )}
         </div>
+      ) : null}
+      {imagePizzaId ? (
+        <OwnBrandImageCatalog
+          onSelect={(url) => {
+            updatePizza(imagePizzaId, 'imageUrl', url);
+            setImagePizzaId(null);
+          }}
+          onClose={() => setImagePizzaId(null)}
+        />
       ) : null}
     </div>
   );

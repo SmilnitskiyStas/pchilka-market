@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { normalizeSiteProfileSettings, type SiteProfileSettings } from '@/lib/site-profile-settings';
 import { normalizeStore, type StoreRecord } from '@/lib/store-types';
@@ -28,6 +29,7 @@ async function uploadLogoAsset(file: File): Promise<string> {
 }
 
 export default function AdminNetworkManager() {
+  const router = useRouter();
   const [settings, setSettings] = useState<SiteProfileSettings>(normalizeSiteProfileSettings(undefined));
   const [stores, setStores] = useState<StoreRecord[]>([]);
   const [newCityName, setNewCityName] = useState('');
@@ -39,8 +41,15 @@ export default function AdminNetworkManager() {
   const [error, setError] = useState('');
   const [isSaved, setIsSaved] = useState(false);
 
-  const contactPhonesText = useMemo(() => settings.contactPhones.join('\n'), [settings.contactPhones]);
-  const contactsPageLinesText = useMemo(() => settings.contactsPageLines.join('\n'), [settings.contactsPageLines]);
+  const [contactPhonesText, setContactPhonesText] = useState(() => settings.contactPhones.join('\n'));
+  const [contactsPageLinesText, setContactsPageLinesText] = useState(() => settings.contactsPageLines.join('\n'));
+
+  function applySettings(raw: Partial<SiteProfileSettings> | undefined) {
+    const next = normalizeSiteProfileSettings(raw);
+    setSettings(next);
+    setContactPhonesText(next.contactPhones.join('\n'));
+    setContactsPageLinesText(next.contactsPageLines.join('\n'));
+  }
   const cityOptions = useMemo(() => {
     const unique = new Set(
       stores
@@ -121,7 +130,7 @@ export default function AdminNetworkManager() {
         }
 
         if (cancelled) return;
-        setSettings(normalizeSiteProfileSettings(settingsPayload.settings));
+        applySettings(settingsPayload.settings);
         setStores(Array.isArray(storesPayload.stores) ? storesPayload.stores.map((item) => normalizeStore(item)) : []);
       } catch (loadError) {
         if (cancelled) return;
@@ -266,9 +275,10 @@ export default function AdminNetworkManager() {
         throw new Error(storesPayload.error || 'Не вдалося зберегти магазини.');
       }
 
-      setSettings(normalizeSiteProfileSettings(settingsPayload.settings));
+      applySettings(settingsPayload.settings);
       setStores(Array.isArray(storesPayload.stores) ? storesPayload.stores.map((item) => normalizeStore(item)) : []);
       setIsSaved(true);
+      router.refresh();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Не вдалося зберегти дані.');
     } finally {
@@ -456,7 +466,7 @@ export default function AdminNetworkManager() {
                 rows={5}
                 value={contactPhonesText}
                 onChange={(event) => {
-                  setSettings((prev) => ({ ...prev, contactPhones: parseMultiline(event.target.value) }));
+                  setContactPhonesText(event.target.value);
                   setIsSaved(false);
                 }}
                 className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"
@@ -494,7 +504,7 @@ export default function AdminNetworkManager() {
               rows={6}
               value={contactsPageLinesText}
               onChange={(event) => {
-                setSettings((prev) => ({ ...prev, contactsPageLines: parseMultiline(event.target.value) }));
+                setContactsPageLinesText(event.target.value);
                 setIsSaved(false);
               }}
               className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand"

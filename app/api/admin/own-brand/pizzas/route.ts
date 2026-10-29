@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import { listOwnBrandPizzas, saveOwnBrandPizzas, type OwnBrandPizzaRecord } from '@/lib/own-brand-pizzas';
@@ -28,6 +29,7 @@ export async function PUT(request: Request) {
     const body = (await request.json()) as { pizzas?: OwnBrandPizzaRecord[] };
     const pizzas = Array.isArray(body?.pizzas) ? body.pizzas : [];
     const savedPizzas = await saveOwnBrandPizzas(pizzas);
+    revalidatePath('/own-brand/pizza-coffeehouse');
     return NextResponse.json({ ok: true, pizzas: savedPizzas });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown own-brand pizza save error';

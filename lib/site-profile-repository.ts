@@ -1,4 +1,6 @@
 import type { RowDataPacket } from 'mysql2/promise';
+import { cache } from 'react';
+import { unstable_noStore as noStore } from 'next/cache';
 
 import { getDbPool } from '@/lib/db';
 import {
@@ -12,7 +14,9 @@ type SiteSettingRow = RowDataPacket & {
   setting_value: unknown;
 };
 
-export async function getSiteProfileFromDb(): Promise<SiteProfileSettings> {
+// Share one read within a render, but never freeze admin settings at build time.
+export const getSiteProfileFromDb = cache(async (): Promise<SiteProfileSettings> => {
+  noStore();
   const pool = getDbPool();
   const [rows] = await pool.query<SiteSettingRow[]>(
     'SELECT setting_value FROM site_settings WHERE setting_key = ? LIMIT 1',
@@ -32,7 +36,7 @@ export async function getSiteProfileFromDb(): Promise<SiteProfileSettings> {
   }
 
   return normalizeSiteProfileSettings(rawValue as Partial<SiteProfileSettings>);
-}
+});
 
 export async function saveSiteProfileToDb(settings: SiteProfileSettings): Promise<SiteProfileSettings> {
   const normalized = normalizeSiteProfileSettings(settings);

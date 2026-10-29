@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 
 import { isAdminRequestAuthorized, unauthorizedAdminResponse } from '@/lib/admin-auth';
 import { getSiteProfileFromDb, saveSiteProfileToDb } from '@/lib/site-profile-repository';
@@ -28,6 +29,7 @@ export async function PUT(request: Request) {
       ...normalized,
       updatedAt: new Date().toISOString()
     });
+    revalidatePath('/', 'layout');
     return NextResponse.json({ ok: true, settings: saved });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown DB error';
