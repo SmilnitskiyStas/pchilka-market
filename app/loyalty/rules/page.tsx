@@ -1,6 +1,10 @@
 ﻿import type { Metadata } from 'next';
 import { promises as fs } from 'fs';
 import path from 'path';
+import PageArticles from '@/components/page-articles';
+import { getBlogContentFromDb } from '@/lib/blog-content-repository';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   title: 'Правила програми лояльності | Pchilka Market',
@@ -88,7 +92,11 @@ async function readRulesBlocks(): Promise<RuleBlock[]> {
 }
 
 export default async function LoyaltyRulesPage() {
-  const blocks = await readRulesBlocks();
+  const content = await getBlogContentFromDb().catch(() => ({ entries: [] }));
+  const articles = content.entries
+    .filter((entry) => entry.pagePath === '/loyalty/rules' && entry.status === 'published')
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  const blocks = articles.length ? [] : await readRulesBlocks();
 
   return (
     <main className="site-container min-h-screen px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
@@ -96,12 +104,12 @@ export default async function LoyaltyRulesPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Програма лояльності</p>
         <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl lg:text-4xl">Правила програми</h1>
 
-        {blocks.length === 0 ? (
+        {articles.length ? <div className="mt-6"><PageArticles articles={articles} variant="inline" /></div> : blocks.length === 0 ? (
           <p className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-            Файл правил поки що не знайдено у <span className="font-semibold">public/img/loyalty_programm/program_rules.txt</span>.
+            Правила програми лояльності поки що не опубліковані.
           </p>
         ) : (
-          <div className="mt-6 space-y-3 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+          <div className="mt-6 space-y-3">
             {blocks.map((block, index) => {
               if (block.type === 'section') {
                 return (

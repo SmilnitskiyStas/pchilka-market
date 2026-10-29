@@ -17,7 +17,8 @@ function validateEntries(entries: ContentEntry[]): string | null {
     if (entry.pagePath && Object.values(legacyContentPaths).includes(entry.pagePath)) return 'Для статті оберіть Блог, Новини мережі або Благодійність як місце публікації.';
     if (entry.placement !== undefined && !contentPlacements.includes(entry.placement)) return 'Невідоме розміщення тексту.';
     if (entry.placement === 'before-form' && (!entry.pagePath || !formContentPages.includes(entry.pagePath))) return 'Розміщення над формою доступне лише для сторінок співпраці.';
-    if (entry.pagePath && dedicatedArticlePages.includes(entry.pagePath) && entry.placement && entry.placement !== 'after-content') return 'На цій сторінці текст відображається в основному вмісті.';
+    // Rules may already have before-content saved by the old editor; retain those entries on save.
+    if (entry.pagePath && entry.pagePath !== '/loyalty/rules' && dedicatedArticlePages.includes(entry.pagePath) && entry.placement && entry.placement !== 'after-content') return 'На цій сторінці текст відображається в основному вмісті.';
     const title = String(entry.title ?? '').trim();
     const excerpt = String(entry.excerpt ?? '').trim();
     const body = String(entry.body ?? '').trim();

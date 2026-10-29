@@ -526,6 +526,7 @@ export default function AdminContentManager() {
                 </optgroup>
               </select>
               <p className="mt-2 text-xs text-slate-600">{pagePath ? 'Текст відображатиметься повністю на обраній сторінці. Обкладинка й короткий опис необов’язкові.' : 'Стаття матиме окрему адресу та картку в обраному розділі. Додайте короткий опис і обкладинку.'} Чернетки доступні лише в адмінпанелі.</p>
+              {pagePath === '/loyalty/rules' ? <p className="mt-2 text-xs text-slate-600">Правила відображаються одразу під заголовком сторінки в одному блоці. Попереднє розміщення «На початку» або «Наприкінці сторінки» не створює окремого блоку.</p> : null}
             </div>
 
             {pagePath && !dedicatedArticlePages.includes(pagePath) ? <div>
