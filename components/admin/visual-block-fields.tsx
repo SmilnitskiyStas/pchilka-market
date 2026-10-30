@@ -58,7 +58,8 @@ function MediaField({ value, kind, onChange, onBusy }: { value: string; kind: 'i
     finally { setBusy(false); onBusy(false); }
   }
   return <div>
-    <label className="block text-sm">{kind === 'video' ? 'Відеофайл MP4 / WebM' : 'Зображення'}<input className={input} value={value} placeholder="/media/… або https://…" onChange={(event) => onChange(event.target.value)} /></label>
+    <label className="block text-sm">{kind === 'video' ? 'Посилання YouTube або відеофайл MP4 / WebM' : 'Зображення'}<input className={input} value={value} placeholder="/media/… або https://…" onChange={(event) => onChange(event.target.value)} /></label>
+    {kind === 'video' ? <p className="mt-1 text-xs text-slate-600">Вставте посилання на відео YouTube: youtube.com/watch?v=…, youtu.be/…, Shorts або трансляцію. Також можна обрати чи завантажити MP4 / WebM нижче.</p> : null}
     <fieldset disabled={busy} className="mt-2 flex flex-wrap gap-2"><button type="button" className={button} onClick={() => void library()}>Обрати з бібліотеки</button>
       <label className={`${button} cursor-pointer`}>Завантажити файл<input aria-label="Завантажити медіафайл" type="file" accept={kind === 'video' ? '.mp4,.webm' : '.jpg,.jpeg,.png,.webp,.avif,.gif'} className="sr-only" onChange={(event) => { void upload(event.target.files?.[0]); event.target.value = ''; }} /></label>
     </fieldset>

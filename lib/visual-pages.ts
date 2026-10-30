@@ -1,3 +1,5 @@
+import { getYouTubeEmbedUrl, isYouTubeUrl } from '@/lib/youtube-video';
+
 export type VisualBlock =
   | { id: string; type: 'heading'; text: string }
   | { id: string; type: 'text'; text: string }
@@ -64,7 +66,11 @@ export function validateVisualPage(raw: unknown, publishing = false): VisualPage
       if (block.form !== 'rental' || ++formCount > 1) throw new Error('Доступна одна форма оренди на сторінці.');
       return { id: block.id, type: 'form', form: 'rental' };
     }
-    if (block.type === 'video') return { id: block.id, type: 'video', src: urlField(block.src), title: textField(block.title, 200) };
+    if (block.type === 'video') {
+      const src = urlField(typeof block.src === 'string' ? block.src.trim() : block.src);
+      if (isYouTubeUrl(src) && !getYouTubeEmbedUrl(src)) throw new Error('Вкажіть посилання на окреме відео YouTube: watch, youtu.be, shorts, live або embed.');
+      return { id: block.id, type: 'video', src, title: textField(block.title, 200) };
+    }
     if (block.type === 'columns') {
       const left = textField(block.left), right = textField(block.right);
       if (publishing && (!left.trim() || !right.trim())) throw new Error('Заповніть обидві колонки.');

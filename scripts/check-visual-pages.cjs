@@ -88,6 +88,44 @@ async function main() {
   const props = preview => ({params:Promise.resolve({slug:draft.slug}),searchParams:Promise.resolve(preview ? {preview:'1'} : {})});
   const {renderToStaticMarkup} = require('react-dom/server');
   const Body = require('../components/visual-page-body.tsx').default;
+  const youtube = require('../lib/youtube-video.ts');
+  const videoId = 'HNGyDiMRKS4';
+  const youtubeLinks = [
+    `https://www.youtube.com/watch?v=${videoId}&si=share`,
+    `https://youtu.be/${videoId}?si=share`,
+    `https://m.youtube.com/watch?v=${videoId}`,
+    `https://www.youtube.com/shorts/${videoId}`,
+    `https://www.youtube.com/live/${videoId}`,
+    `https://www.youtube.com/embed/${videoId}?autoplay=1`,
+    `https://www.youtube-nocookie.com/embed/${videoId}`
+  ];
+  const withVideo = (src) => ({slug:'youtube-test',title:'YouTube',description:'',blocks:[{id:'video',type:'video',src,title:'Наше відео'}]});
+  for (const src of youtubeLinks) {
+    assert.equal(youtube.getYouTubeEmbedUrl(src),`https://www.youtube.com/embed/${videoId}`);
+    const page = model.validateVisualPage(withVideo(`  ${src}  `),true);
+    assert.equal(page.blocks[0].src,src);
+    for (const editing of [true,false]) {
+      const html = renderToStaticMarkup(require('react').createElement(Body,{page,editing}));
+      assert.ok(html.includes('<iframe') && html.includes(`/embed/${videoId}`) && html.includes('Наше відео'));
+      assert.ok(!html.includes('<video') && !html.includes('autoplay=1') && !html.includes('si=share'));
+    }
+  }
+  for (const src of ['https://youtube.com/playlist?list=test','https://youtu.be/short','https://youtube.com/watch?v=bad','https://youtube.com/embed/HNGyDiMRKS4/extra']) {
+    assert.equal(youtube.getYouTubeEmbedUrl(src),null);
+    assert.throws(()=>model.validateVisualPage(withVideo(src),true),/YouTube/);
+  }
+  for (const src of ['https://youtube.com.evil.test/watch?v=HNGyDiMRKS4','https://user:pass@youtube.com/watch?v=HNGyDiMRKS4','javascript:alert(1)','https://youtube.com:444/watch?v=HNGyDiMRKS4']) {
+    assert.equal(youtube.getYouTubeEmbedUrl(src),null);
+    assert.ok(!renderToStaticMarkup(require('react').createElement(Body,{page:withVideo(src)})).includes('<iframe'));
+  }
+  for (const src of ['/media/demo.mp4','/media/demo.webm','https://example.com/demo.mp4']) {
+    const html = renderToStaticMarkup(require('react').createElement(Body,{page:model.validateVisualPage(withVideo(src),true)}));
+    assert.ok(html.includes('<video') && !html.includes('<iframe'));
+  }
+  const ytSaved = await repo.saveVisualPage(withVideo(youtubeLinks[0]),0,'publish');
+  assert.equal((await repo.getVisualPage('youtube-test')).published.blocks[0].src,youtubeLinks[0]);
+  assert.equal(ytSaved.published.blocks[0].type,'video');
+  console.log('PASS: YouTube watch/share/Shorts/live/embed, safe iframe rendering in preview and public pages, published persistence, invalid URLs and MP4/WebM compatibility.');
   const extendedHtml = renderToStaticMarkup(require('react').createElement(Body,{page:extended,editing:true}));
   assert.ok(extendedHtml.includes('<strong>Ліва</strong>') && extendedHtml.includes('<em>Права</em>'));
   assert.ok(extendedHtml.includes('<video') && extendedHtml.includes('visual-page-columns') && !extendedHtml.includes('<form'));
