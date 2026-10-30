@@ -114,6 +114,15 @@ async function main() {
   assert.ok(withVideo.startsWith(originalBody)&&withVideo.includes(embed)&&!withVideo.includes('onload'));
   assert.equal(nodes(tree,n=>n.props?.id==='content-youtube-input').length,0);
   assert.ok(render(ArticleBody({body:withVideo})).includes('<iframe'));
+  button(tree,'PDF').props.onClick(); tree=editor();
+  const PdfField = require('../components/admin/pdf-media-field.tsx').default;
+  nodes(tree,n=>n.type===PdfField)[0].props.onChange('/media/terms.pdf'); tree=editor();
+  nodes(tree,n=>n.props?.id==='content-pdf-title')[0].props.onChange({target:{value:'Умови програми'}});tree=editor();
+  button(tree,'Вставити PDF').props.onClick();tree=editor();
+  const withPdf=nodes(tree,n=>n.props?.id==='content-body')[0].props.value;
+  assert.ok(withPdf.includes('[Умови програми](/media/terms.pdf)')&&withPdf.includes(embed));
+  const renderedPdf=render(ArticleBody({body:withPdf}));
+  assert.ok(renderedPdf.includes('src="/media/terms.pdf"')&&renderedPdf.includes('Відкрити PDF'));
   console.log('PASS: YouTube URL/iframe insertion, multi-line embeds, multiple videos, preserved surrounding text, rejected external frames and sanitized attributes.');
   console.log('Page content: inline own-brand articles, image URLs, draft isolation and explicit rental forms passed.');
 }

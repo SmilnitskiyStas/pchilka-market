@@ -1,8 +1,11 @@
+import PdfDocument from '@/components/pdf-document';
+import { isPdfDocumentUrl } from '@/lib/pdf-document';
 import type { CSSProperties, ReactNode } from 'react';
 import { getYouTubeEmbedUrl, getYouTubeInputEmbedUrl } from '@/lib/youtube-video';
 
 type MarkdownBlock =
   | { type: 'youtube'; src: string }
+  | { type: 'pdf'; src: string; title: string }
   | { type: 'h2'; text: string }
   | { type: 'h3'; text: string }
   | { type: 'ul'; items: string[] }
@@ -133,6 +136,13 @@ function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
       continue;
     }
 
+    const documentLink = line.match(markdownLinkRegex);
+    const documentSrc = documentLink?.[2] ?? line;
+    if (isPdfDocumentUrl(documentSrc)) {
+      blocks.push({ type: 'pdf', src: documentSrc, title: documentLink?.[1] || 'PDF-документ' });
+      i += 1; continue;
+    }
+
     const linkedVideo = line.match(/^\[[^\]]*\]\((https:\/\/[^)]+)\)$/);
     const video = getYouTubeEmbedUrl(linkedVideo?.[1] ?? line);
     if (video) { blocks.push({ type: 'youtube', src: video }); i += 1; continue; }
@@ -236,6 +246,7 @@ function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
 export default function ArticleBody({ body }: { body: string }) {
   const blocks = parseMarkdownBlocks(body);
   return <div className="mt-6 space-y-4 text-base leading-relaxed text-slate-800">{blocks.map((block, index) => {
+              if (block.type === 'pdf') return <PdfDocument key={`pdf-${index}`} src={block.src} title={block.title} />;
               if (block.type === 'youtube') return <iframe key={`youtube-${index}`} src={block.src} title="Відео YouTube" loading="lazy" className="aspect-video min-h-[200px] w-full rounded-2xl border-0" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen />;
               if (block.type === 'h2') return <h2 key={`h2-${index}`} className="text-2xl font-bold text-slate-900">{renderInlineMarkdown(block.text)}</h2>;
               if (block.type === 'h3') return <h3 key={`h3-${index}`} className="text-xl font-semibold text-slate-900">{renderInlineMarkdown(block.text)}</h3>;

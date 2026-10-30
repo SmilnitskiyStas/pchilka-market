@@ -48,16 +48,17 @@ async function main() {
     {id:'cols',type:'columns',left:'**Ліва**',right:'_Права_'},
     {id:'hero',type:'banner',title:'Банер',text:'Опис',src:'/img/logo.png',label:'Далі',href:'/cooperation/rental'},
     {id:'film',type:'video',src:'/media/demo.mp4',title:'Наше відео'},
+    {id:'document',type:'pdf',src:'/media/rules.pdf',title:'Правила'},
     {id:'form',type:'form',form:'rental'}
   ];
   const extended = {slug:'blocks-test',title:'Блоки',description:'',blocks:extraBlocks};
   assert.deepEqual(model.validateVisualPage(extended,true).blocks,extraBlocks);
   assert.deepEqual(model.validateVisualPage({...extended,slug:'rental-intro'},true).blocks,extraBlocks);
-  assert.throws(()=>model.validateVisualPage({...extended,blocks:[extraBlocks[3],{...extraBlocks[3],id:'second-form'}]},true));
+  assert.throws(()=>model.validateVisualPage({...extended,blocks:[extraBlocks[4],{...extraBlocks[4],id:'second-form'}]},true));
   assert.throws(()=>model.validateVisualPage({...extended,blocks:[{...extraBlocks[2],src:'javascript:alert(1)'}]},true));
   assert.throws(()=>model.validateVisualPage({...extended,blocks:[{...extraBlocks[1],href:'',label:'Далі'}]},true));
-  assert.deepEqual(model.reorderVisualBlocks(extraBlocks,'cols','film').map(block=>block.id),['hero','film','cols','form']);
-  assert.deepEqual(extraBlocks.map(block=>block.id),['cols','hero','film','form']);
+  assert.deepEqual(model.reorderVisualBlocks(extraBlocks,'cols','film').map(block=>block.id),['hero','film','cols','document','form']);
+  assert.deepEqual(extraBlocks.map(block=>block.id),['cols','hero','film','document','form']);
   const request = (method, body, session = cookie) => new Request('http://localhost/api/admin/pages', {
     method, headers:{'Content-Type':'application/json', ...(session ? {cookie:session} : {})}, ...(body ? {body:JSON.stringify(body)} : {})
   });

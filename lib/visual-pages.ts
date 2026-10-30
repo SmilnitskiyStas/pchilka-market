@@ -1,3 +1,4 @@
+import { isPdfDocumentUrl } from '@/lib/pdf-document';
 import { getYouTubeEmbedUrl, isYouTubeUrl } from '@/lib/youtube-video';
 
 export type VisualBlock =
@@ -5,6 +6,7 @@ export type VisualBlock =
   | { id: string; type: 'text'; text: string }
   | { id: string; type: 'image'; src: string; alt: string }
   | { id: string; type: 'video'; src: string; title: string }
+  | { id: string; type: 'pdf'; src: string; title: string }
   | { id: string; type: 'columns'; left: string; right: string }
   | { id: string; type: 'banner'; title: string; text: string; src: string; label: string; href: string }
   | { id: string; type: 'form'; form: 'rental' }
@@ -65,6 +67,11 @@ export function validateVisualPage(raw: unknown, publishing = false): VisualPage
     if (block.type === 'form') {
       if (block.form !== 'rental' || ++formCount > 1) throw new Error('Доступна одна форма оренди на сторінці.');
       return { id: block.id, type: 'form', form: 'rental' };
+    }
+    if (block.type === 'pdf') {
+      const src = urlField(typeof block.src === 'string' ? block.src.trim() : block.src);
+      if (src && !isPdfDocumentUrl(src)) throw new Error('Вкажіть посилання на PDF-файл від / або https://.');
+      return { id: block.id, type: 'pdf', src, title: textField(block.title, 200) };
     }
     if (block.type === 'video') {
       const src = urlField(typeof block.src === 'string' ? block.src.trim() : block.src);

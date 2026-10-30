@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import PdfMediaField from '@/components/admin/pdf-media-field';
 import type { VisualBlock } from '@/lib/visual-pages';
 
 const input = 'mt-1 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm';
@@ -80,6 +81,7 @@ export default function VisualBlockFields({ block, onChange, onBusy }: { block: 
   if (block.type === 'text') return <RichField label="Текст" value={block.text} onChange={(text) => onChange({ ...block, text })} />;
   if (block.type === 'heading') return <label className="block text-sm">Текст заголовка<input className={input} value={block.text} maxLength={30000} onChange={(event) => onChange({ ...block, text: event.target.value })} /></label>;
   if (block.type === 'image') return <><MediaField onBusy={onBusy} value={block.src} kind="image" onChange={(src) => onChange({ ...block, src })} /><label className="block text-sm">Опис зображення<input className={input} value={block.alt} maxLength={500} onChange={(event) => onChange({ ...block, alt: event.target.value })} /></label></>;
+  if (block.type === 'pdf') return <><PdfMediaField value={block.src} onChange={src => onChange({ ...block, src })} onBusy={onBusy} /><label className="block text-sm">Назва PDF-документа<input className={input} value={block.title} maxLength={200} onChange={event => onChange({ ...block, title: event.target.value })} /></label></>;
   if (block.type === 'video') return <><MediaField onBusy={onBusy} value={block.src} kind="video" onChange={(src) => onChange({ ...block, src })} /><label className="block text-sm">Назва відео<input className={input} value={block.title} maxLength={200} onChange={(event) => onChange({ ...block, title: event.target.value })} /></label></>;
   if (block.type === 'columns') return <><RichField label="Ліва колонка" value={block.left} onChange={(left) => onChange({ ...block, left })} /><RichField label="Права колонка" value={block.right} onChange={(right) => onChange({ ...block, right })} /></>;
   if (block.type === 'form') return <p className="text-sm text-slate-600">Готова форма запиту на оренду. Вона використовує наявні перевірки, вкладення та надсилання заявок. На сторінці оренди форма вже є.</p>;

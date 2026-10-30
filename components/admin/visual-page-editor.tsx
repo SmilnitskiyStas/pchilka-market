@@ -10,7 +10,7 @@ import VisualPagePublishing from '@/components/admin/visual-page-publishing';
 import { visualPageTemplates, copyVisualPage } from '@/lib/visual-page-templates';
 
 const emptyPage = (): VisualPage => ({ slug: '', title: '', description: '', blocks: [] });
-const blockLabels = { heading: 'Заголовок', text: 'Текст', image: 'Зображення', button: 'Кнопка', columns: 'Дві колонки', banner: 'Банер', video: 'Відео', form: 'Форма оренди' };
+const blockLabels = { heading: 'Заголовок', text: 'Текст', image: 'Зображення', button: 'Кнопка', columns: 'Дві колонки', banner: 'Банер', video: 'Відео', pdf: 'PDF-документ', form: 'Форма оренди' };
 const inputClass = 'mt-1 w-full rounded-xl border border-slate-300 bg-white p-3 text-sm disabled:bg-slate-100';
 const buttonClass = 'rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50';
 
@@ -90,7 +90,7 @@ export default function VisualPageEditor({ canWrite, initialSlug = '' }: { canWr
     let block: VisualBlock;
     if (type === 'image') block = { id, type, src: '', alt: '' };
     else if (type === 'columns') block = { id, type, left: '', right: '' };
-    else if (type === 'video') block = { id, type, src: '', title: '' };
+    else if (type === 'video' || type === 'pdf') block = { id, type, src: '', title: '' };
     else if (type === 'banner') block = { id, type, title: 'Новий банер', text: '', src: '', label: '', href: '' };
     else if (type === 'form') block = { id, type, form: 'rental' };
     else if (type === 'button') block = { id, type, label: 'Дізнатися більше', href: '' };
@@ -201,7 +201,7 @@ export default function VisualPageEditor({ canWrite, initialSlug = '' }: { canWr
         <section className="rounded-2xl border border-slate-200 p-3">
           <h2 className="font-semibold">Додати блок</h2>
           <div className="mt-3 flex flex-wrap gap-2">{Object.entries(blockLabels).map(([type, label]) => <button key={type} type="button" className={buttonClass} disabled={page.blocks.length >= 100 || (type === 'form' && page.blocks.some((block) => block.type === 'form'))} onClick={() => addBlock(type as VisualBlock['type'])}>+ {label}</button>)}</div>
-          <ol className="mt-4 space-y-2">{page.blocks.map((block, index) => <li key={block.id} onDragOver={(event) => { if (draggedId && canWrite && !busy) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); if (draggedId && canWrite && !busy) { update({ ...page, blocks: reorderVisualBlocks(page.blocks, draggedId, block.id) }); setDraggedId(''); } }}><button type="button" draggable={canWrite && ready && !busy} onDragStart={(event) => { setDraggedId(block.id); event.dataTransfer.setData('text/plain', block.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => setDraggedId('')} aria-label={String(index + 1) + '. ' + blockLabels[block.type] + '. Перетягніть або використайте кнопки Вище та Нижче'} aria-pressed={selectedId === block.id} className={`w-full rounded-xl border p-2 text-left text-sm ${selectedId === block.id ? 'border-brand bg-brand/10' : 'border-slate-200'}`} onClick={() => setSelectedId(block.id)}>{index + 1}. {blockLabels[block.type]}: {'text' in block ? block.text.slice(0, 40) : block.type === 'image' ? block.alt || 'Без опису' : block.type === 'button' ? block.label : block.type === 'video' ? block.title : block.type === 'columns' ? 'Ліва та права' : 'Запит на оренду'}</button></li>)}</ol>
+          <ol className="mt-4 space-y-2">{page.blocks.map((block, index) => <li key={block.id} onDragOver={(event) => { if (draggedId && canWrite && !busy) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); if (draggedId && canWrite && !busy) { update({ ...page, blocks: reorderVisualBlocks(page.blocks, draggedId, block.id) }); setDraggedId(''); } }}><button type="button" draggable={canWrite && ready && !busy} onDragStart={(event) => { setDraggedId(block.id); event.dataTransfer.setData('text/plain', block.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => setDraggedId('')} aria-label={String(index + 1) + '. ' + blockLabels[block.type] + '. Перетягніть або використайте кнопки Вище та Нижче'} aria-pressed={selectedId === block.id} className={`w-full rounded-xl border p-2 text-left text-sm ${selectedId === block.id ? 'border-brand bg-brand/10' : 'border-slate-200'}`} onClick={() => setSelectedId(block.id)}>{index + 1}. {blockLabels[block.type]}: {'text' in block ? block.text.slice(0, 40) : block.type === 'image' ? block.alt || 'Без опису' : block.type === 'button' ? block.label : block.type === 'video' || block.type === 'pdf' ? block.title : block.type === 'columns' ? 'Ліва та права' : 'Запит на оренду'}</button></li>)}</ol>
           {!page.blocks.length ? <p className="mt-3 text-sm text-slate-500">Додайте перший блок.</p> : null}
         </section>
         {selected ? <section className="space-y-3 rounded-2xl border border-brand/30 p-3">

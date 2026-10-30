@@ -1,6 +1,8 @@
 ﻿'use client';
 
 import Link from 'next/link';
+import PdfMediaField from '@/components/admin/pdf-media-field';
+import { createPdfMarkdown } from '@/lib/pdf-document';
 import { getYouTubeInputEmbedUrl } from '@/lib/youtube-video';
 import { insertContentImage } from '@/lib/content-images';
 import { contentPages, legacyContentPaths, entryPagePath, formContentPages, dedicatedArticlePages } from '@/lib/menu-content';
@@ -148,6 +150,12 @@ export default function AdminContentManager() {
   const [isSlugManual, setIsSlugManual] = useState(false);
   const [excerpt, setExcerpt] = useState('');
   const [body, setBody] = useState('');
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [pdfSrc, setPdfSrc] = useState('');
+  const [pdfTitle, setPdfTitle] = useState('');
+  const [pdfError, setPdfError] = useState('');
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const pdfSelection = useRef({ start: 0, end: 0 });
   const [youtubeOpen, setYoutubeOpen] = useState(false);
   const [youtubeInput, setYoutubeInput] = useState('');
   const [youtubeError, setYoutubeError] = useState('');
@@ -263,6 +271,7 @@ export default function AdminContentManager() {
     setExcerpt('');
     setBody('');
     setYoutubeOpen(false); setYoutubeInput(''); setYoutubeError('');
+    setPdfOpen(false); setPdfSrc(''); setPdfTitle(''); setPdfError('');
     setCategoryIds([]);
     setIsCategoryMenuOpen(false);
     setCategorySearch('');
@@ -321,7 +330,24 @@ export default function AdminContentManager() {
     });
   }
 
+  function openPdf() {
+    setYoutubeOpen(false);
+    pdfSelection.current = { start: bodyRef.current?.selectionStart ?? body.length, end: bodyRef.current?.selectionEnd ?? body.length };
+    setPdfOpen(true); setPdfError('');
+  }
+  function insertPdf() {
+    if (pdfBusy) return;
+    try {
+      const markdown = createPdfMarkdown(pdfSrc, pdfTitle);
+      const { start, end } = pdfSelection.current;
+      setBody(previous => `${previous.slice(0, start)}\n\n${markdown}\n\n${previous.slice(end)}`);
+      setIsSaved(false); setPdfOpen(false); setPdfSrc(''); setPdfTitle(''); setPdfError('');
+    } catch (error) { setPdfError(error instanceof Error ? error.message : 'Перевірте PDF-файл.'); }
+  }
+
   function openYoutube() {
+    if (pdfBusy) return;
+    setPdfOpen(false);
     youtubeSelection.current = { start: bodyRef.current?.selectionStart ?? body.length, end: bodyRef.current?.selectionEnd ?? body.length };
     setYoutubeOpen(true); setYoutubeError('');
   }
@@ -469,6 +495,7 @@ export default function AdminContentManager() {
     setExcerpt(entry.excerpt);
     setBody(entry.body);
     setYoutubeOpen(false); setYoutubeInput(''); setYoutubeError('');
+    setPdfOpen(false); setPdfSrc(''); setPdfTitle(''); setPdfError('');
     setCategoryIds(entry.categoryIds);
     setIsCategoryMenuOpen(false);
     setCategorySearch('');
@@ -718,6 +745,7 @@ export default function AdminContentManager() {
                   <li>{'- `- пункт` або `1. пункт` -> списки'}</li>
                   <li>{'- `[текст](https://example.com)` -> посилання'}</li>
                   <li>{'- `![alt|w=640|h=360](/img/path.jpg)` -> зображення з керуванням розміром'}</li>
+                  <li>PDF: кнопка «PDF» або посилання на .pdf окремим рядком; на сторінці буде перегляд документа.</li>
                   <li>YouTube: кнопка «YouTube», посилання окремим рядком або iframe-код із YouTube.</li>
                 </ul>
                 <p className="mt-2">
@@ -735,8 +763,15 @@ export default function AdminContentManager() {
                     {action.label}
                   </button>
                 ))}
+                <button type="button" onClick={openPdf} className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">PDF</button>
                 <button type="button" onClick={openYoutube} className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">YouTube</button>
               </div>
+              {pdfOpen ? <section className="mt-3 space-y-3 rounded-xl border border-brand/30 bg-slate-50 p-3" aria-label="Додати PDF">
+                <PdfMediaField value={pdfSrc} onChange={setPdfSrc} onBusy={setPdfBusy} />
+                <label className="block text-sm font-semibold">Назва документа<input id="content-pdf-title" value={pdfTitle} maxLength={200} onChange={event => setPdfTitle(event.target.value)} placeholder="PDF-документ" className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm" /></label>
+                {pdfError ? <p role="alert" className="text-sm text-red-700">{pdfError}</p> : null}
+                <div className="flex gap-2"><button type="button" disabled={pdfBusy} onClick={insertPdf} className="rounded-full bg-brand px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Вставити PDF</button><button type="button" disabled={pdfBusy} onClick={() => setPdfOpen(false)} className="rounded-full border px-3 py-2 text-sm disabled:opacity-50">Скасувати</button></div>
+              </section> : null}
               {youtubeOpen ? <section className="mt-3 space-y-2 rounded-xl border border-brand/30 bg-slate-50 p-3" aria-label="Додати YouTube">
                 <label className="block text-sm font-semibold">Посилання або iframe-код YouTube<textarea id="content-youtube-input" rows={3} value={youtubeInput} onChange={event => { setYoutubeInput(event.target.value); setYoutubeError(''); }} placeholder="https://youtu.be/… або <iframe src=…></iframe>" className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm" /></label>
                 <p className="text-xs text-slate-600">Підтримуються звичайні посилання, Shorts, трансляції та код «Поділитися → Вставити» з YouTube. Відео буде додано в позицію курсора в тексті.</p>
@@ -829,7 +864,7 @@ export default function AdminContentManager() {
               ) : null}
               <button
                 type="submit"
-                disabled={isSyncing || isLoading || isUploadingImage}
+                disabled={isSyncing || isLoading || isUploadingImage || pdfBusy}
                 className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSyncing ? 'Збереження…' : isEditing ? 'Зберегти зміни' : 'Додати матеріал'}
