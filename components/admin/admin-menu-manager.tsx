@@ -70,6 +70,8 @@ export default function AdminMenuManager({ initialHref = '' }: { initialHref?: s
 
   function row(item: ManagedMenuItem, parent: ManagedMenuItem | null, index: number, length: number) {
     const expanded = expandedItems.has(item.id);
+    const visible = visibleIds.has(item.id);
+    const parentHidden = !!parent && !visibleIds.has(parent.id);
     return <div key={item.id} className="min-w-0 rounded-2xl border border-slate-200 bg-white p-3 sm:p-4" onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
       event.preventDefault(); event.stopPropagation(); const id = event.dataTransfer.getData('text/plain'); if (id && id !== item.id) move(id, parent?.id ?? null, index);
     }}>
@@ -79,6 +81,14 @@ export default function AdminMenuManager({ initialHref = '' }: { initialHref?: s
           <span className="min-w-0 break-words">{item.label}{item.children?.length ? <span className="ml-2 text-xs font-normal text-slate-500">Підпунктів: {item.children.length}</span> : null}</span><span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
         </button>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={parentHidden}
+            aria-label={`${visible ? 'Приховати' : 'Показати'} пункт «${item.label}»`}
+            title={parentHidden ? 'Спочатку увімкніть показ батьківського розділу.' : visible ? 'Приховати пункт разом із підменю після збереження.' : 'Завжди показувати пункт після збереження.'}
+            onClick={() => patch(item.id, { visibility: visible ? 'hidden' : 'always' })}
+            className={`rounded-full border px-3 py-1 text-sm font-semibold disabled:opacity-40 ${visible ? 'border-slate-300 text-slate-700' : 'border-brand text-brand'}`}
+          >{visible ? 'Приховати' : 'Показати'}</button>
           <button type="button" disabled={index === 0} aria-label={`Підняти ${item.label}`} onClick={() => move(item.id, parent?.id ?? null, index - 1)} className="rounded-full border px-3 py-1 disabled:opacity-40">↑</button>
           <button type="button" disabled={index === length - 1} aria-label={`Опустити ${item.label}`} onClick={() => move(item.id, parent?.id ?? null, index + 1)} className="rounded-full border px-3 py-1 disabled:opacity-40">↓</button>
         </div>
@@ -109,6 +119,7 @@ export default function AdminMenuManager({ initialHref = '' }: { initialHref?: s
   return <div>
     <h1 className="text-2xl font-bold text-slate-900">Меню сайту</h1>
     <p className="mt-2 text-sm text-slate-600">Верхній рівень — головний рядок у шапці сайту. Вкладені пункти відкриваються в підменю. Перетягуйте пункти за значок ⠿, використовуйте стрілки або поле «Де розмістити».</p>
+    <p className="mt-2 text-sm text-slate-600">Кнопки «Приховати» / «Показати» доступні біля кожного пункту без розгортання налаштувань. Прихований розділ приховує й підменю. Застосуйте зміни кнопкою «Зберегти меню»; сторінки залишаться доступними за прямими посиланнями.</p>
     <Link href="/" target="_blank" className="mt-3 inline-block text-sm font-semibold text-brand underline">Відкрити сайт ↗</Link>
     {loading ? <p role="status" className="mt-3 text-sm">Завантаження меню...</p> : null}
     {error ? <p role="alert" className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
