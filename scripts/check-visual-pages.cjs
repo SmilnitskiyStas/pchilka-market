@@ -80,6 +80,28 @@ async function main() {
   assert.equal((await post(draft,0)).status,409);
   assert.equal((await api.GET(request('GET',null,reader))).status,200);
 
+  const destinations = require('../app/api/admin/home-slides/destinations/route.ts');
+  const bannerReader = cookieFor('editor',['banners:read']);
+  const bannerWriter = cookieFor('editor',['banners:write']);
+  const destinationRequest = session => new Request('http://localhost/api/admin/home-slides/destinations',{headers:session?{cookie:session}:{}});
+  assert.equal((await destinations.GET(destinationRequest(''))).status,401);
+  assert.equal((await destinations.GET(destinationRequest(cookie))).status,401);
+  const destinationResponse = await destinations.GET(destinationRequest(bannerReader));
+  assert.equal(destinationResponse.status,200);
+  assert.equal(destinationResponse.headers.get('cache-control'),'private, no-store');
+  const destinationData = await destinationResponse.json();
+  assert.deepEqual(destinationData.pages,[{label:extended.title,href:'/pages/blocks-test'}]);
+  assert.ok(!JSON.stringify(destinationData).includes('Публічний текст'), 'Banner users receive destinations, not page documents or draft content');
+  const bannerRepo = require('../lib/banners-repository.ts');
+  bannerRepo.replaceBannersInDb = async items => items;
+  const bannerApi = require('../lib/admin-home-slides-api.ts');
+  const bannerSave = await bannerApi.putHomeSlides(new Request('http://localhost/api/admin/home-slides',{
+    method:'PUT',headers:{cookie:bannerWriter,'Content-Type':'application/json'},body:JSON.stringify({banners:[{id:'test',alt:'Банер',src:'/media/banner.jpg',href:destinationData.pages[0].href}]})
+  }));
+  assert.equal(bannerSave.status,200);
+  assert.equal((await bannerSave.json()).banners[0].href,'/pages/blocks-test');
+  console.log('PASS: banner-only permissions can select published page destinations, no draft leakage, and page URL survives banner save.');
+
   let currentToken;
   const headersPath = require.resolve('next/headers');
   require(headersPath);

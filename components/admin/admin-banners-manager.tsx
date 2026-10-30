@@ -7,6 +7,7 @@ import { isOptimizableVideo, type VideoOptimizationJob } from '@/lib/video-optim
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import type { HomeBanner } from '@/content/home-banners';
+import { isSafePageUrl } from '@/lib/visual-pages';
 import { mainMenu } from '@/content/menu';
 import { doesBannerMatchDate, getBannerPublicationState } from '@/lib/banner-datetime';
 import { useMediaCatalog } from '@/lib/use-media-catalog';
@@ -285,6 +286,9 @@ export default function AdminBannersManager() {
   const [alt, setAlt] = useState('');
   const [src, setSrc] = useState('');
   const [selectedPageHref, setSelectedPageHref] = useState('');
+  const [createdPages, setCreatedPages] = useState<BannerLinkOption[]>([]);
+  const [pagesLoading, setPagesLoading] = useState(true);
+  const [pagesError, setPagesError] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [optimizeVideo, setOptimizeVideo] = useState(false);
   const [keepOriginalVideo, setKeepOriginalVideo] = useState(true);
@@ -324,8 +328,31 @@ export default function AdminBannersManager() {
     };
   }, []);
 
+  async function loadCreatedPages(signal?: AbortSignal) {
+    setPagesLoading(true); setPagesError('');
+    try {
+      const response = await fetch('/api/admin/home-slides/destinations', { cache: 'no-store', signal });
+      const payload = await response.json() as { ok?: boolean; pages?: BannerLinkOption[]; error?: string };
+      if (!response.ok || !payload.ok || !Array.isArray(payload.pages)) throw new Error(payload.error || 'Не вдалося завантажити створені сторінки.');
+      if (!signal?.aborted) setCreatedPages(payload.pages);
+    } catch (error) {
+      if (!signal?.aborted) setPagesError(error instanceof Error ? error.message : 'Не вдалося завантажити створені сторінки.');
+    } finally { if (!signal?.aborted) setPagesLoading(false); }
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadCreatedPages(controller.signal);
+    return () => controller.abort();
+  }, []);
+
   const sortedBanners = useMemo(() => [...banners], [banners]);
-  const linkOptions = useMemo(() => buildBannerLinkOptions(), []);
+  const linkOptions = useMemo(() => {
+    const options = [...buildBannerLinkOptions(), ...createdPages.map((page) => ({
+      ...page, label: `Створена сторінка: ${page.label} — ${page.href}`
+    }))];
+    return Array.from(new Map(options.map((page) => [page.href, page])).values());
+  }, [createdPages]);
   const isEditing = editingBannerId !== null;
   const filteredMediaAssets = useMemo(() => {
     const normalizedQuery = mediaSearchQuery.trim().toLowerCase();
@@ -478,6 +505,11 @@ export default function AdminBannersManager() {
     if (isVideoProcessing || isSyncing) return;
     setFormError('');
 
+    if (selectedPageHref.trim() && !isSafePageUrl(selectedPageHref.trim())) {
+      setFormError('Вкажіть посилання від / або повну адресу https://.');
+      return;
+    }
+
     const normalizedAlt = alt.trim();
     const normalizedSrc = normalizeImagePathInput(src);
     let finalSrc = '';
@@ -534,7 +566,7 @@ export default function AdminBannersManager() {
               ...banner,
               alt: normalizedAlt,
               src: finalSrc,
-              href: selectedPageHref || undefined,
+              href: selectedPageHref.trim() || undefined,
               isActive,
               publishFrom: publishFrom || undefined,
               publishTo: publishTo || undefined
@@ -548,7 +580,7 @@ export default function AdminBannersManager() {
           id: `banner_${Date.now()}`,
           alt: normalizedAlt,
           src: finalSrc,
-          href: selectedPageHref || undefined,
+          href: selectedPageHref.trim() || undefined,
           isActive,
           publishFrom: publishFrom || undefined,
           publishTo: publishTo || undefined
@@ -914,12 +946,19 @@ export default function AdminBannersManager() {
                   className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none transition focus:border-brand"
                 >
                   <option value="">Без посилання</option>
+                  {selectedPageHref && !linkOptions.some((option) => option.href === selectedPageHref) ? <option value={selectedPageHref}>Власне посилання: {selectedPageHref}</option> : null}
                   {linkOptions.map((option) => (
                     <option key={option.href} value={option.href}>
                       {option.label}
                     </option>
                   ))}
                 </select>
+                <p className="mt-2 text-xs text-slate-600">Тут доступні опубліковані сторінки з «Сторінки та шаблони». Спочатку опублікуйте сторінку в admin/pages, потім оновіть список.</p>
+                <button type="button" disabled={pagesLoading} onClick={() => void loadCreatedPages()} className="mt-2 rounded-full border border-slate-300 px-3 py-1 text-xs disabled:opacity-50">{pagesLoading ? 'Завантаження сторінок…' : 'Оновити список сторінок'}</button>
+                {pagesError ? <p role="alert" className="mt-2 text-xs text-red-700">{pagesError} Можна повторити завантаження або вказати адресу вручну.</p> : null}
+                {!pagesLoading && !pagesError && createdPages.length === 0 ? <p className="mt-2 text-xs text-slate-600">Створених опублікованих сторінок ще немає.</p> : null}
+                <label htmlFor="banner-link-url" className="mt-3 block text-sm font-semibold text-slate-900">Адреса переходу (можна вказати вручну)</label>
+                <input id="banner-link-url" value={selectedPageHref} onChange={(event) => setSelectedPageHref(event.target.value)} placeholder="/pages/nazva-storinky або https://…" className="mt-1.5 w-full rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-brand" />
               </div>
 
               <label className="flex items-center gap-2 text-sm text-slate-800">
