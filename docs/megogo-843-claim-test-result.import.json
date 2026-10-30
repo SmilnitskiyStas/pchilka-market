@@ -13,7 +13,7 @@
   "\n",
   "        String payload = \"{\\\"campaignKey\\\":\\\"megogo-843-test\\\",\\\"loyaltyCode\\\":\\\"${loyaltyCode}\\\",\\\"checkTotal\\\":${total},\\\"orderCode\\\":\\\"${orderCode}\\\",\\\"storeCode\\\":\\\"${storeCode}\\\",\\\"workplaceId\\\":\\\"${workplaceId}\\\",\\\"ruleCode\\\":843}\"\n",
   "\n",
-  "        connection = (java.net.HttpURLConnection) new java.net.URL('https://pchilka-new.eatshock.com/api/pos/megogo/claim').openConnection()\n",
+  "        connection = (java.net.HttpURLConnection) new java.net.URL('https://pchilka-market.ua/api/pos/megogo/claim').openConnection()\n",
   "        connection.setRequestMethod('POST')\n",
   "        connection.setConnectTimeout(3000)\n",
   "        connection.setReadTimeout(3000)\n",

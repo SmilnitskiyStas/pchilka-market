@@ -9,7 +9,7 @@ if (!process.env.MARKETING_SOURCE_CONNECTION_FILE && fs.existsSync(defaultConnec
   process.env.MARKETING_SOURCE_CONNECTION_FILE = defaultConnectionFile;
 }
 if (!process.env.POS_ARCHIVE_API_URL) {
-  process.env.POS_ARCHIVE_API_URL = 'https://test.pchilka-market.ua/api/analytics/pos-archive/ingest';
+  process.env.POS_ARCHIVE_API_URL = 'https://pchilka-market.ua/api/analytics/pos-archive/ingest';
 }
 if (!process.env.POS_ARCHIVE_INGEST_SECRET) {
   const dockerEnvPath = path.join(process.cwd(), '.env.docker');

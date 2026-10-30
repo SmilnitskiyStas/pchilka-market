@@ -8,6 +8,7 @@ import { ConfirmDirectionsLink } from '@/components/confirm-directions-link';
 import PizzaMenuGrid, { type PizzaItem } from '@/components/pizza-menu-grid';
 import { getOwnBrandItemBySlug, ownBrandItems } from '@/content/own-brand';
 import { listOwnBrandPizzas } from '@/lib/own-brand-pizzas';
+import { getPublicPizzaStores } from '@/lib/own-brand-pizza-stores';
 
 // Pizzas are edited at runtime in the admin panel, after the site is built.
 export const dynamic = 'force-dynamic';
@@ -22,16 +23,6 @@ type OwnBrandContent = {
   title: string;
   paragraphs: string[];
   videoEmbedUrl: string | null;
-};
-
-type PizzaStoreGroup = {
-  city: string;
-  addresses: string[];
-};
-
-type PizzaStoreContent = {
-  title: string;
-  groups: PizzaStoreGroup[];
 };
 
 export async function generateStaticParams() {
@@ -93,37 +84,6 @@ async function readOwnBrandContent(fileName: string): Promise<OwnBrandContent | 
   }
 }
 
-async function readPizzaStoreContent(): Promise<PizzaStoreContent | null> {
-  const filePath = path.join(process.cwd(), 'public', 'img', 'own_brand', 'pizza_and_coffee', 'pizza_store.txt');
-
-  try {
-    const raw = await fs.readFile(filePath, 'utf8');
-    const lines = raw
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    if (lines.length === 0) return null;
-
-    const [title, ...rest] = lines;
-    const groups: PizzaStoreGroup[] = [];
-    let current: PizzaStoreGroup | null = null;
-
-    rest.forEach((line) => {
-      if (/^(м\.|с\.|с-ще)/i.test(line)) {
-        current = { city: line, addresses: [] };
-        groups.push(current);
-      } else if (current) {
-        current.addresses.push(line);
-      }
-    });
-
-    return { title, groups };
-  } catch {
-    return null;
-  }
-}
-
 async function readPizzaList(): Promise<PizzaItem[]> {
   const pizzas = await listOwnBrandPizzas();
 
@@ -153,7 +113,7 @@ export default async function OwnBrandItemPage({ params }: OwnBrandItemPageProps
   }
 
   const content = item.contentFileName ? await readOwnBrandContent(item.contentFileName) : null;
-  const pizzaStores = slug === 'pizza-coffeehouse' ? await readPizzaStoreContent() : null;
+  const pizzaStores = slug === 'pizza-coffeehouse' ? await getPublicPizzaStores().catch(() => null) : null;
   const pizzaItems = slug === 'pizza-coffeehouse' ? await readPizzaList() : [];
   const pageTitle = content?.title ?? item.title;
   const pageParagraphs = content?.paragraphs ?? [item.description];
@@ -210,7 +170,7 @@ export default async function OwnBrandItemPage({ params }: OwnBrandItemPageProps
             </div>
 
             <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-6">
-              <h2 className="text-xl font-bold text-slate-900">{pizzaStores?.title ?? 'Магазини з піцою'}</h2>
+              <h2 className="text-xl font-bold text-slate-900">Магазини з піцою</h2>
               {pizzaStores && pizzaStores.groups.length > 0 ? (
                 <div className="mt-4 columns-1 gap-4 sm:columns-2">
                   {pizzaStores.groups.map((group) => (
@@ -244,7 +204,7 @@ export default async function OwnBrandItemPage({ params }: OwnBrandItemPageProps
                   ))}
                 </div>
               ) : (
-                <p className="mt-3 text-sm text-slate-600">Список магазинів поки що не знайдено.</p>
+                <p className="mt-3 text-sm text-slate-600">{pizzaStores ? 'Наразі немає доступних магазинів з піцою.' : 'Не вдалося завантажити список магазинів.'}</p>
               )}
             </div>
           </>

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import { createIncomingRequestInDb } from '@/lib/incoming-requests-repository';
+import { createIncomingRequestInDb, IncomingRequestReplayError, isValidSubmissionKey } from '@/lib/incoming-requests-repository';
 import { isIncomingRequestType, normalizeIncomingRequestInput, type IncomingRequestCreateInput } from '@/lib/incoming-requests';
 import { getCareerTelegramSettings } from '@/lib/career-telegram-settings-repository';
 
@@ -52,11 +52,14 @@ function validatePayload(payload: IncomingRequestCreateInput): string | null {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as IncomingRequestCreateInput;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return NextResponse.json({ ok: false, error: 'Invalid request body.' }, { status: 400 });
     const validationError = validatePayload(body);
     if (validationError) {
       return NextResponse.json({ ok: false, error: validationError }, { status: 400 });
     }
 
+    const submissionKey = request.headers.get('Idempotency-Key')?.trim();
+    if (submissionKey !== undefined && !isValidSubmissionKey(submissionKey)) return NextResponse.json({ ok: false, error: 'Некоректний ключ відправлення.' }, { status: 400 });
     let input = body;
     if (body.requestType === 'career_application') {
       const normalized = normalizeIncomingRequestInput(body);
@@ -80,9 +83,10 @@ export async function POST(request: Request) {
         }
       };
     }
-    const created = await createIncomingRequestInDb(input);
+    const created = await createIncomingRequestInDb(input, submissionKey);
     return NextResponse.json({ ok: true, request: created });
   } catch (error) {
+    if (error instanceof IncomingRequestReplayError) return NextResponse.json({ ok: false, error: error.message }, { status: error.status, ...(error.status === 503 ? { headers: { 'Retry-After': '1' } } : {}) });
     const message = error instanceof Error ? error.message : 'Unknown DB error';
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }

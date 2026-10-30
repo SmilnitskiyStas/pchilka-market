@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import OwnBrandImageCatalog from '@/components/admin/own-brand-image-catalog';
+import OwnBrandPizzaStoresManager from '@/components/admin/own-brand-pizza-stores-manager';
 
 type OwnBrandPizzaRecord = {
   id: string;
@@ -47,6 +48,7 @@ export default function AdminOwnBrandManager() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [imagePizzaId, setImagePizzaId] = useState<string | null>(null);
+  const [expandedPizzaIds, setExpandedPizzaIds] = useState<Set<string>>(() => new Set());
 
   async function loadPizzas() {
     setIsLoading(true);
@@ -59,6 +61,7 @@ export default function AdminOwnBrandManager() {
       }
 
       setPizzas(Array.isArray(payload.pizzas) ? payload.pizzas : []);
+      setExpandedPizzaIds(new Set());
       setError('');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Не вдалося завантажити список піц.');
@@ -86,17 +89,22 @@ export default function AdminOwnBrandManager() {
   }
 
   function addPizza() {
-    setPizzas((prev) => [...prev, createDraftPizza(prev.length)]);
+    const draft = createDraftPizza(pizzas.length);
+    setPizzas((prev) => [...prev, draft]);
+    setExpandedPizzaIds((prev) => new Set([...prev, draft.id]));
     setSuccess('');
   }
 
   function removePizza(id: string) {
     setPizzas((prev) => prev.filter((pizza) => pizza.id !== id));
+    setExpandedPizzaIds((prev) => new Set([...prev].filter((pizzaId) => pizzaId !== id)));
+    if (imagePizzaId === id) setImagePizzaId(null);
     setSuccess('');
   }
 
   async function savePizzas() {
     if (pizzas.some((pizza) => !pizza.name.trim())) {
+      setExpandedPizzaIds((prev) => new Set([...prev, ...pizzas.filter((pizza) => !pizza.name.trim()).map((pizza) => pizza.id)]));
       setError('Укажіть назву для кожної піци перед збереженням.');
       setSuccess('');
       return;
@@ -139,6 +147,8 @@ export default function AdminOwnBrandManager() {
         Тут можна додавати нові піци, редагувати назву, вагу, опис, зображення і порядок показу на сторінці. На сайті показуються активні піци після збереження змін.
       </p>
 
+      <OwnBrandPizzaStoresManager />
+
       <div className="mt-5 flex flex-wrap gap-3">
         <button
           type="button"
@@ -156,6 +166,7 @@ export default function AdminOwnBrandManager() {
         >
           {isSaving ? 'Збереження...' : 'Зберегти зміни'}
         </button>
+        <button type="button" disabled={isLoading || !expandedPizzaIds.size} onClick={() => setExpandedPizzaIds(new Set())} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 disabled:opacity-50">Згорнути всі піци</button>
       </div>
 
       {isLoading ? <p className="mt-4 text-sm text-slate-600">Завантаження...</p> : null}
@@ -172,7 +183,16 @@ export default function AdminOwnBrandManager() {
             pizzas.map((pizza, index) => (
               <article key={pizza.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-base font-semibold text-slate-900">Піца #{index + 1}</h2>
+                  <h2 className="min-w-0 flex-1 text-base font-semibold text-slate-900">
+                    <button type="button" aria-expanded={expandedPizzaIds.has(pizza.id)} aria-controls={`pizza-editor-${pizza.id}`} onClick={() => setExpandedPizzaIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(pizza.id)) next.delete(pizza.id); else next.add(pizza.id);
+                      return next;
+                    })} className="flex w-full items-center gap-3 py-1 text-left">
+                      <span aria-hidden="true" className="text-brand">{expandedPizzaIds.has(pizza.id) ? '▼' : '▶'}</span>
+                      <span className="min-w-0 break-words">{pizza.name || `Нова піца #${index + 1}`}<span className="ml-2 text-xs font-normal text-slate-500">{pizza.weight}{pizza.isActive ? '' : ' · Неактивна'}</span></span>
+                    </button>
+                  </h2>
                   <button
                     type="button"
                     onClick={() => removePizza(pizza.id)}
@@ -182,7 +202,7 @@ export default function AdminOwnBrandManager() {
                   </button>
                 </div>
 
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {expandedPizzaIds.has(pizza.id) ? <div id={`pizza-editor-${pizza.id}`} className="mt-4 grid gap-3 md:grid-cols-2">
                   <label className="text-sm font-semibold text-slate-900">
                     Назва
                     <input
@@ -265,7 +285,7 @@ export default function AdminOwnBrandManager() {
                     />
                     Активна
                   </label>
-                </div>
+                </div> : null}
               </article>
             ))
           )}

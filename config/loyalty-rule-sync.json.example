@@ -7,7 +7,7 @@
     "password": "CHANGE_ME"
   },
   "target": {
-    "url": "https://pchilka-new.eatshock.com/api/analytics/loyalty-rules/ingest",
+    "url": "https://pchilka-market.ua/api/analytics/loyalty-rules/ingest",
     "secret": "CHANGE_ME"
   },
   "sync": {

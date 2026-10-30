@@ -2,7 +2,7 @@
 
 import { FormEvent, useRef, useState } from 'react';
 import { trackAnalyticsEvent } from '@/lib/analytics-events';
-import { uploadRequestAttachment } from '@/lib/request-attachment-client';
+import { useRequestSubmission } from '@/lib/request-submission-client';
 
 const MIN_MESSAGE_LENGTH = 10;
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -72,6 +72,7 @@ export default function CooperationOfferForm({
   submitButtonLabel = 'Надіслати запит'
 }: CooperationOfferFormProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const submission = useRequestSubmission();
 
   const [fullName, setFullName] = useState('');
   const [company, setCompany] = useState('');
@@ -118,57 +119,55 @@ export default function CooperationOfferForm({
       return;
     }
 
-    let uploadedAttachment: StoredCooperationRequest['attachment'] = null;
-    if (attachment) {
-      const uploaded = await uploadRequestAttachment(attachment, {
-        folder: mode === 'product' ? 'forms/cooperation/product' : 'forms/cooperation/general'
-      });
-      uploadedAttachment = {
-        fileName: uploaded.fileName,
-        fileSize: uploaded.fileSize,
-        fileType: uploaded.fileType,
-        lastModified: uploaded.lastModified,
-        url: uploaded.url
-      };
-    }
-
-    const payload: StoredCooperationRequest = {
-      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      fullName: fullName.trim().slice(0, 120),
-      company: company.trim().slice(0, 120),
-      phone: phone.trim().slice(0, 40),
-      email: email.trim().slice(0, 160),
-      message: message.trim().slice(0, 2000),
-      selectedCategory: selectedCategory?.label,
-      recipientEmail: selectedCategory?.recipientEmail,
-      attachment: uploadedAttachment,
-      createdAt: new Date().toISOString()
-    };
-
+    if (!submission.begin()) return;
     try {
-      const response = await fetch('/api/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestType: mode === 'product' ? 'cooperation_product' : 'cooperation_general',
-          fullName: payload.fullName,
-          companyName: payload.company,
-          phone: payload.phone,
-          email: payload.email,
-          subject: payload.selectedCategory || '',
-          message: payload.message,
-          sourcePage: typeof window !== 'undefined' ? window.location.pathname : '/cooperation',
-          metadata: {
-            recipientEmail: payload.recipientEmail || '',
-            selectedCategory: payload.selectedCategory || '',
-            attachment: payload.attachment
-          }
-        })
+      let uploadedAttachment: StoredCooperationRequest['attachment'] = null;
+      if (attachment) {
+        const uploaded = await submission.uploadAttachment(attachment, {
+          folder: mode === 'product' ? 'forms/cooperation/product' : 'forms/cooperation/general'
+        });
+        uploadedAttachment = {
+          fileName: uploaded.fileName,
+          fileSize: uploaded.fileSize,
+          fileType: uploaded.fileType,
+          lastModified: uploaded.lastModified,
+          url: uploaded.url
+        };
+      }
+
+      const payload: StoredCooperationRequest = {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        fullName: fullName.trim().slice(0, 120),
+        company: company.trim().slice(0, 120),
+        phone: phone.trim().slice(0, 40),
+        email: email.trim().slice(0, 160),
+        message: message.trim().slice(0, 2000),
+        selectedCategory: selectedCategory?.label,
+        recipientEmail: selectedCategory?.recipientEmail,
+        attachment: uploadedAttachment,
+        createdAt: new Date().toISOString()
+      };
+
+      const response = await submission.submit({
+        requestType: mode === 'product' ? 'cooperation_product' : 'cooperation_general',
+        fullName: payload.fullName,
+        companyName: payload.company,
+        phone: payload.phone,
+        email: payload.email,
+        subject: payload.selectedCategory || '',
+        message: payload.message,
+        sourcePage: typeof window !== 'undefined' ? window.location.pathname : '/cooperation',
+        metadata: {
+          recipientEmail: payload.recipientEmail || '',
+          selectedCategory: payload.selectedCategory || '',
+          attachment: payload.attachment
+        }
       });
       const responsePayload = (await response.json()) as { ok?: boolean; error?: string };
       if (!response.ok || !responsePayload.ok) {
         throw new Error(responsePayload.error || 'Не вдалося надіслати заявку.');
       }
+      submission.succeeded();
 
       setFullName('');
       setCompany('');
@@ -211,6 +210,8 @@ export default function CooperationOfferForm({
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не вдалося надіслати запит. Спробуйте ще раз.';
       setSubmitMessage(message);
+    } finally {
+      submission.finish();
     }
   };
 
@@ -219,7 +220,8 @@ export default function CooperationOfferForm({
       <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">Форма співпраці</h2>
       <p className="mt-1 text-sm text-slate-600">Заповніть форму, і ми зв'яжемося з вами.</p>
 
-      <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+      <form onSubmit={handleSubmit} aria-busy={submission.isSubmitting} className="mt-5">
+        <fieldset disabled={submission.isSubmitting} className="min-w-0 space-y-4">
         {mode === 'product' ? (
           <div>
             <label htmlFor="cooperation-category" className="block text-sm font-semibold text-slate-900">
@@ -359,12 +361,13 @@ export default function CooperationOfferForm({
           ) : null}
           <button
             type="submit"
-            disabled={!canSubmit}
+            disabled={!canSubmit || submission.isSubmitting}
             className="ml-auto rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitButtonLabel}
+            {submission.isSubmitting ? 'Надсилання...' : submitButtonLabel}
           </button>
         </div>
+        </fieldset>
       </form>
     </section>
   );

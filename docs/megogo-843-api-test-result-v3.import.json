@@ -21,7 +21,7 @@
   "\n",
   "    try {",
   "\n",
-  "        connection = (java.net.HttpURLConnection) new java.net.URL('https://pchilka-new.eatshock.com/api/health/db').openConnection()",
+  "        connection = (java.net.HttpURLConnection) new java.net.URL('https://pchilka-market.ua/api/health/db').openConnection()",
   "\n",
   "        connection.setRequestMethod('GET')",
   "\n",

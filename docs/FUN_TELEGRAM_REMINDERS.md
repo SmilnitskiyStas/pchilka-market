@@ -9,7 +9,7 @@ The bot stores only tasks explicitly created with `/remind`; it does not retain 
 
 ```env
 FUN_TELEGRAM_REMINDERS_SECRET=replace_with_a_long_random_value
-FUN_TELEGRAM_REMINDERS_BASE_URL=https://pchilka-new.eatshock.com
+FUN_TELEGRAM_REMINDERS_BASE_URL=https://pchilka-market.ua
 ```
 
 3. Add a cron entry that runs once per minute from the project folder:

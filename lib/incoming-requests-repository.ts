@@ -1,4 +1,5 @@
-import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import { createHash } from 'crypto';
 
 import { getDbPool } from '@/lib/db';
 import {
@@ -30,19 +31,26 @@ type IncomingRequestRow = RowDataPacket & {
   updated_at: string;
 };
 
+function publicMetadata(value: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...value };
+  delete result._submissionKey;
+  delete result._submissionFingerprint;
+  return result;
+}
+
 function parseMetadata(raw: unknown): Record<string, unknown> | null {
   if (raw == null) return null;
   if (typeof raw === 'string') {
     try {
       const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? publicMetadata(parsed as Record<string, unknown>) : null;
     } catch {
       return null;
     }
   }
 
   if (typeof raw === 'object' && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>;
+    return publicMetadata(raw as Record<string, unknown>);
   }
 
   return null;
@@ -70,9 +78,10 @@ function mapRow(row: IncomingRequestRow): IncomingRequestRecord {
   };
 }
 
-export async function createIncomingRequestInDb(input: IncomingRequestCreateInput): Promise<IncomingRequestRecord> {
+type RequestExecutor = Pick<Pool, 'query'>;
+
+async function insertIncomingRequest(input: IncomingRequestCreateInput, pool: RequestExecutor): Promise<IncomingRequestRecord> {
   const normalized = normalizeIncomingRequestInput(input);
-  const pool = getDbPool();
 
   const [result] = await pool.query<ResultSetHeader>(
     `
@@ -117,8 +126,66 @@ export async function createIncomingRequestInDb(input: IncomingRequestCreateInpu
   return mapRow(rows[0]);
 }
 
+export class IncomingRequestReplayError extends Error {
+  constructor(message: string, public readonly status: 409 | 503) { super(message); }
+}
+
+export function isValidSubmissionKey(value: string): boolean {
+  return /^[a-zA-Z0-9_-]{16,128}$/.test(value);
+}
+
+function canonicalValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, canonicalValue(item)]));
+  return value;
+}
+
+export async function createIncomingRequestInDb(input: IncomingRequestCreateInput, submissionKey?: string): Promise<IncomingRequestRecord> {
+  const normalized = normalizeIncomingRequestInput(input);
+  normalized.metadata = normalized.metadata ? publicMetadata(normalized.metadata) : null;
+  const pool = getDbPool();
+  // Existing bot and API callers without a receipt key keep their existing behavior.
+  if (!submissionKey) return insertIncomingRequest(normalized, pool);
+  if (!isValidSubmissionKey(submissionKey)) throw new IncomingRequestReplayError('Некоректний ключ відправлення. Оновіть форму.', 409);
+  const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+  const key = hash(submissionKey);
+  const fingerprint = hash(JSON.stringify(canonicalValue(normalized)));
+  const lockName = `request:${hash(`${process.env.DB_NAME || ''}:${normalized.requestType}:${key}`).slice(0, 56)}`;
+  const connection = await pool.getConnection();
+  let locked = false;
+  try {
+    const [locks] = await connection.query<Array<RowDataPacket & { acquired: number | null }>>('SELECT GET_LOCK(?, 5) AS acquired', [lockName]);
+    if (Number(locks[0]?.acquired) !== 1) throw new IncomingRequestReplayError('Заявка ще обробляється. Спробуйте повторити за кілька секунд.', 503);
+    locked = true;
+    const [receipts] = await connection.query<Array<RowDataPacket & { id: number; submission_fingerprint: string }>>(
+      `SELECT id, JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$._submissionFingerprint')) AS submission_fingerprint
+       FROM incoming_requests WHERE request_type = ? AND created_at >= CURRENT_TIMESTAMP - INTERVAL 24 HOUR
+       AND JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$._submissionKey')) = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+      [normalized.requestType, key]
+    );
+    if (receipts.length) {
+      if (receipts[0].submission_fingerprint !== fingerprint) throw new IncomingRequestReplayError('Повторне відправлення містить інші дані. Оновіть форму та повторіть.', 409);
+      const existing = await readIncomingRequest(receipts[0].id, connection);
+      if (!existing) throw new IncomingRequestReplayError('Не вдалося підтвердити попереднє відправлення. Спробуйте ще раз.', 503);
+      return existing;
+    }
+    return await insertIncomingRequest({ ...normalized, metadata: { ...normalized.metadata, _submissionKey: key, _submissionFingerprint: fingerprint } }, connection);
+  } finally {
+    let reusable = true;
+    if (locked) {
+      try { await connection.query('SELECT RELEASE_LOCK(?)', [lockName]); }
+      catch { connection.destroy(); reusable = false; }
+    }
+    if (reusable) connection.release();
+  }
+}
+
 export async function getIncomingRequestByIdFromDb(requestId: number): Promise<IncomingRequestRecord | null> {
-  const [rows] = await getDbPool().query<IncomingRequestRow[]>(
+  return readIncomingRequest(requestId, getDbPool());
+}
+
+async function readIncomingRequest(requestId: number, executor: RequestExecutor): Promise<IncomingRequestRecord | null> {
+  const [rows] = await executor.query<IncomingRequestRow[]>(
     `SELECT id, request_type, full_name, company_name, contact_person, phone, email,
             city, vacancy, subject, target_store, message, metadata_json, source_page, status, created_at, updated_at
      FROM incoming_requests WHERE id = ? LIMIT 1`,

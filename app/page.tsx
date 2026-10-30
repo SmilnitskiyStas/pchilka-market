@@ -3,7 +3,6 @@ import path from 'path';
 import Link from 'next/link';
 import BannerCarousel from '@/components/banner-carousel';
 import HomeArtwork from '@/components/home-artwork';
-import HomeHeroBanner from '@/components/home-hero-banner';
 import type { HomeBanner } from '@/content/home-banners';
 import { isBannerInPublishRange } from '@/lib/banner-datetime';
 import { listBannersFromDb } from '@/lib/banners-repository';
@@ -131,7 +130,7 @@ export default async function HomePage() {
   return (
     <main className="home-page">
       <div className="home-frame home-intro">
-        {bannerSlides.length > 0 ? <BannerCarousel slides={bannerSlides} intervalMs={4000} /> : <HomeHeroBanner />}
+        {bannerSlides.length > 0 && <BannerCarousel slides={bannerSlides} intervalMs={4000} />}
         <h1 className="sr-only">Пчілка маркет — купуй вигідно та зручно</h1>
         <section className="home-promo-grid" aria-label="Популярні розділи">
           {promoCards.map((card, index) => <Link key={card.href} href={card.href} className="home-promo-card">

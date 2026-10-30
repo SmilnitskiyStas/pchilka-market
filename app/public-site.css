@@ -8,7 +8,7 @@
 .site-nav-item { position: relative; min-width: 0; max-width: 100%; }
 .site-nav-link { display: block; max-width: 100%; padding: 15px 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; border: 0; background: none; cursor: pointer; }
 .site-nav-link:hover, .site-nav-link[aria-expanded='true'] { color: var(--color-brand); }
-.site-nav-dropdown { position: absolute; top: 100%; left: -16px; width: 280px; padding: 10px; background: #fff; border: 1px solid #e6e8e3; border-radius: 16px; box-shadow: 0 15px 35px #10332120; }
+.site-nav-dropdown { position: absolute; top: 100%; left: -16px; width: 280px; max-height: calc(100dvh - 120px); overflow-y: auto; overscroll-behavior: contain; padding: 10px; background: #fff; border: 1px solid #e6e8e3; border-radius: 16px; box-shadow: 0 15px 35px #10332120; }
 .site-nav-item:last-child .site-nav-dropdown { left: auto; right: -16px; }
 .public-header-actions { display: flex; align-items: center; gap: 22px; }
 .site-search-trigger { display: flex; align-items: center; gap: 4px; padding: 10px 0; border: 0; background: none; cursor: pointer; font-size: 14px; }

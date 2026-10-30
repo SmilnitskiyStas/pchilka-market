@@ -2,7 +2,7 @@
 
 import { FormEvent, useRef, useState } from 'react';
 import { trackAnalyticsEvent } from '@/lib/analytics-events';
-import { uploadRequestAttachment } from '@/lib/request-attachment-client';
+import { useRequestSubmission } from '@/lib/request-submission-client';
 
 const MIN_MESSAGE_LENGTH = 10;
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -64,6 +64,7 @@ type StoredRentalRequest = {
 
 export default function CooperationRentalForm() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const submission = useRequestSubmission();
 
   const [companyName, setCompanyName] = useState('');
   const [contactPerson, setContactPerson] = useState('');
@@ -110,60 +111,58 @@ export default function CooperationRentalForm() {
       return;
     }
 
-    let uploadedAttachment: StoredRentalRequest['attachment'] = null;
-    if (attachment) {
-      const uploaded = await uploadRequestAttachment(attachment, {
-        folder: 'forms/cooperation/rental'
-      });
-      uploadedAttachment = {
-        fileName: uploaded.fileName,
-        fileSize: uploaded.fileSize,
-        fileType: uploaded.fileType,
-        lastModified: uploaded.lastModified,
-        url: uploaded.url
-      };
-    }
-
-    const payload: StoredRentalRequest = {
-      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      companyName: companyName.trim().slice(0, 160),
-      contactPerson: contactPerson.trim().slice(0, 120),
-      phone: phone.trim().slice(0, 40),
-      email: email.trim().slice(0, 160),
-      preferredStore: preferredStore.trim().slice(0, 220),
-      rentalArea: rentalArea.trim().slice(0, 40),
-      rentalPurpose,
-      rentalPeriod: rentalPeriod.trim().slice(0, 120),
-      attachment: uploadedAttachment,
-      message: message.trim().slice(0, 2000),
-      createdAt: new Date().toISOString()
-    };
-
+    if (!submission.begin()) return;
     try {
-      const response = await fetch('/api/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestType: 'cooperation_rental',
-          companyName: payload.companyName,
-          contactPerson: payload.contactPerson,
-          phone: payload.phone,
-          email: payload.email,
-          targetStore: payload.preferredStore,
-          message: payload.message,
-          sourcePage: typeof window !== 'undefined' ? window.location.pathname : '/cooperation/rental',
-          metadata: {
-            rentalArea: payload.rentalArea,
-            rentalPurpose: payload.rentalPurpose,
-            rentalPeriod: payload.rentalPeriod,
-            attachment: payload.attachment
-          }
-        })
+      let uploadedAttachment: StoredRentalRequest['attachment'] = null;
+      if (attachment) {
+        const uploaded = await submission.uploadAttachment(attachment, {
+          folder: 'forms/cooperation/rental'
+        });
+        uploadedAttachment = {
+          fileName: uploaded.fileName,
+          fileSize: uploaded.fileSize,
+          fileType: uploaded.fileType,
+          lastModified: uploaded.lastModified,
+          url: uploaded.url
+        };
+      }
+
+      const payload: StoredRentalRequest = {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        companyName: companyName.trim().slice(0, 160),
+        contactPerson: contactPerson.trim().slice(0, 120),
+        phone: phone.trim().slice(0, 40),
+        email: email.trim().slice(0, 160),
+        preferredStore: preferredStore.trim().slice(0, 220),
+        rentalArea: rentalArea.trim().slice(0, 40),
+        rentalPurpose,
+        rentalPeriod: rentalPeriod.trim().slice(0, 120),
+        attachment: uploadedAttachment,
+        message: message.trim().slice(0, 2000),
+        createdAt: new Date().toISOString()
+      };
+
+      const response = await submission.submit({
+        requestType: 'cooperation_rental',
+        companyName: payload.companyName,
+        contactPerson: payload.contactPerson,
+        phone: payload.phone,
+        email: payload.email,
+        targetStore: payload.preferredStore,
+        message: payload.message,
+        sourcePage: typeof window !== 'undefined' ? window.location.pathname : '/cooperation/rental',
+        metadata: {
+          rentalArea: payload.rentalArea,
+          rentalPurpose: payload.rentalPurpose,
+          rentalPeriod: payload.rentalPeriod,
+          attachment: payload.attachment
+        }
       });
       const responsePayload = (await response.json()) as { ok?: boolean; error?: string };
       if (!response.ok || !responsePayload.ok) {
         throw new Error(responsePayload.error || 'Не вдалося надіслати запит.');
       }
+      submission.succeeded();
 
       setCompanyName('');
       setContactPerson('');
@@ -185,6 +184,8 @@ export default function CooperationRentalForm() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не вдалося надіслати запит. Спробуйте ще раз.';
       setSubmitMessage(message);
+    } finally {
+      submission.finish();
     }
   };
 
@@ -193,7 +194,8 @@ export default function CooperationRentalForm() {
       <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">Форма запиту на оренду</h2>
       <p className="mt-1 text-sm text-slate-600">Заповніть заявку, і наш менеджер з оренди зв'яжеться з вами.</p>
 
-      <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+      <form onSubmit={handleSubmit} aria-busy={submission.isSubmitting} className="mt-5">
+        <fieldset disabled={submission.isSubmitting} className="min-w-0 space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="rental-company" className="block text-sm font-semibold text-slate-900">
@@ -373,12 +375,13 @@ export default function CooperationRentalForm() {
           {submitMessage ? <p className="mr-auto text-sm font-semibold text-brand">{submitMessage}</p> : null}
           <button
             type="submit"
-            disabled={!canSubmit}
+            disabled={!canSubmit || submission.isSubmitting}
             className="ml-auto rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Надіслати запит
+            {submission.isSubmitting ? 'Надсилання...' : 'Надіслати запит'}
           </button>
         </div>
+        </fieldset>
       </form>
     </section>
   );

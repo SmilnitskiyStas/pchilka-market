@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { uploadRequestAttachment } from '@/lib/request-attachment-client';
+import { useRequestSubmission } from '@/lib/request-submission-client';
 
 const MIN_MESSAGE_LENGTH = 10;
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -75,6 +75,7 @@ type StoredSearchRoomRequest = {
 
 export default function CooperationSearchRoomForm() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const submission = useRequestSubmission();
 
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -131,63 +132,61 @@ export default function CooperationSearchRoomForm() {
     }
     const selectedParkingAvailability = parkingAvailability as ParkingAvailability;
 
-    let uploadedAttachment: StoredSearchRoomRequest['attachment'] = null;
-    if (attachment) {
-      const uploaded = await uploadRequestAttachment(attachment, {
-        folder: 'forms/cooperation/search-room'
-      });
-      uploadedAttachment = {
-        fileName: uploaded.fileName,
-        fileSize: uploaded.fileSize,
-        fileType: uploaded.fileType,
-        lastModified: uploaded.lastModified,
-        url: uploaded.url
-      };
-    }
-
-    const payload: StoredSearchRoomRequest = {
-      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      fullName: fullName.trim().slice(0, 120),
-      phone: phone.trim().slice(0, 40),
-      email: email.trim().slice(0, 160),
-      city: city.trim().slice(0, 80),
-      address: address.trim().slice(0, 200),
-      roomType,
-      areaRange,
-      parkingAvailability: selectedParkingAvailability,
-      parkingCountApprox:
-        selectedParkingAvailability === 'no' ? '' : parkingCountApprox.trim().slice(0, 40),
-      attachment: uploadedAttachment,
-      message: message.trim().slice(0, 2000),
-      createdAt: new Date().toISOString()
-    };
-
+    if (!submission.begin()) return;
     try {
-      const response = await fetch('/api/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requestType: 'cooperation_search_room',
-          fullName: payload.fullName,
-          phone: payload.phone,
-          email: payload.email,
-          city: payload.city,
-          targetStore: payload.address,
-          message: payload.message,
-          sourcePage: typeof window !== 'undefined' ? window.location.pathname : '/cooperation/search-room',
-          metadata: {
-            roomType: payload.roomType,
-            areaRange: payload.areaRange,
-            parkingAvailability: payload.parkingAvailability,
-            parkingCountApprox: payload.parkingCountApprox,
-            attachment: payload.attachment
-          }
-        })
+      let uploadedAttachment: StoredSearchRoomRequest['attachment'] = null;
+      if (attachment) {
+        const uploaded = await submission.uploadAttachment(attachment, {
+          folder: 'forms/cooperation/search-room'
+        });
+        uploadedAttachment = {
+          fileName: uploaded.fileName,
+          fileSize: uploaded.fileSize,
+          fileType: uploaded.fileType,
+          lastModified: uploaded.lastModified,
+          url: uploaded.url
+        };
+      }
+
+      const payload: StoredSearchRoomRequest = {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        fullName: fullName.trim().slice(0, 120),
+        phone: phone.trim().slice(0, 40),
+        email: email.trim().slice(0, 160),
+        city: city.trim().slice(0, 80),
+        address: address.trim().slice(0, 200),
+        roomType,
+        areaRange,
+        parkingAvailability: selectedParkingAvailability,
+        parkingCountApprox:
+          selectedParkingAvailability === 'no' ? '' : parkingCountApprox.trim().slice(0, 40),
+        attachment: uploadedAttachment,
+        message: message.trim().slice(0, 2000),
+        createdAt: new Date().toISOString()
+      };
+
+      const response = await submission.submit({
+        requestType: 'cooperation_search_room',
+        fullName: payload.fullName,
+        phone: payload.phone,
+        email: payload.email,
+        city: payload.city,
+        targetStore: payload.address,
+        message: payload.message,
+        sourcePage: typeof window !== 'undefined' ? window.location.pathname : '/cooperation/search-room',
+        metadata: {
+          roomType: payload.roomType,
+          areaRange: payload.areaRange,
+          parkingAvailability: payload.parkingAvailability,
+          parkingCountApprox: payload.parkingCountApprox,
+          attachment: payload.attachment
+        }
       });
       const responsePayload = (await response.json()) as { ok?: boolean; error?: string };
       if (!response.ok || !responsePayload.ok) {
         throw new Error(responsePayload.error || 'Не вдалося надіслати заявку.');
       }
+      submission.succeeded();
 
       setFullName('');
       setPhone('');
@@ -206,6 +205,8 @@ export default function CooperationSearchRoomForm() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Не вдалося надіслати заявку. Спробуйте ще раз.';
       setSubmitMessage(message);
+    } finally {
+      submission.finish();
     }
   };
 
@@ -214,7 +215,8 @@ export default function CooperationSearchRoomForm() {
       <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">Форма пропозиції приміщення</h2>
       <p className="mt-1 text-sm text-slate-600">Заповніть дані про приміщення, і відділ розвитку зв'яжеться з вами.</p>
 
-      <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+      <form onSubmit={handleSubmit} aria-busy={submission.isSubmitting} className="mt-5">
+        <fieldset disabled={submission.isSubmitting} className="min-w-0 space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="search-room-name" className="block text-sm font-semibold text-slate-900">
@@ -438,12 +440,13 @@ export default function CooperationSearchRoomForm() {
           {submitMessage ? <p className="mr-auto text-sm font-semibold text-brand">{submitMessage}</p> : null}
           <button
             type="submit"
-            disabled={!canSubmit}
+            disabled={!canSubmit || submission.isSubmitting}
             className="ml-auto rounded-full bg-brand px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Надіслати пропозицію
+            {submission.isSubmitting ? 'Надсилання...' : 'Надіслати пропозицію'}
           </button>
         </div>
+        </fieldset>
       </form>
     </section>
   );

@@ -37,6 +37,12 @@ async function main(){
  assert.equal(permissions.resourceForAdminPath('/admin/menu'),'content');assert.equal(permissions.resourceForAdminPath('/api/admin/menu'),'content');
  assert.equal((await api.GET(req('GET',null,''))).status,401);
  const defaults=await repo.getSiteMenuSettings();assert.deepEqual(defaults,model.defaultSiteMenu);
+ const ownBrand=filterContentMenu(defaults.items,new Set()).find(item=>item.href==='/own-brand');
+ assert.ok(ownBrand,'Own-brand navigation must remain visible without editorial articles');
+ for(const {slug} of require('../content/own-brand.ts').ownBrandItems) assert.ok(ownBrand.children.some(item=>item.href===`/own-brand/${slug}`),'Keep each native own-brand section visible');
+ assert.deepEqual(filterContentMenu([{label:'Production',href:'#',children:[{label:'Pizza',href:'/own-brand/pizza-coffeehouse',visibility:'hidden'}]}],new Set()),[],'Explicitly hidden native sections must remain hidden');
+ const longMenu=model.normalizeSiteMenu({items:[{id:'production',label:'Власне виробництво',href:'#',visibility:'auto',children:Array.from({length:40},(_,i)=>({id:`production-${i}`,label:`Розділ ${i+1}`,href:`/pages/production-${i}`,visibility:'auto'}))}]});
+ assert.deepEqual(filterContentMenu(longMenu.items,new Set(longMenu.items[0].children.map(item=>item.href)))[0].children.map(item=>item.id),longMenu.items[0].children.map(item=>item.id),'Long submenus must retain all published sections in their saved order');
  assert.ok(!fs.existsSync(path.join(temporary,'navigation','menu.json')));
  const payload=await(await api.GET(req('GET',null,cookie('editor',['content:read'])))).json();assert.equal(payload.ok,true);assert.ok(payload.destinations.some(item=>item.href==='/promotions/catalog/f1'));
  assert.ok(payload.destinations.some(item=>item.href==='/pages/visual-test'));

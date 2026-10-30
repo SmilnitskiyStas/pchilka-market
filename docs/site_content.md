@@ -93,8 +93,9 @@
   - заголовок та абзаци формуються з текстового файлу;
   - виводиться зображення `public/img/own_brand/pastry_shop/grand_gateau.webp`.
 - Для сторінки `/own-brand/pizza-coffeehouse`:
-  - список магазинів читається з `public/img/own_brand/pizza_and_coffee/pizza_store.txt`;
-  - асортимент піци читається з `public/img/own_brand/pizza_and_coffee/pizza_list.txt`;
+  - магазини обираються в `/admin/own-brand`, зберігаються як ID та відображаються з актуальними адресами активних магазинів; до першого збереження підтримується `public/img/own_brand/pizza_and_coffee/pizza_store.txt`;
+  - асортимент піци редагується в `/admin/own-brand` і зберігається в постійному `content/own-brand-pizzas.json`; `public/img/own_brand/pizza_and_coffee/pizza_list.txt` є резервним джерелом до першого збереження;
+  - картки в адмінці спочатку згорнуті; докладна інструкція — `docs/own-brand-pizza-editor.md`;
   - для кожної позиції автоматично витягуються:
     - назва;
     - вага;
