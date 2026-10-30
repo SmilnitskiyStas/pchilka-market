@@ -5,6 +5,8 @@ import { notFound } from 'next/navigation';
 import path from 'path';
 
 import { ConfirmDirectionsLink } from '@/components/confirm-directions-link';
+import PageArticles from '@/components/page-articles';
+import { getBlogContentFromDb } from '@/lib/blog-content-repository';
 import PizzaMenuGrid, { type PizzaItem } from '@/components/pizza-menu-grid';
 import { getOwnBrandItemBySlug, ownBrandItems } from '@/content/own-brand';
 import { listOwnBrandPizzas } from '@/lib/own-brand-pizzas';
@@ -112,6 +114,11 @@ export default async function OwnBrandItemPage({ params }: OwnBrandItemPageProps
     notFound();
   }
 
+  const entries = (await getBlogContentFromDb().catch(() => ({ entries: [] }))).entries
+    .filter((entry) => entry.status === 'published' && entry.pagePath === `/own-brand/${slug}`)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  const beforeArticles = entries.filter((entry) => entry.placement === 'before-content');
+  const afterArticles = entries.filter((entry) => entry.placement !== 'before-content');
   const content = item.contentFileName ? await readOwnBrandContent(item.contentFileName) : null;
   const pizzaStores = slug === 'pizza-coffeehouse' ? await getPublicPizzaStores().catch(() => null) : null;
   const pizzaItems = slug === 'pizza-coffeehouse' ? await readPizzaList() : [];
@@ -119,21 +126,23 @@ export default async function OwnBrandItemPage({ params }: OwnBrandItemPageProps
   const pageParagraphs = content?.paragraphs ?? [item.description];
 
   return (
-    <main className="site-container min-h-screen px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+    <main className="site-container px-3 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <section className="rounded-3xl border border-brand/25 bg-white/95 p-5 shadow-sm sm:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Власне класне</p>
 
         <h1 className="mt-2 text-3xl font-bold text-slate-900 sm:text-4xl">{pageTitle}</h1>
 
-        <div className="mt-6 space-y-4">
+        {beforeArticles.length ? <div className="mt-6"><PageArticles articles={beforeArticles} variant="inline" /></div> : null}
+
+        {entries.length === 0 ? <div className="mt-6 space-y-4">
           {pageParagraphs.map((paragraph, index) => (
             <p key={`${index}_${paragraph.slice(0, 24)}`} className="text-base leading-relaxed text-slate-800">
               {paragraph}
             </p>
           ))}
-        </div>
+        </div> : null}
 
-        {item.imageFileName ? (
+        {entries.length === 0 && item.imageFileName ? (
           <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <Image
               src={`/img/own_brand/${item.imageFileName}`}
@@ -145,7 +154,7 @@ export default async function OwnBrandItemPage({ params }: OwnBrandItemPageProps
           </div>
         ) : null}
 
-        {content?.videoEmbedUrl ? (
+        {entries.length === 0 && content?.videoEmbedUrl ? (
           <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-black">
             <iframe
               className="aspect-video w-full"
@@ -157,6 +166,8 @@ export default async function OwnBrandItemPage({ params }: OwnBrandItemPageProps
             />
           </div>
         ) : null}
+
+        {afterArticles.length ? <div className="mt-6"><PageArticles articles={afterArticles} variant="inline" /></div> : null}
 
         {slug === 'pizza-coffeehouse' ? (
           <>

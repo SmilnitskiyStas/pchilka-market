@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import Link from 'next/link';
+import { insertContentImage } from '@/lib/content-images';
 import { contentPages, legacyContentPaths, entryPagePath, formContentPages, dedicatedArticlePages } from '@/lib/menu-content';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -152,6 +153,9 @@ export default function AdminContentManager() {
   const [coverImage, setCoverImage] = useState('');
   const [status, setStatus] = useState<'draft' | 'published'>('draft');
 
+  const imageSelection = useRef({ start: 0, end: 0 });
+  const [imageTarget, setImageTarget] = useState<'body' | 'cover'>('cover');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [isLoadingImages, setIsLoadingImages] = useState(false);
   const [serverImages, setServerImages] = useState<string[]>([]);
@@ -311,7 +315,22 @@ export default function AdminContentManager() {
     });
   }
 
-  async function openImageModal() {
+  function selectImage(url: string, target: 'body' | 'cover') {
+    if (target === 'cover') setCoverImage(url);
+    else {
+      const { start, end } = imageSelection.current;
+      setBody((previous) => insertContentImage(previous, url, start, end));
+    }
+    setIsSaved(false);
+  }
+
+  function rememberImageSelection() {
+    imageSelection.current = { start: bodyRef.current?.selectionStart ?? body.length, end: bodyRef.current?.selectionEnd ?? body.length };
+  }
+
+  async function openImageModal(target: 'body' | 'cover' = 'cover') {
+    rememberImageSelection();
+    setImageTarget(target);
     setIsImageModalOpen(true);
 
     if (serverImages.length > 0 || isLoadingImages) return;
@@ -322,7 +341,7 @@ export default function AdminContentManager() {
       if (!response.ok) throw new Error('Failed to fetch images');
 
       const data = (await response.json()) as { images?: string[] };
-      setServerImages(Array.isArray(data.images) ? data.images : []);
+      setServerImages(Array.isArray(data.images) ? data.images.filter((url) => /\.(jpe?g|png|webp|gif|avif)(?:[?#]|$)/i.test(url)) : []);
     } catch {
       setError('Не вдалося завантажити список зображень із сервера.');
     } finally {
@@ -330,8 +349,10 @@ export default function AdminContentManager() {
     }
   }
 
-  async function handleCoverUpload(file: File | null) {
-    if (!file) return;
+  async function handleCoverUpload(file: File | null, target: 'body' | 'cover' = 'cover') {
+    if (!file || isUploadingImage) return;
+    rememberImageSelection();
+    setIsUploadingImage(true);
 
     try {
       const formData = new FormData();
@@ -347,12 +368,11 @@ export default function AdminContentManager() {
         throw new Error(payload.error || 'Не вдалося завантажити файл на сервер.');
       }
 
-      setCoverImage(payload.path);
-      setIsSaved(false);
+      selectImage(payload.path, target);
     } catch (uploadError) {
       const message = uploadError instanceof Error ? uploadError.message : 'Не вдалося завантажити файл зображення.';
       setError(message);
-    }
+    } finally { setIsUploadingImage(false); }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -689,13 +709,18 @@ export default function AdminContentManager() {
                   <button
                     key={action.id}
                     type="button"
-                    onClick={() => insertIntoBody(action)}
+                    onClick={() => action.id === 'image' ? void openImageModal('body') : insertIntoBody(action)}
                     className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-brand hover:text-brand"
                   >
                     {action.label}
                   </button>
                 ))}
               </div>
+              <label className="mt-2 inline-block cursor-pointer rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold">
+                Завантажити зображення в текст
+                <input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.gif" disabled={isUploadingImage} className="sr-only" onChange={(event) => { void handleCoverUpload(event.target.files?.[0] ?? null, 'body'); event.target.value = ''; }} />
+              </label>
+              {isUploadingImage ? <p role="status" className="mt-2 text-sm">Завантаження зображення…</p> : null}
               <textarea
                 id="content-body"
                 ref={bodyRef}
@@ -727,7 +752,7 @@ export default function AdminContentManager() {
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={openImageModal}
+                  onClick={() => void openImageModal('cover')}
                   className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-brand hover:text-brand"
                 >
                   Обрати з сервера
@@ -777,7 +802,7 @@ export default function AdminContentManager() {
               ) : null}
               <button
                 type="submit"
-                disabled={isSyncing || isLoading}
+                disabled={isSyncing || isLoading || isUploadingImage}
                 className="rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSyncing ? 'Збереження…' : isEditing ? 'Зберегти зміни' : 'Додати матеріал'}
@@ -927,8 +952,7 @@ export default function AdminContentManager() {
                     <button
                       type="button"
                       onClick={() => {
-                        setCoverImage(imagePath);
-                        setIsSaved(false);
+                        selectImage(imagePath, imageTarget);
                         setIsImageModalOpen(false);
                       }}
                       className="block w-full text-left"

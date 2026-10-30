@@ -52,7 +52,7 @@ async function main() {
   ];
   const extended = {slug:'blocks-test',title:'Блоки',description:'',blocks:extraBlocks};
   assert.deepEqual(model.validateVisualPage(extended,true).blocks,extraBlocks);
-  assert.throws(()=>model.validateVisualPage({...extended,slug:'rental-intro'},true));
+  assert.deepEqual(model.validateVisualPage({...extended,slug:'rental-intro'},true).blocks,extraBlocks);
   assert.throws(()=>model.validateVisualPage({...extended,blocks:[extraBlocks[3],{...extraBlocks[3],id:'second-form'}]},true));
   assert.throws(()=>model.validateVisualPage({...extended,blocks:[{...extraBlocks[2],src:'javascript:alert(1)'}]},true));
   assert.throws(()=>model.validateVisualPage({...extended,blocks:[{...extraBlocks[1],href:'',label:'Далі'}]},true));

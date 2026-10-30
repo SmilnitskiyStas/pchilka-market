@@ -71,7 +71,7 @@ function looksLikeImageUrl(value: string): boolean {
   if (normalized.startsWith('data:image/')) return true;
 
   const isHttp = normalized.startsWith('http://') || normalized.startsWith('https://');
-  const isLocal = normalized.startsWith('/img/');
+  const isLocal = normalized.startsWith('/img/') || normalized.startsWith('/media/') || normalized.startsWith('/uploads/');
   if (!isHttp && !isLocal) return false;
 
   return /\.(jpg|jpeg|png|webp|gif|avif|svg)(\?.*)?$/i.test(normalized);

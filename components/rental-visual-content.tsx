@@ -15,8 +15,8 @@ export default async function rentalVisualContent(preview: boolean) {
   return {
     body: page ? <div className="mt-6"><VisualPageBody page={page} /></div> : null,
     toolbar: canWrite ? <aside className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/30 bg-white p-4 text-sm">
-      <span>{preview ? 'Перегляд збереженої чернетки над формою' : 'Вміст над формою оренди'}</span>
-      <Link href="/admin/pages?slug=rental-intro" className="font-semibold text-brand underline">Редагувати текст над формою</Link>
+      <span>{preview ? 'Перегляд збереженої чернетки сторінки оренди' : 'Вміст сторінки оренди'}</span>
+      <Link href="/admin/pages?slug=rental-intro" className="font-semibold text-brand underline">Редагувати вміст сторінки</Link>
     </aside> : null
   };
 }

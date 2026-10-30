@@ -4,7 +4,7 @@ import { ownBrandItems } from '@/content/own-brand';
 
 export const contentPages = mainMenu.flatMap((item) => [item, ...(item.children ?? [])]).filter((item) => item.href !== '#');
 export const legacyContentPaths = { blog: '/blog', news: '/news', charity: '/about/charity' };
-export const dedicatedArticlePages = ['/about/why-pchilka-not-bdzhilka', '/loyalty/rules'];
+export const dedicatedArticlePages = ['/about/why-pchilka-not-bdzhilka', '/loyalty/rules', ...ownBrandItems.map((item) => `/own-brand/${item.slug}`)];
 export const formContentPages = contentPages.filter((page) => page.href.startsWith('/cooperation/')).map((page) => page.href);
 export function entryPagePath(entry: ContentEntry): string {
   return entry.pagePath || legacyContentPaths[entry.contentType];

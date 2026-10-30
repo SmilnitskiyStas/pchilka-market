@@ -61,7 +61,7 @@ export function validateVisualPage(raw: unknown, publishing = false): VisualPage
       return value;
     };
     if (block.type === 'form') {
-      if (block.form !== 'rental' || ++formCount > 1 || page.slug === 'rental-intro') throw new Error('Доступна одна форма оренди на сторінці. Сторінка оренди вже містить форму.');
+      if (block.form !== 'rental' || ++formCount > 1) throw new Error('Доступна одна форма оренди на сторінці.');
       return { id: block.id, type: 'form', form: 'rental' };
     }
     if (block.type === 'video') return { id: block.id, type: 'video', src: urlField(block.src), title: textField(block.title, 200) };

@@ -150,7 +150,7 @@ export default function VisualPageEditor({ canWrite, initialSlug = '' }: { canWr
   }
 
   return <div>
-    <h1 className="text-2xl font-bold text-slate-900">{page.slug === 'rental-intro' ? 'Оренда: текст над формою' : 'Редактор сторінок'}</h1>
+    <h1 className="text-2xl font-bold text-slate-900">{page.slug === 'rental-intro' ? 'Оренда: вміст сторінки' : 'Редактор сторінок'}</h1>
     <p className="mt-2 text-sm text-slate-600">Створіть сторінку, додайте блоки й одразу перевірте їхній вигляд. Натисніть на блок у попередньому перегляді, щоб вибрати його для редагування.</p>
     {error ? <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
     {!ready ? <div className="mt-4"><p>Завантаження сторінок…</p>{error ? <button className={buttonClass} onClick={() => setReload((value) => value + 1)}>Повторити завантаження</button> : null}</div> : null}
@@ -176,10 +176,10 @@ export default function VisualPageEditor({ canWrite, initialSlug = '' }: { canWr
       <fieldset disabled={!ready || busy || !canWrite} className="min-w-0 space-y-5 disabled:opacity-70">
         <legend className="sr-only">Налаштування сторінки та блоків</legend>
         <section className="space-y-3 rounded-2xl border border-slate-200 p-3">
-          <label className="block text-sm font-semibold">Почати з шаблону<select className={inputClass} value={templateId} onChange={(event) => setTemplateId(event.target.value)}><option value="">Оберіть шаблон</option>{visualPageTemplates.filter((template) => page.slug !== 'rental-intro' || template.id !== 'rental').map((template) => <option key={template.id} value={template.id}>{template.label}</option>)}</select></label>
+          <label className="block text-sm font-semibold">Почати з шаблону<select className={inputClass} value={templateId} onChange={(event) => setTemplateId(event.target.value)}><option value="">Оберіть шаблон</option>{visualPageTemplates.map((template) => <option key={template.id} value={template.id}>{template.label}</option>)}</select></label>
           <button type="button" className={buttonClass} disabled={!templateId} onClick={() => {
             const template = visualPageTemplates.find((item) => item.id === templateId);
-            if (!template || (page.slug === 'rental-intro' && template.id === 'rental')) return;
+            if (!template) return;
             if (page.blocks.length && !window.confirm('Замінити блоки поточної чернетки шаблоном?')) return;
             const blocks = structuredClone(template.blocks).map((block) => ({ ...block, id: crypto.randomUUID() }));
             update({ ...page, blocks }); setSelectedId(blocks[0]?.id || '');
@@ -200,7 +200,7 @@ export default function VisualPageEditor({ canWrite, initialSlug = '' }: { canWr
         <VisualPagePublishing key={`${record?.draft.slug || 'new'}-${record?.revision || 0}`} page={page} record={record} dirty={dirty} onChange={update} onManage={(action, value) => void manage(action, value)} />
         <section className="rounded-2xl border border-slate-200 p-3">
           <h2 className="font-semibold">Додати блок</h2>
-          <div className="mt-3 flex flex-wrap gap-2">{Object.entries(blockLabels).map(([type, label]) => <button key={type} type="button" className={buttonClass} disabled={page.blocks.length >= 100 || (type === 'form' && (page.slug === 'rental-intro' || page.blocks.some((block) => block.type === 'form')))} onClick={() => addBlock(type as VisualBlock['type'])}>+ {label}</button>)}</div>
+          <div className="mt-3 flex flex-wrap gap-2">{Object.entries(blockLabels).map(([type, label]) => <button key={type} type="button" className={buttonClass} disabled={page.blocks.length >= 100 || (type === 'form' && page.blocks.some((block) => block.type === 'form'))} onClick={() => addBlock(type as VisualBlock['type'])}>+ {label}</button>)}</div>
           <ol className="mt-4 space-y-2">{page.blocks.map((block, index) => <li key={block.id} onDragOver={(event) => { if (draggedId && canWrite && !busy) event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); if (draggedId && canWrite && !busy) { update({ ...page, blocks: reorderVisualBlocks(page.blocks, draggedId, block.id) }); setDraggedId(''); } }}><button type="button" draggable={canWrite && ready && !busy} onDragStart={(event) => { setDraggedId(block.id); event.dataTransfer.setData('text/plain', block.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => setDraggedId('')} aria-label={String(index + 1) + '. ' + blockLabels[block.type] + '. Перетягніть або використайте кнопки Вище та Нижче'} aria-pressed={selectedId === block.id} className={`w-full rounded-xl border p-2 text-left text-sm ${selectedId === block.id ? 'border-brand bg-brand/10' : 'border-slate-200'}`} onClick={() => setSelectedId(block.id)}>{index + 1}. {blockLabels[block.type]}: {'text' in block ? block.text.slice(0, 40) : block.type === 'image' ? block.alt || 'Без опису' : block.type === 'button' ? block.label : block.type === 'video' ? block.title : block.type === 'columns' ? 'Ліва та права' : 'Запит на оренду'}</button></li>)}</ol>
           {!page.blocks.length ? <p className="mt-3 text-sm text-slate-500">Додайте перший блок.</p> : null}
         </section>

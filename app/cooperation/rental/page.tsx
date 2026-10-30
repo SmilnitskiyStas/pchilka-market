@@ -3,7 +3,6 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import type { ReactNode } from 'react';
 
-import CooperationRentalForm from '@/components/cooperation-rental-form';
 import rentalVisualContent from '@/components/rental-visual-content';
 import PageArticles from '@/components/page-articles';
 import { listPublishedFormEntries } from '@/lib/public-content-repository';
@@ -126,7 +125,6 @@ export default async function RentalPage({ searchParams }: RentalPageProps) {
 
         {articles.length ? <div className="mt-6"><PageArticles articles={articles} /></div> : null}
         {visual.body}
-        <CooperationRentalForm />
       </section>
     </main>
   );
