@@ -1,6 +1,9 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import Link from 'next/link';
+import Image from 'next/image';
+import { readHomeLoyaltyImage } from '@/lib/home-loyalty-image-repository';
+import { defaultHomeLoyaltyImage } from '@/lib/home-loyalty-image-settings';
 import BannerCarousel from '@/components/banner-carousel';
 import HomeArtwork from '@/components/home-artwork';
 import type { HomeBanner } from '@/content/home-banners';
@@ -111,6 +114,7 @@ async function readNetworkStats(): Promise<NetworkStats> {
 }
 
 export default async function HomePage() {
+  const loyaltyImage = await readHomeLoyaltyImage().catch(() => defaultHomeLoyaltyImage);
   const [activeBanners, networkStats] = await Promise.all([
     listBannersFromDb().catch((): HomeBanner[] => []),
     readNetworkStats()
@@ -154,8 +158,7 @@ export default async function HomePage() {
         <h2 id="home-loyalty-title" className="home-section-title">Програма лояльності <span>Пчілка</span></h2>
         <p className="home-section-description">Приєднуйтесь до програми лояльності, отримуйте кешбек за покупки та використовуйте переваги мобільного застосунку.</p>
         <Link href="/loyalty/mobile-app" className="home-app-presentation" aria-label="Мобільний застосунок Пчілка">
-          <div className="home-app-copy"><p>Мобільний<br /><span>застосунок</span></p><strong>картка у твоєму смартфоні</strong><ul><li>Кешбек</li><li>Акції</li><li>Відгуки</li></ul></div>
-          <HomeArtwork kind="phone" />
+          <Image src={loyaltyImage.src} alt={loyaltyImage.alt} width={1440} height={600} unoptimized className="block h-auto w-full" />
         </Link>
         <Link href="/loyalty/mobile-app" className="home-primary-button">Детальніше про програму</Link>
       </section>

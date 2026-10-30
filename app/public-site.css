@@ -105,7 +105,7 @@
 .home-network-picture span { position: absolute; bottom: 0; left: 0; right: 0; padding: 28px 16px 18px; font-size: 16px; font-weight: 600; color: white; background: linear-gradient(transparent, #103321d9); }
 .home-loyalty { text-align: center; padding-top: 64px; }
 .home-section-description { font-size: 14px; line-height: 1.6; margin-top: 8px; }
-.home-app-presentation { display: flex; justify-content: center; align-items: center; gap: 50px; max-width: 850px; margin: 30px auto 14px; padding: 20px 32px; background: radial-gradient(ellipse, #f1f4ef, white 70%); }
+.home-app-presentation { display: block; max-width: 1200px; margin: 30px auto 14px; }
 .home-app-copy { text-align: left; }
 .home-app-copy > p { font-family: Georgia, 'Times New Roman', serif; font-weight: 900; font-size: clamp(38px, 5.6vw, 76px); line-height: .95; color: #68b832; letter-spacing: -.04em; }
 .home-app-copy > p span { color: #104c29; }
@@ -191,7 +191,7 @@
   .home-network-picture { border-radius: 22px; }
   .home-network-picture span { font-size: 13px; }
   .home-loyalty { padding-top: 38px; }
-  .home-app-presentation { gap: 20px; padding: 10px 0; }
+
   .home-app-copy ul { gap: 10px; font-size: 13px; flex-wrap: wrap; margin-top: 20px; }
   .home-app-copy li::before { width: 24px; height: 24px; margin-right: 4px; }
   .home-app-presentation > .home-phone { width: 126px; height: 260px; border-radius: 25px; }
@@ -218,7 +218,7 @@
   .public-header-actions { gap: 12px; }
   .site-search-trigger span, .site-phone-menu { display: none; }
   .home-section-title { font-size: 32px; }
-  .home-app-presentation { flex-direction: column; gap: 24px; }
+
   .home-app-copy { text-align: center; }
   .home-app-copy > p { font-size: 46px; }
   .home-app-copy > strong { font-size: 20px; }

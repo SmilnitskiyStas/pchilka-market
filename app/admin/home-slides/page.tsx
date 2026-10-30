@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 
+import HomeLoyaltyImageManager from '@/components/admin/home-loyalty-image-manager';
 import AdminBannersManager from '@/components/admin/admin-banners-manager';
 
 export const metadata: Metadata = {
@@ -8,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function AdminHomeSlidesPage() {
-  return <AdminBannersManager />;
+  return <><AdminBannersManager /><HomeLoyaltyImageManager /></>;
 }
