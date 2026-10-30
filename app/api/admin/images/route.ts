@@ -7,36 +7,14 @@ import { buildMediaUrl, getUploadsDir, normalizeUploadFolder } from '@/lib/uploa
 import { startVideoOptimization } from '@/lib/video-optimization';
 import { isOptimizableVideo } from '@/lib/video-optimization-types';
 import { randomUUID } from 'crypto';
+import { listMediaFiles } from '@/lib/media-files';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 // The route is also used by the homepage banner manager. Keep this allow-list
 // intentionally narrow: videos are limited to browser-friendly formats.
 const allowedExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.mp4', '.webm']);
-
-async function walkImages(dirPath: string, rootPath: string): Promise<string[]> {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
-  const result: string[] = [];
-
-  for (const entry of entries) {
-    if (entry.name.startsWith('.')) continue;
-    const absolutePath = path.join(dirPath, entry.name);
-
-    if (entry.isDirectory()) {
-      const nested = await walkImages(absolutePath, rootPath);
-      result.push(...nested);
-      continue;
-    }
-
-    const ext = path.extname(entry.name).toLowerCase();
-    if (!allowedExtensions.has(ext)) continue;
-
-    const relative = path.relative(rootPath, absolutePath).replace(/\\/g, '/');
-    result.push(relative);
-  }
-
-  return result;
-}
 
 function toMediaUrl(relativePath: string): string {
   return buildMediaUrl(relativePath.split('/'));
@@ -52,29 +30,14 @@ function normalizeFileName(name: string): string {
     .slice(0, 60);
 }
 
-async function listPublicImages(): Promise<string[]> {
-  const root = path.join(process.cwd(), 'public', 'img');
-  const relative = await walkImages(root, root);
-  return relative.map((item) => `/img/${item}`);
-}
-
-async function listUploadedImages(): Promise<string[]> {
-  const uploadsRoot = getUploadsDir();
-  const relative = await walkImages(uploadsRoot, uploadsRoot);
-  return relative.map(toMediaUrl);
-}
-
 export async function GET() {
-  try {
-    const publicImages = await listPublicImages().catch(() => []);
-    const uploadImages = await listUploadedImages().catch(() => []);
-
-    const unique = Array.from(new Set([...publicImages, ...uploadImages]));
-    unique.sort((a, b) => a.localeCompare(b));
-    return NextResponse.json({ ok: true, images: unique });
-  } catch {
-    return NextResponse.json({ ok: true, images: [] });
-  }
+  const [uploaded, bundled] = await Promise.all([
+    listMediaFiles(getUploadsDir(), allowedExtensions, toMediaUrl).catch(() => []),
+    listMediaFiles(path.join(process.cwd(), 'public', 'img'), allowedExtensions, item => `/img/${item}`).catch(() => [])
+  ]);
+  // Admin uploads precede bundled artwork, whose mtime changes with deployment.
+  const images = Array.from(new Set([...uploaded, ...bundled].map(item => item.url)));
+  return NextResponse.json({ ok: true, images }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function POST(request: Request) {

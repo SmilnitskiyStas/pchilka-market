@@ -15,8 +15,10 @@ import { buildMediaUrl, getUploadsDir, normalizeUploadFolder, resolveUploadPath 
 import { startVideoOptimization, isVideoOptimizationActive } from '@/lib/video-optimization';
 import { isOptimizableVideo } from '@/lib/video-optimization-types';
 import { randomUUID } from 'crypto';
+import { listMediaFiles } from '@/lib/media-files';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const allowedExtensions = new Set([
   '.jpg',
@@ -39,30 +41,6 @@ const allowedExtensions = new Set([
   '.json'
 ]);
 
-async function walkAssets(dirPath: string, rootPath: string): Promise<string[]> {
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
-  const result: string[] = [];
-
-  for (const entry of entries) {
-    if (entry.name.startsWith('.')) continue;
-    const absolutePath = path.join(dirPath, entry.name);
-
-    if (entry.isDirectory()) {
-      const nested = await walkAssets(absolutePath, rootPath);
-      result.push(...nested);
-      continue;
-    }
-
-    const ext = path.extname(entry.name).toLowerCase();
-    if (!allowedExtensions.has(ext)) continue;
-    if (entry.name === MEDIA_METADATA_FILE_NAME) continue;
-
-    result.push(path.relative(rootPath, absolutePath).replace(/\\/g, '/'));
-  }
-
-  return result;
-}
-
 function normalizeFileName(name: string): string {
   return name
     .toLowerCase()
@@ -80,18 +58,13 @@ function toMediaUrl(relativePath: string): string {
 export async function GET() {
   try {
     const uploadsRoot = getUploadsDir();
-    const relative = await walkAssets(uploadsRoot, uploadsRoot).catch(() => []);
+    const files = await listMediaFiles(uploadsRoot, allowedExtensions, toMediaUrl, [MEDIA_METADATA_FILE_NAME]).catch(() => []);
     const metadataMap: Record<string, MediaAssetMetadata> = await getMediaMetadataMap().catch(() => ({}));
-    const assets = relative
-      .map((item) => {
-        const url = toMediaUrl(item);
-        return {
-          url,
-          metadata: metadataMap[url] ?? getDefaultMediaMetadata(url)
-        };
-      })
-      .sort((a, b) => a.url.localeCompare(b.url));
-    return NextResponse.json({ ok: true, assets });
+    const assets = files.map(({ url }) => ({
+      url,
+      metadata: metadataMap[url] ?? getDefaultMediaMetadata(url)
+    }));
+    return NextResponse.json({ ok: true, assets }, { headers: { 'Cache-Control': 'no-store' } });
   } catch {
     return NextResponse.json({ ok: true, assets: [] });
   }
