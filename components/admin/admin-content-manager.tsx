@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import Link from 'next/link';
+import { getYouTubeInputEmbedUrl } from '@/lib/youtube-video';
 import { insertContentImage } from '@/lib/content-images';
 import { contentPages, legacyContentPaths, entryPagePath, formContentPages, dedicatedArticlePages } from '@/lib/menu-content';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
@@ -147,6 +148,10 @@ export default function AdminContentManager() {
   const [isSlugManual, setIsSlugManual] = useState(false);
   const [excerpt, setExcerpt] = useState('');
   const [body, setBody] = useState('');
+  const [youtubeOpen, setYoutubeOpen] = useState(false);
+  const [youtubeInput, setYoutubeInput] = useState('');
+  const [youtubeError, setYoutubeError] = useState('');
+  const youtubeSelection = useRef({ start: 0, end: 0 });
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
   const [categorySearch, setCategorySearch] = useState('');
@@ -257,6 +262,7 @@ export default function AdminContentManager() {
     setIsSlugManual(false);
     setExcerpt('');
     setBody('');
+    setYoutubeOpen(false); setYoutubeInput(''); setYoutubeError('');
     setCategoryIds([]);
     setIsCategoryMenuOpen(false);
     setCategorySearch('');
@@ -313,6 +319,18 @@ export default function AdminContentManager() {
       textarea.focus();
       textarea.setSelectionRange(nextCursor, nextCursor);
     });
+  }
+
+  function openYoutube() {
+    youtubeSelection.current = { start: bodyRef.current?.selectionStart ?? body.length, end: bodyRef.current?.selectionEnd ?? body.length };
+    setYoutubeOpen(true); setYoutubeError('');
+  }
+  function insertYoutube() {
+    const embed = getYouTubeInputEmbedUrl(youtubeInput);
+    if (!embed) { setYoutubeError('Вставте посилання на відео YouTube або iframe-код із YouTube.'); return; }
+    const { start, end } = youtubeSelection.current;
+    setBody(previous => `${previous.slice(0, start)}\n\n${embed}\n\n${previous.slice(end)}`);
+    setIsSaved(false); setYoutubeOpen(false); setYoutubeInput(''); setYoutubeError('');
   }
 
   function selectImage(url: string, target: 'body' | 'cover') {
@@ -450,6 +468,7 @@ export default function AdminContentManager() {
     setIsSlugManual(true);
     setExcerpt(entry.excerpt);
     setBody(entry.body);
+    setYoutubeOpen(false); setYoutubeInput(''); setYoutubeError('');
     setCategoryIds(entry.categoryIds);
     setIsCategoryMenuOpen(false);
     setCategorySearch('');
@@ -699,6 +718,7 @@ export default function AdminContentManager() {
                   <li>{'- `- пункт` або `1. пункт` -> списки'}</li>
                   <li>{'- `[текст](https://example.com)` -> посилання'}</li>
                   <li>{'- `![alt|w=640|h=360](/img/path.jpg)` -> зображення з керуванням розміром'}</li>
+                  <li>YouTube: кнопка «YouTube», посилання окремим рядком або iframe-код із YouTube.</li>
                 </ul>
                 <p className="mt-2">
                   Логіка кнопок: якщо нічого не виділено, вставляється пара маркерів і курсор стає між ними. Якщо текст виділено, кнопка обгортає його.
@@ -715,7 +735,14 @@ export default function AdminContentManager() {
                     {action.label}
                   </button>
                 ))}
+                <button type="button" onClick={openYoutube} className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">YouTube</button>
               </div>
+              {youtubeOpen ? <section className="mt-3 space-y-2 rounded-xl border border-brand/30 bg-slate-50 p-3" aria-label="Додати YouTube">
+                <label className="block text-sm font-semibold">Посилання або iframe-код YouTube<textarea id="content-youtube-input" rows={3} value={youtubeInput} onChange={event => { setYoutubeInput(event.target.value); setYoutubeError(''); }} placeholder="https://youtu.be/… або <iframe src=…></iframe>" className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm" /></label>
+                <p className="text-xs text-slate-600">Підтримуються звичайні посилання, Shorts, трансляції та код «Поділитися → Вставити» з YouTube. Відео буде додано в позицію курсора в тексті.</p>
+                {youtubeError ? <p role="alert" className="text-sm text-red-700">{youtubeError}</p> : null}
+                <div className="flex gap-2"><button type="button" onClick={insertYoutube} className="rounded-full bg-brand px-3 py-2 text-sm font-semibold text-white">Вставити відео</button><button type="button" onClick={() => setYoutubeOpen(false)} className="rounded-full border px-3 py-2 text-sm">Скасувати</button></div>
+              </section> : null}
               <label className="mt-2 inline-block cursor-pointer rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold">
                 Завантажити зображення в текст
                 <input type="file" accept=".jpg,.jpeg,.png,.webp,.avif,.gif" disabled={isUploadingImage} className="sr-only" onChange={(event) => { void handleCoverUpload(event.target.files?.[0] ?? null, 'body'); event.target.value = ''; }} />

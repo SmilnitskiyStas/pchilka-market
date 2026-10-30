@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
+import ArticleBody from '@/components/article-body';
 import BlogEngagement from '@/components/blog-engagement';
 import { fetchBlogContentPayload } from '@/lib/blog-content-client';
 import type { ContentEntry } from '@/lib/content-entries';
@@ -14,13 +15,6 @@ type AdminContentPostPageProps = {
   listHref: string;
   engagementSlugPrefix?: string;
 };
-
-function parseTextBlocks(raw: string): string[] {
-  return raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
 
 export default function AdminContentPostPage({ slug, contentType, listHref, engagementSlugPrefix = '' }: AdminContentPostPageProps) {
   const [entries, setEntries] = useState<ContentEntry[]>([]);
@@ -64,8 +58,6 @@ export default function AdminContentPostPage({ slug, contentType, listHref, enga
     );
   }
 
-  const paragraphs = parseTextBlocks(entry.body);
-
   return (
     <>
       <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -78,11 +70,7 @@ export default function AdminContentPostPage({ slug, contentType, listHref, enga
           <h1 className="mt-2 text-3xl font-bold text-slate-900 sm:text-4xl">{entry.title}</h1>
           <p className="mt-4 text-base text-slate-700">{entry.excerpt}</p>
 
-          <div className="mt-6 space-y-4 text-base leading-relaxed text-slate-800">
-            {(paragraphs.length > 0 ? paragraphs : [entry.body]).map((paragraph) => (
-              <p key={paragraph}>{paragraph}</p>
-            ))}
-          </div>
+          <ArticleBody body={entry.body} />
         </div>
       </article>
 

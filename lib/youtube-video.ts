@@ -18,3 +18,18 @@ export function getYouTubeEmbedUrl(value: string): string | null {
     return `https://www.youtube.com/embed/${id}`;
   } catch { return null; }
 }
+
+
+// Accept YouTube's copied embed code without preserving any HTML attributes.
+export function getYouTubeInputEmbedUrl(value: string): string | null {
+  const input = value.trim();
+  if (input.length > 10000) return null;
+  if (!input.startsWith('<')) return getYouTubeEmbedUrl(input);
+  const iframe = input.match(/^<iframe\b([^>]*)>[\s\S]*<\/iframe\s*>$/i);
+  if (!iframe) return null;
+  const attributes = iframe[1].matchAll(/([^\s"'<>\/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g);
+  const sources = [...attributes].filter(attribute => attribute[1].toLowerCase() === 'src');
+  if (sources.length !== 1) return null;
+  const source = sources[0][2] ?? sources[0][3] ?? sources[0][4] ?? '';
+  return getYouTubeEmbedUrl(source.replace(/&amp;/gi, '&'));
+}

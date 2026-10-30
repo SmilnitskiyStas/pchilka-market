@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from 'react';
+import { getYouTubeEmbedUrl, getYouTubeInputEmbedUrl } from '@/lib/youtube-video';
 
 type MarkdownBlock =
+  | { type: 'youtube'; src: string }
   | { type: 'h2'; text: string }
   | { type: 'h3'; text: string }
   | { type: 'ul'; items: string[] }
@@ -113,7 +115,11 @@ function parseImageMeta(rawAlt: string): ParsedImageMeta {
 }
 
 function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
-  const lines = raw.split(/\r?\n/);
+  const normalized = raw.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, (html) => {
+    const embed = getYouTubeInputEmbedUrl(html);
+    return embed ? `\n\n${embed}\n\n` : html;
+  });
+  const lines = normalized.split(/\r?\n/);
   const blocks: MarkdownBlock[] = [];
   const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
   const markdownLinkRegex = /^\[([^\]]*)\]\(([^)]+)\)$/;
@@ -126,6 +132,10 @@ function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
       i += 1;
       continue;
     }
+
+    const linkedVideo = line.match(/^\[[^\]]*\]\((https:\/\/[^)]+)\)$/);
+    const video = getYouTubeEmbedUrl(linkedVideo?.[1] ?? line);
+    if (video) { blocks.push({ type: 'youtube', src: video }); i += 1; continue; }
 
     if (line.startsWith('### ')) {
       blocks.push({ type: 'h3', text: line.slice(4).trim() });
@@ -226,6 +236,7 @@ function parseMarkdownBlocks(raw: string): MarkdownBlock[] {
 export default function ArticleBody({ body }: { body: string }) {
   const blocks = parseMarkdownBlocks(body);
   return <div className="mt-6 space-y-4 text-base leading-relaxed text-slate-800">{blocks.map((block, index) => {
+              if (block.type === 'youtube') return <iframe key={`youtube-${index}`} src={block.src} title="Відео YouTube" loading="lazy" className="aspect-video min-h-[200px] w-full rounded-2xl border-0" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen />;
               if (block.type === 'h2') return <h2 key={`h2-${index}`} className="text-2xl font-bold text-slate-900">{renderInlineMarkdown(block.text)}</h2>;
               if (block.type === 'h3') return <h3 key={`h3-${index}`} className="text-xl font-semibold text-slate-900">{renderInlineMarkdown(block.text)}</h3>;
               if (block.type === 'ul') return <ul key={`ul-${index}`} className="list-inside list-disc space-y-1">{block.items.map((item, i) => <li key={`uli-${i}`}>{renderInlineMarkdown(item)}</li>)}</ul>;

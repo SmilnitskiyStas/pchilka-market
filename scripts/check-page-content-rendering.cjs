@@ -19,6 +19,22 @@ async function main() {
   assert.ok(html.includes('<img') && html.includes('%281%29.jpg') && !html.includes('SELECT'));
   assert.equal(insertContentImage('', '/media/already%20encoded.jpg',0,0).includes('%2520'),false);
   for (const body of ['/media/demo.jpg', '[/media/demo.jpg](/media/demo.jpg)', '/uploads/demo.png']) assert.ok(render(ArticleBody({body})).includes('<img'), body);
+  const youtube = require('../lib/youtube-video.ts');
+  const embed = 'https://www.youtube.com/embed/HNGyDiMRKS4';
+  const iframe = '<iframe width="560" height="315" src="https://www.youtube.com/embed/HNGyDiMRKS4?si=share" title="YouTube video player" onload="alert(1)" allowfullscreen></iframe>';
+  assert.equal(youtube.getYouTubeInputEmbedUrl(iframe),embed);
+  assert.equal(youtube.getYouTubeInputEmbedUrl("<iframe src='https://youtu.be/HNGyDiMRKS4'></iframe>"),embed);
+  for (const body of [iframe, iframe.replace(' width=', '\n width='), 'https://youtu.be/HNGyDiMRKS4', '[Відео](https://youtu.be/HNGyDiMRKS4)']) {
+    const html=render(ArticleBody({body:`Перед відео\n${body}\nПісля відео`}));
+    assert.equal((html.match(/<iframe/g)||[]).length,1);
+    assert.ok(html.includes(embed)&&html.includes('Перед відео')&&html.includes('Після відео'));
+    assert.ok(!html.includes('onload=')&&!html.includes('si=share'));
+  }
+  for (const input of ['<iframe src="https://evil.test/"></iframe>','<iframe src="javascript:alert(1)"></iframe>','<iframe srcdoc="test"></iframe>','<iframe src="https://www.youtube.com/embed/HNGyDiMRKS4" src="https://evil.test/"></iframe>']) {
+    assert.equal(youtube.getYouTubeInputEmbedUrl(input),null);
+    assert.ok(!render(ArticleBody({body:input})).includes('<iframe'));
+  }
+  assert.equal((render(ArticleBody({body:`${iframe}\n${iframe}`})).match(/<iframe/g)||[]).length,2);
   const content = require('../lib/blog-content-repository.ts');
   let entries = [];
   content.getBlogContentFromDb = async () => ({entries});
@@ -86,6 +102,19 @@ async function main() {
   const upload=nodes(tree,n=>n.type==='input'&&n.props.type==='file')[0];
   upload.props.onChange({target:{files:[new Blob(['image'],{type:'image/jpeg'})],value:'image.jpg'}}); await tick();tree=editor();
   assert.ok(nodes(tree,n=>n.props?.id==='content-body')[0].props.value.includes('/media/uploaded.jpg'));
+  const originalBody=nodes(tree,n=>n.props?.id==='content-body')[0].props.value;
+  button(tree,'YouTube').props.onClick(); tree=editor();
+  nodes(tree,n=>n.props?.id==='content-youtube-input')[0].props.onChange({target:{value:'https://evil.test'}}); tree=editor();
+  button(tree,'Вставити відео').props.onClick();tree=editor();
+  assert.equal(nodes(tree,n=>n.props?.id==='content-body')[0].props.value,originalBody);
+  assert.ok(nodes(tree,n=>n.props?.role==='alert').length>0);
+  nodes(tree,n=>n.props?.id==='content-youtube-input')[0].props.onChange({target:{value:iframe}});tree=editor();
+  button(tree,'Вставити відео').props.onClick();tree=editor();
+  const withVideo=nodes(tree,n=>n.props?.id==='content-body')[0].props.value;
+  assert.ok(withVideo.startsWith(originalBody)&&withVideo.includes(embed)&&!withVideo.includes('onload'));
+  assert.equal(nodes(tree,n=>n.props?.id==='content-youtube-input').length,0);
+  assert.ok(render(ArticleBody({body:withVideo})).includes('<iframe'));
+  console.log('PASS: YouTube URL/iframe insertion, multi-line embeds, multiple videos, preserved surrounding text, rejected external frames and sanitized attributes.');
   console.log('Page content: inline own-brand articles, image URLs, draft isolation and explicit rental forms passed.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
