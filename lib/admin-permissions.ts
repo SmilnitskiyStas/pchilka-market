@@ -11,6 +11,7 @@ export const ADMIN_RESOURCES = [
   'integrations',
   'marketing',
   'telegram',
+  'career_telegram',
   'training',
   'inventory',
   'utility_meters',
@@ -23,18 +24,19 @@ export type AdminAction = 'read' | 'write' | 'delete';
 export type AdminPermission = `${AdminResource}:${AdminAction}`;
 
 export const ADMIN_PERMISSION_OPTIONS: Array<{ resource: AdminResource; label: string }> = [
-  { resource: 'content', label: 'Контент і статті' },
+  { resource: 'content', label: 'Сторінки, статті, меню та співпраця' },
   { resource: 'banners', label: 'Банери' },
   { resource: 'promotions', label: 'Акції' },
   { resource: 'media', label: 'Медіафайли' },
-  { resource: 'network', label: 'Магазини та мережа' },
+  { resource: 'network', label: 'Магазини та контакти' },
   { resource: 'messages', label: 'Повідомлення і заявки' },
   { resource: 'own_brand', label: 'Власне виробництво' },
   { resource: 'seo', label: 'SEO' },
   { resource: 'integrations', label: 'Інтеграції' },
   { resource: 'marketing', label: 'Маркетингова аналітика' },
-  { resource: 'telegram', label: 'Telegram-бот' },
-  { resource: 'training', label: 'Тести працівників' },
+  { resource: 'telegram', label: 'Telegram-боти: спільний доступ (сумісність)' },
+  { resource: 'career_telegram', label: 'Бот вакансій' },
+  { resource: 'training', label: 'Навчання та тести' },
   { resource: 'inventory', label: 'Інвентар' },
   { resource: 'utility_meters', label: 'Комунальні нарахування' },
   { resource: 'users', label: 'Користувачі та доступи' },
@@ -58,6 +60,8 @@ export function hasAdminPermission(
 ): boolean {
   if (role === 'admin') return true;
   if (resource === 'dashboard' && permissions.length > 0) return true;
+  // Preserve access for accounts assigned the original shared Telegram permission.
+  if (resource === 'career_telegram' && hasAdminPermission(role, permissions, 'telegram', action)) return true;
   if (permissions.includes(`${resource}:${action}`)) return true;
   return action === 'read' && (permissions.includes(`${resource}:write`) || permissions.includes(`${resource}:delete`));
 }
@@ -78,7 +82,8 @@ export function resourceForAdminPath(pathname: string): AdminResource {
   if (pathname.includes('/seo')) return 'seo';
   if (pathname.includes('/integrations')) return 'integrations';
   if (pathname.includes('/marketing')) return 'marketing';
-  if (pathname.includes('/fun-telegram') || pathname.includes('/career-telegram')) return 'telegram';
+  if (pathname.includes('/career-telegram')) return 'career_telegram';
+  if (pathname.includes('/fun-telegram')) return 'telegram';
   if (pathname.includes('/training')) return 'training';
   if (pathname.includes('/own-brand')) return 'own_brand';
   if (pathname.includes('/content') || pathname.includes('/blog') || pathname.includes('/cooperation') || pathname.includes('/menu') || pathname === '/admin/pages' || pathname === '/api/admin/pages') return 'content';

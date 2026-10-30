@@ -85,7 +85,7 @@ async function main() {
   const auth = require('../lib/admin-auth.ts');
   const { NextResponse } = require('next/server');
   function cookie(role, permissions) { const response = NextResponse.json({}); auth.applyAdminSessionCookie(response, { username: 'test', sub: 'test:career', role, permissions }); return response.headers.get('set-cookie').split(';')[0]; }
-  const admin = cookie('admin', []), editor = cookie('editor', ['telegram:write']);
+  const admin = cookie('admin', []), editor = cookie('editor', ['career_telegram:read', 'career_telegram:write']);
   const req = (method, body, session = admin) => new Request('http://localhost/api/admin/career-telegram', { method, headers: { 'Content-Type': 'application/json', cookie: session }, ...(body ? { body: JSON.stringify(body) } : {}) });
   const settingsApi = require('../app/api/admin/career-telegram/route.ts');
   const requestsApi = require('../app/api/requests/route.ts');
@@ -96,6 +96,11 @@ async function main() {
   assert.deepEqual(storedSettings.vacancies, ['Продавець', 'Касир']);
   const limited = await (await settingsApi.GET(req('GET', null, editor))).json();
   assert(!JSON.stringify(limited).includes(storedSettings.botToken));
+  assert.equal((await settingsApi.PUT(req('PUT', {}, editor))).status, 403);
+  assert.equal((await settingsApi.POST(req('POST', {action:'register-webhook'}, editor))).status, 403);
+  assert.equal(auth.isAdminRequestAuthorized(new Request('http://localhost/api/admin/fun-telegram', {headers:{cookie:editor}})),false);
+  assert.equal((await settingsApi.GET(req('GET',null,cookie('editor',['telegram:read'])))).status,200);
+  assert.equal((await settingsApi.PATCH(req('PATCH', {vacancies:[]}, cookie('editor',['career_telegram:read'])))).status,401);
   assert.equal((await settingsApi.PATCH(req('PATCH', {}, editor))).status, 400);
   assert.equal((await settingsApi.PATCH(req('PATCH', { vacancies: [] }, cookie('editor', ['telegram:read'])))).status, 401);
   assert.equal((await settingsApi.PUT(req('PUT', { settings: { ...storedSettings, enabled: false, vacancies: ['STALE'] } }))).status, 200);

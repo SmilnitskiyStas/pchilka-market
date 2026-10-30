@@ -1,7 +1,8 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import { ADMIN_PERMISSION_OPTIONS, type AdminAction, type AdminPermission } from '@/lib/admin-permissions';
+import { getAdminPermissionGroups } from '@/lib/admin-permission-groups';
+import { type AdminAction, type AdminPermission } from '@/lib/admin-permissions';
 
 type AdminUserView = {
   id: number;
@@ -25,6 +26,8 @@ type UsersPayload = {
   users: AdminUserView[];
   currentUser: CurrentUser;
 };
+
+const permissionGroups = getAdminPermissionGroups();
 
 function formatDate(value: string | null): string {
   if (!value) return '—';
@@ -290,11 +293,21 @@ export default function AdminUsersManager() {
 
                 {item.role === 'editor' && expandedPermissionsId === item.id ? (
                   <div id={`user-permissions-${item.id}`} className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-                    <p className="text-xs font-semibold text-slate-900">Доступи до модулів</p>
+                    <p className="text-xs font-semibold text-slate-900">Доступи до модулів</p><p className="mt-1 text-xs text-slate-600">Розділи відповідають меню адмінпанелі. Розгорніть «Сторінки модуля», щоб перевірити адреси. Редагування або видалення також надає перегляд. Після збереження користувачу потрібно вийти й увійти повторно.</p>
                     <div className="mt-2 overflow-x-auto">
                       <table className="w-full min-w-[450px] text-xs">
                         <thead className="text-left text-slate-500"><tr><th className="pb-1">Модуль</th>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => <th key={action} className="pb-1 text-center">{action === 'read' ? 'Перегляд' : action === 'write' ? 'Редагування' : 'Видалення'}</th>)}</tr></thead>
-                        <tbody>{ADMIN_PERMISSION_OPTIONS.filter(({ resource }) => resource !== 'users' && resource !== 'system').map(({ resource, label }) => <tr key={resource} className="border-t border-slate-100"><td className="py-1.5 pr-3">{label}</td>{(['read', 'write', 'delete'] as AdminAction[]).map((action) => { const permission = `${resource}:${action}` as AdminPermission; return <td key={action} className="py-1.5 text-center"><input type="checkbox" checked={(permissionDrafts[item.id] ?? []).includes(permission)} onChange={(event) => togglePermission(item.id, permission, event.target.checked)} /></td>; })}</tr>)}</tbody>
+                        {permissionGroups.map((group) => <tbody key={group.label}>
+                          <tr className="border-t border-slate-200 bg-slate-50"><th colSpan={4} scope="colgroup" className="px-2 py-2 text-left text-sm text-slate-900">{group.label}</th></tr>
+                          {group.modules.map(({ resource, label, pages }) => <tr key={resource} className="border-t border-slate-100">
+                            <td className="py-2 pr-3"><p className="font-semibold text-slate-900">{label}</p>
+                              {resource === 'career_telegram' ? <p className="mt-1 text-slate-600">Редагування вакансій. Токен бота, HR-чат і webhook доступні лише адміністратору.</p> : null}
+                              {resource === 'telegram' ? <p className="mt-1 text-amber-800">Спільний доступ до обох ботів. Для HR оберіть окремий модуль «Бот вакансій».</p> : null}
+                              <details className="mt-1 text-slate-600"><summary className="cursor-pointer">Сторінки модуля ({pages.length})</summary><ul className="mt-1 space-y-1">{pages.map((page) => <li key={page.href}>{page.label}<code className="block break-all text-[11px]">{page.href}</code></li>)}</ul></details>
+                            </td>
+                            {(['read', 'write', 'delete'] as AdminAction[]).map((action) => { const permission = `${resource}:${action}` as AdminPermission; return <td key={action} className="py-1.5 text-center"><input type="checkbox" aria-label={`${label}: ${action === 'read' ? 'перегляд' : action === 'write' ? 'редагування' : 'видалення'}`} checked={(permissionDrafts[item.id] ?? []).includes(permission)} onChange={(event) => togglePermission(item.id, permission, event.target.checked)} /></td>; })}
+                          </tr>)}
+                        </tbody>)}
                       </table>
                     </div>
                     <button type="button" onClick={() => void savePermissions(item.id)} disabled={savingPermissionsId === item.id} className="mt-3 rounded-full border border-brand px-3 py-1 text-xs font-semibold text-brand disabled:opacity-60">{savingPermissionsId === item.id ? 'Збереження...' : 'Зберегти доступи'}</button>
