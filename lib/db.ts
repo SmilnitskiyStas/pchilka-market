@@ -23,7 +23,8 @@ export function getDbPool(): Pool {
     password: getRequiredEnv('DB_PASSWORD'),
     database: getRequiredEnv('DB_NAME'),
     connectionLimit: 10,
-    queueLimit: 0
+    queueLimit: 0,
+    timezone: 'Z'
   });
 
   global.__mysqlPool = pool;
