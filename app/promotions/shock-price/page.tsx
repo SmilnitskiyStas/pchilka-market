@@ -102,7 +102,7 @@ export default async function ShockPricePage() {
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">Акції</p>
         <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl lg:text-4xl">Шок ціна</h1>
         <p className="mt-3 max-w-3xl text-sm text-slate-700 sm:text-base">
-          Актуальні пропозиції зі знижками. Картки і порядок відображення можна керувати з адмін-панелі.
+          Актуальні пропозиції зі знижками.
         </p>
 
         {images.length === 0 ? (
